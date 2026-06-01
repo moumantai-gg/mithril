@@ -12,7 +12,10 @@ internal static class IconLikelihoodField
     ///    alpha-masked NCC (no threshold, no NMS), producing a dense score in [-1,1]
     ///    at every pixel.
     /// </summary>
-    /// <returns>Row-major [H, W] array of NCC scores; unscored border pixels = 0.</returns>
+    /// <returns>NCC score array. Same row-major [H, W] layout as <see cref="ScoreAll"/>
+    /// (indexed <c>field[y, x]</c>, OPPOSITE of production
+    /// <c>Mithril.MapCalibration.Detection.NccTemplateMatch.ScoreAll</c>). Unscored
+    /// border pixels = 0.</returns>
     public static double[,] Build(GrayImage screenshot, GrayImage alignedBase, IconTemplate template)
     {
         if (screenshot.Width != alignedBase.Width || screenshot.Height != alignedBase.Height)
@@ -35,8 +38,13 @@ internal static class IconLikelihoodField
     /// Public so downstream tasks (e.g. probe scoring) can call it directly without
     /// going through the deviation step.
     /// </summary>
-    /// <returns>Row-major [H, W] dense score array; border pixels that can't fit the
-    /// template are left at 0.</returns>
+    /// <returns>
+    /// Row-major [H, W] dense score array indexed <c>field[y, x]</c> — note this is
+    /// the OPPOSITE of <c>Mithril.MapCalibration.Detection.NccTemplateMatch.ScoreAll</c>,
+    /// which returns [W, H] indexed <c>[x, y]</c>. Downstream synthesis-probe code
+    /// (J evaluator, refine, experiments) consistently uses [H, W] / <c>field[y, x]</c>;
+    /// don't transpose. Border pixels that can't fit the template are left at 0.
+    /// </returns>
     public static double[,] ScoreAll(GrayImage image, IconTemplate template)
     {
         int W = image.Width, H = image.Height;
