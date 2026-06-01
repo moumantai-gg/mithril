@@ -11,8 +11,8 @@ public class JEvaluatorTests
     public void J_is_high_when_refs_project_onto_field_peaks()
     {
         // Two 64x64 fields with one peak each at known crop pixels.
-        var portalField = ZerosWithPeak(64, 64, peakX: 20, peakY: 20, value: 0.95);
-        var npcField = ZerosWithPeak(64, 64, peakX: 50, peakY: 40, value: 0.92);
+        var portalField = ZerosWithPeak(h: 64, w: 64, peakX: 20, peakY: 20, value: 0.95);
+        var npcField = ZerosWithPeak(h: 64, w: 64, peakX: 50, peakY: 40, value: 0.92);
         var fields = new Dictionary<string, double[,]>
         {
             ["Portal"] = portalField,
@@ -42,7 +42,7 @@ public class JEvaluatorTests
         jWrong.RefsOffCrop.Should().Be(2);
     }
 
-    private static double[,] ZerosWithPeak(int w, int h, int peakX, int peakY, double value)
+    private static double[,] ZerosWithPeak(int h, int w, int peakX, int peakY, double value)
     {
         var f = new double[h, w];
         f[peakY, peakX] = value;
