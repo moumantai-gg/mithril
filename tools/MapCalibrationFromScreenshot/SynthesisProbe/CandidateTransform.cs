@@ -4,6 +4,11 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 
 internal readonly record struct CandidateTransform(double Scale, double RotRadians, bool Mirror, double Tx, double Ty)
 {
+    // Mirror of AreaCalibration.WorldToWindow at CalibrationZoom = 1.0 (no
+    // zoom factor). Intentional duplication — we don't allocate a full
+    // AreaCalibration per candidate, and we hold the canonical method on the
+    // persistable record. Keep in sync if AreaCalibration's projection math
+    // changes; the parity test in CandidateTransformTests is the trip-wire.
     public PixelPoint Apply(WorldCoord world)
     {
         var east = world.X;

@@ -12,6 +12,7 @@ public class CandidateTransformTests
     [InlineData(true, 0.0)]
     [InlineData(false, Math.PI)]
     [InlineData(true, Math.PI)]
+    [InlineData(false, Math.PI / 6)]
     public void Apply_matches_AreaCalibration_WorldToWindow(bool mirror, double rot)
     {
         var t = new CandidateTransform(Scale: 0.82, RotRadians: rot, Mirror: mirror, Tx: 100.0, Ty: 200.0);
