@@ -145,3 +145,47 @@ Read the synthesis_probe.csv across both fixtures. Outcome → architecture mapp
 3. **Co-located refs.** Frame 1 has refs at ~2 px separation. The field-based objective doesn't separate them — both refs contribute additively to the same field peak. Expected behaviour, but the diagnostic surfaces it through E1's `refs_above_0.5` count: if it's low, co-located peaks may be getting credit only once and the objective is undercounting them.
 4. **Field memory.** 11 MB at 4× the live engine's crop size — easily fits, but verify no GC pressure on the OTLP-export path if we end up running E5's 65 k evals with sampling-off for a debug session.
 5. **Pivot semantics in projection.** Production uses `Sprite.m_Pivot = (0.5, 0.5)` for all four sprites (verified in `tools/MapCalibrationFromScreenshot/README.md`). The probe must consume the *same* pivot when computing `T · r` so the field lookup site matches the icon-anchor pixel; mis-pivoting would put us a half-template-width away from the field peak and look like a flat objective.
+
+---
+
+## Results & open questions — first integration runs (2026-06-01)
+
+### What's built and landed on `claude/synthesis-probe-impl`
+
+- 18 tasks complete (1–14 + 17 + 18), ~30 commits, 29 unit tests green, tool builds clean.
+- `--phase synthesis-probe` runs end-to-end: produces `synthesis_probe.csv`, four `field_<type>.png`, `grid_landscape_translation.png`, and an OTel trace.
+- `--aligned-base <path>` flag added in Task 18 so the auto-load+resize step can be overridden when ECC-aligned base inputs are available.
+
+### Smoke-run findings
+
+Smoke runs were attempted against `frame{1,2}-crop.png` + `frame{1,2}-texture-resampled.png` from `%LocalAppData%/Mithril/diagnostics/calibration/938-masks/`, and against the raw screenshot dumps from the parent dir. The numbers across runs:
+
+- **E1 J(truth)** = −1.86 (frame 2) and +0.06 (frame 1) — only 1–2 of 38 refs above 0.5.
+- **E3 scale sweep**: a local peak ~4–9% away from the computed crop-space truth-cal, J ≈ 2.5–3.2. Sharp but offset from the truth-cal value I supplied.
+- **E5 cold-grid top-8**: consistently lands at scale ≈ 0.10 with J ≈ 10–11. **3–4× higher J than the real-scale local peak in E3.**
+
+### What that meant — and what it didn't
+
+The headline E5 finding (cold-grid finds clustered tiny-scale fits with J that *dominates* the real-scale truth) is **not synthesis-specific** — it surfaces in the existing offline `--phase full` CLI too. Running `--phase full` on the same `frame{1,2}-crop.png` inputs and on the raw dumps produces `scale ∈ [0.07, 0.11]` with 3–5 inliers — the same tiny-scale clustered-fit pathology, just expressed via RANSAC's inlier count instead of the synthesis cumulative-J. The production **live engine** sidesteps this in two ways the offline path doesn't:
+
+1. **ECC-aligned inputs** (#978). Production registers the screenshot to the texture sub-pixel before deviation, so the deviation map is dominated by actual icons rather than terrain-mismatch noise; tiny-scale fits then have nothing to project onto.
+2. **The 4-inlier acceptance gate.** A 3-inlier fit at scale 0.07 still gets rejected even if it materializes.
+
+Neither of these is wired into the CLI's `--phase full` or into the synthesis probe today. So the smoke runs were testing a degraded version of the synthesis objective on un-aligned inputs.
+
+### Open questions to pick up next
+
+1. **`--aligned-deviation <path>` flag** — extend the probe to skip `IconLikelihoodField.Build`'s subtraction step and consume a pre-computed deviation map directly. Then point it at `frame{1,2}-aligned-1-deviation.png` (the live engine's post-ECC, post-subtraction deviation dump) and rerun E1–E5. This is the cleanest test of the synthesis math.
+2. **Truth-cal extraction.** Live engine's `%LocalAppData%/Mithril/MapCalibration/refinements.json` has the recovered `AreaCalibration` (Eltibule: `scale=0.31536, rotation≈-π, origin=(1039.45, -36.38)`, residual 0.34) in **texture-pixel** space. Converting to screenshot-pixel space for the probe requires the ECC's sub-rect (texture region the screenshot covers), which is internal to the live engine. Two options:
+   - Expose the sub-rect alongside the recovered calibration in `refinements.json`.
+   - Or have the probe operate in texture-pixel space directly (resample screenshot UP into the texture sub-rect; build fields in texture coords).
+3. **E5 cold-grid scale bracket.** Once truth-cal is rigorous, tighten `scaleBracket` from `[0.1, 2.0]` to a physically-plausible range around the expected `S_crop`. Excludes the tiny-scale degeneracy by construction rather than by post-hoc gate.
+4. **Input pair semantics in 938-masks/.** The `frame{1,2}-texture-resampled.png` files are *bilinear resizes of the full texture to the crop's dimensions*, NOT the post-ECC warped textures. So `--aligned-base` on those is a no-op vs auto-load. The actual post-ECC artifacts are the `aligned-1-deviation.png` etc. intermediate dumps.
+5. **The captured-screenshot pair to test.** Raw dumps confirmed by user:
+   - `map-67x51-1257x1049-color-20260601-122726-226.png` — **zoomed-OUT**, production does NOT solve.
+   - `map-67x51-1257x1049-color-20260601-123012-696.png` — **zoomed-IN**, production solves (`refinements.json` value above is presumed from this run).
+   These should be the working test pair, with their corresponding live-engine ECC outputs.
+
+### Architectural takeaway so far (provisional)
+
+The synthesis objective `J(T) = Σ L_t(T·r)` is consistent with what we'd want — but it inherits the same data-ambiguity gap that already bites RANSAC: without ECC-aligned inputs and a physically-meaningful scale prior, both objectives can be dominated by tiny-scale clustered "fits" that project all refs into a small high-noise region. So whichever solver we eventually ship — Proposal A (cold synthesis), Proposal B (RANSAC seed + synthesis re-rank), or a third option — it MUST consume ECC-aligned inputs AND constrain scale within the physically-plausible range. Today's runs were below that bar; the open questions above are how to get above it.
