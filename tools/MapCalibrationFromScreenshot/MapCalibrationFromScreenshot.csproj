@@ -22,6 +22,11 @@
     <PackageReference Include="AssetsTools.NET" Version="3.0.4" />
     <PackageReference Include="AssetsTools.NET.Texture" Version="3.0.2" />
     <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+    <!--
+      OTel 1.15.3 (not the plan's 1.10.0): 1.10.0 fails NU1902 restore due to
+      GHSA-8785-wc3w-h8q6 / GHSA-g94r-2vxg-569j / GHSA-4625-4j76-fww9; 1.15.3 is
+      what Directory.Packages.props pins for the main solution.
+    -->
     <PackageReference Include="OpenTelemetry" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />

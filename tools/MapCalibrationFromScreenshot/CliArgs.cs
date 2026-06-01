@@ -148,6 +148,8 @@ internal sealed record CliArgs(
         // Only the full pipeline needs --screenshot. extract-icons and
         // extract-map are cache-population modes; self-test synthesises its
         // own inputs.
+        // SynthesisProbe also requires --screenshot; guard added in Task 14 where
+        // SynthesisProbePhase.Run first reads args.ScreenshotPath.
         if (screenshot is null && phase is Phase.Full)
         {
             Console.Error.WriteLine("--screenshot required for --phase full");
