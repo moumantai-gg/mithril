@@ -39,7 +39,8 @@ internal sealed record CliArgs(
     (double Scale, double Rot, double Ox, double Oy, bool Mirror)? TruthCal,
     string? RansacSeedsCsvPath,
     bool TraceConsole,
-    string? OtlpEndpoint)
+    string? OtlpEndpoint,
+    string? AlignedBasePath)
 {
     public static CliArgs? Parse(string[] argv)
     {
@@ -76,6 +77,7 @@ internal sealed record CliArgs(
         string? ransacSeedsCsv = null;
         bool traceConsole = false;
         string? otlpEndpoint = null;
+        string? alignedBasePath = null;
 
         for (int i = 0; i < argv.Length; i++)
         {
@@ -157,6 +159,9 @@ internal sealed record CliArgs(
                 case "--otlp":
                     otlpEndpoint = Next(argv, ref i);
                     break;
+                case "--aligned-base":
+                    alignedBasePath = Next(argv, ref i);
+                    break;
                 case "-h" or "--help":
                     return null;
                 default:
@@ -235,7 +240,8 @@ internal sealed record CliArgs(
             TruthCal: truthCal,
             RansacSeedsCsvPath: ransacSeedsCsv,
             TraceConsole: traceConsole,
-            OtlpEndpoint: otlpEndpoint);
+            OtlpEndpoint: otlpEndpoint,
+            AlignedBasePath: alignedBasePath);
     }
 
     private static (double, double, double, double, bool) ParseSeed(string s)
@@ -443,6 +449,10 @@ internal sealed record CliArgs(
                                                       label,scale,rot,ox,oy,mirror
               --trace-console                       emit OTel spans to stdout
               --otlp <endpoint>                     emit OTel spans to the named OTLP endpoint
+              --aligned-base <path>                 pre-ECC-aligned base texture PNG, resampled to the --map-rect
+                                                     crop dimensions. Overrides the auto-load+resize path; use when
+                                                     a fixture pre-pair was prepared by the live capture pipeline
+                                                     (e.g. study fixtures with matching foo-crop.png + foo-texture-resampled.png).
             """);
     }
 }

@@ -59,4 +59,15 @@ public class CliArgsSynthesisProbeTests
         })!;
         args.OtlpEndpoint.Should().Be("http://localhost:4317");
     }
+
+    [Fact]
+    public void Parses_aligned_base_path()
+    {
+        var args = CliArgs.Parse(new[]
+        {
+            "--phase", "synthesis-probe", "--screenshot", "x.png", "--area", "AreaEltibule",
+            "--aligned-base", "C:/some/base.png",
+        })!;
+        args.AlignedBasePath.Should().Be("C:/some/base.png");
+    }
 }

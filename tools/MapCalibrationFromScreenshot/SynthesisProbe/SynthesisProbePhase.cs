@@ -50,11 +50,31 @@ internal static class SynthesisProbePhase
 
         // Locate + load the aligned base texture, resampled to the crop dimensions.
         var pgInstall = SteamInstall.FindPgInstall();
-        var mapDir = args.MapDir ?? RepoPaths.DefaultMapsCacheDir();
         var tpkPath = args.TpkPath ?? RepoPaths.DefaultTpkPath();
-        var mapPng = MapTextureExtractor.EnsureExtracted(pgInstall, mapDir, args.Area);
-        var baseTexture = ImageIo.LoadGray(mapPng);
-        var alignedBase = ImageOps.Resize(baseTexture, mw, mh);
+        GrayImage alignedBase;
+        if (!string.IsNullOrEmpty(args.AlignedBasePath))
+        {
+            if (!File.Exists(args.AlignedBasePath))
+            {
+                Console.Error.WriteLine($"--aligned-base file not found: {args.AlignedBasePath}");
+                return 2;
+            }
+            alignedBase = ImageIo.LoadGray(args.AlignedBasePath);
+            if (alignedBase.Width != mw || alignedBase.Height != mh)
+            {
+                Console.Error.WriteLine(
+                    $"--aligned-base dimensions {alignedBase.Width}x{alignedBase.Height} " +
+                    $"don't match --map-rect crop dims {mw}x{mh}");
+                return 2;
+            }
+        }
+        else
+        {
+            var mapDir = args.MapDir ?? RepoPaths.DefaultMapsCacheDir();
+            var mapPng = MapTextureExtractor.EnsureExtracted(pgInstall, mapDir, args.Area);
+            var baseTexture = ImageIo.LoadGray(mapPng);
+            alignedBase = ImageOps.Resize(baseTexture, mw, mh);
+        }
 
         // Load icon templates from the extracted icons cache, scaled to the
         // requested render size.  IconTemplateExtractor has no LoadAll(dir, size)
