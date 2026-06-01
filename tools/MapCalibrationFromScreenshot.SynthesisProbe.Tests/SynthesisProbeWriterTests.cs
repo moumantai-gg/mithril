@@ -39,9 +39,12 @@ public class SynthesisProbeWriterTests
             field[5, 10] = 0.9;
             w.WriteFieldPng("Portal", field);
             File.Exists(Path.Combine(dir, "field_Portal.png")).Should().BeTrue();
-            using var img = System.Drawing.Image.FromFile(Path.Combine(dir, "field_Portal.png"));
+            using var img = (System.Drawing.Bitmap)System.Drawing.Image.FromFile(Path.Combine(dir, "field_Portal.png"));
             img.Width.Should().Be(20);
             img.Height.Should().Be(10);
+            // field[5, 10] = 0.9 in NCC space [-1, 1] → 8-bit gray ≈ (0.9 - (-1)) / 2 * 255 ≈ 242
+            var peak = img.GetPixel(10, 5);
+            peak.R.Should().BeGreaterThan(200, "peak pixel should be bright");
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
