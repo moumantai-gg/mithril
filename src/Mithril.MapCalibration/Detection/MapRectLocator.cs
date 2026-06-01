@@ -307,4 +307,11 @@ public sealed record MapRect(
         var scaleY = (double)TextureHeight / Height;
         return ((sx - OriginX) * scaleX, (sy - OriginY) * scaleY);
     }
+
+    public (double Sx, double Sy) TextureToScreenshot(double tx, double ty)
+    {
+        var scaleX = (double)TextureWidth / Width;
+        var scaleY = (double)TextureHeight / Height;
+        return (tx / scaleX + OriginX, ty / scaleY + OriginY);
+    }
 }
