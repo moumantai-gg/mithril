@@ -53,11 +53,13 @@ internal static class IconLikelihoodField
         double fy = y - iy;
 
         // Cubic Hermite (Catmull-Rom-ish) over 4 samples per row, then over 4 row results.
-        double[] col = new double[4];
+        // Both buffers hoisted above the loop to satisfy CA2014 (no stackalloc in a loop);
+        // `row` is overwritten every iteration so reuse is semantically identical.
+        Span<double> col = stackalloc double[4];
+        Span<double> row = stackalloc double[4];
         for (int j = -1; j <= 2; j++)
         {
             int yy = Math.Clamp(iy + j, 0, h - 1);
-            double[] row = new double[4];
             for (int i = -1; i <= 2; i++)
             {
                 int xx = Math.Clamp(ix + i, 0, w - 1);
