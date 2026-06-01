@@ -34,6 +34,50 @@ internal static class IconLikelihoodField
     }
 
     /// <summary>
+    /// Bicubic interpolation of <paramref name="field"/> at sub-pixel position
+    /// (<paramref name="x"/>, <paramref name="y"/>).
+    /// </summary>
+    /// <remarks>
+    /// Honors the [H, W] / <c>field[y, x]</c> row-major convention established by
+    /// <see cref="Build"/> and <see cref="ScoreAll"/>. Returns 0.0 for any position
+    /// that falls outside the field bounds.
+    /// </remarks>
+    public static double Sample(double[,] field, double x, double y)
+    {
+        int h = field.GetLength(0), w = field.GetLength(1);
+        if (x < 0 || y < 0 || x > w - 1 || y > h - 1) return 0.0;
+
+        int ix = (int)Math.Floor(x);
+        int iy = (int)Math.Floor(y);
+        double fx = x - ix;
+        double fy = y - iy;
+
+        // Cubic Hermite (Catmull-Rom-ish) over 4 samples per row, then over 4 row results.
+        double[] col = new double[4];
+        for (int j = -1; j <= 2; j++)
+        {
+            int yy = Math.Clamp(iy + j, 0, h - 1);
+            double[] row = new double[4];
+            for (int i = -1; i <= 2; i++)
+            {
+                int xx = Math.Clamp(ix + i, 0, w - 1);
+                row[i + 1] = field[yy, xx];
+            }
+            col[j + 1] = CubicHermite(row[0], row[1], row[2], row[3], fx);
+        }
+        return CubicHermite(col[0], col[1], col[2], col[3], fy);
+    }
+
+    private static double CubicHermite(double a, double b, double c, double d, double t)
+    {
+        double a0 = -0.5 * a + 1.5 * b - 1.5 * c + 0.5 * d;
+        double a1 = a - 2.5 * b + 2.0 * c - 0.5 * d;
+        double a2 = -0.5 * a + 0.5 * c;
+        double a3 = b;
+        return ((a0 * t + a1) * t + a2) * t + a3;
+    }
+
+    /// <summary>
     /// Alpha-masked NCC of <paramref name="template"/> slid over <paramref name="image"/>.
     /// Public so downstream tasks (e.g. probe scoring) can call it directly without
     /// going through the deviation step.
