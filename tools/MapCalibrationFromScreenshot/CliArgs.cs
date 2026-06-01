@@ -292,7 +292,8 @@ internal sealed record CliArgs(
         "full" => Phase.Full,
         "self-test" => Phase.SelfTest,
         "emit-templates" => Phase.EmitTemplates,
-        _ => throw new UserFacingException($"unknown phase '{s}' (extract-icons | extract-map | full | self-test | emit-templates)"),
+        "synthesis-probe" => Phase.SynthesisProbe,
+        _ => throw new UserFacingException($"unknown phase '{s}' (extract-icons | extract-map | full | self-test | emit-templates | synthesis-probe)"),
     };
 
     public static void PrintUsage()
@@ -392,6 +393,7 @@ internal sealed record CliArgs(
               --phase extract-map           only extract the area's map PNG from its bundle
               --phase full                  (default) run the full pipeline
               --phase self-test             synthetic end-to-end test (no PG/tpk needed)
+              --phase synthesis-probe       run E1-E5 icon-likelihood-field diagnostic; emits CSV + PNGs + OTel
               --dry-run                     don't write the baseline JSON, just print what would change
             """);
     }
@@ -404,4 +406,5 @@ internal enum Phase
     ExtractMap,
     SelfTest,
     EmitTemplates,
+    SynthesisProbe,
 }
