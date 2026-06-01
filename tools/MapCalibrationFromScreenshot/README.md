@@ -191,6 +191,24 @@ Recovered calibration vs ground truth derived from manually-measured icon bboxes
 
 8 inliers used (after iterative refinement dropped 2 mis-paired NPCs from the central courtyard cluster). Per-inlier residuals 0.07-0.58 px. Well under the 12 px `CalibrationGoodResidualPx` shipping bar; at parity with manual click-calibration via Legolas.
 
+## `--phase synthesis-probe` — icon-likelihood-field diagnostic
+
+Standalone experiment runner that scores the synthesis objective `J(T) = Σ L_{type(r)}(T·r)` across five experiments on a given screenshot. Output is a CSV + per-type field PNGs + a translation landscape PNG, plus OTel spans. The data decides which of two production-solver proposals to build (cold synthesis vs. RANSAC-seeded hybrid). See [`docs/superpowers/specs/2026-06-01-synthesis-probe-diagnostic-design.md`](../../docs/superpowers/specs/2026-06-01-synthesis-probe-diagnostic-design.md).
+
+```powershell
+dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- `
+  --phase synthesis-probe `
+  --area AreaEltibule `
+  --screenshot path/to/screenshot.png `
+  --map-rect x,y,w,h `
+  --truth-cal scale,rot,ox,oy,mirror `
+  --trace-console
+```
+
+Artifacts are written to `study/synthesis-probe/<area>/`.
+
+Flags specific to this phase: `--truth-cal`, `--ransac-seeds-csv`, `--trace-console`, `--otlp`. The full flag table near the top of this README documents each.
+
 ## Out of scope (v1)
 
 - **Shell integration.** This is a standalone tool. Once it has populated the baseline JSON, the result rides into Mithril via the existing [`BundledBaselineLoader`](../../src/Mithril.MapCalibration/Internal/BundledBaselineLoader.cs).
