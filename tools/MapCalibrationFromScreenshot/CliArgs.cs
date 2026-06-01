@@ -35,7 +35,11 @@ internal sealed record CliArgs(
     bool UseBorderMask,
     string? DetectionsCsvPath,
     bool IgnoreTypes,
-    (double Rot, double Scale, double Ox, double Oy, bool Mirror)? Seed)
+    (double Rot, double Scale, double Ox, double Oy, bool Mirror)? Seed,
+    (double Scale, double Rot, double Ox, double Oy, bool Mirror)? TruthCal,
+    string? RansacSeedsCsvPath,
+    bool TraceConsole,
+    string? OtlpEndpoint)
 {
     public static CliArgs? Parse(string[] argv)
     {
@@ -68,6 +72,10 @@ internal sealed record CliArgs(
         string? detectionsCsv = null;
         bool ignoreTypes = false;
         (double, double, double, double, bool)? seed = null;
+        (double, double, double, double, bool)? truthCal = null;
+        string? ransacSeedsCsv = null;
+        bool traceConsole = false;
+        string? otlpEndpoint = null;
 
         for (int i = 0; i < argv.Length; i++)
         {
@@ -136,6 +144,18 @@ internal sealed record CliArgs(
                     break;
                 case "--seed":
                     seed = ParseSeed(Next(argv, ref i));
+                    break;
+                case "--truth-cal":
+                    truthCal = ParseTruthCal(Next(argv, ref i));
+                    break;
+                case "--ransac-seeds-csv":
+                    ransacSeedsCsv = Next(argv, ref i);
+                    break;
+                case "--trace-console":
+                    traceConsole = true;
+                    break;
+                case "--otlp":
+                    otlpEndpoint = Next(argv, ref i);
                     break;
                 case "-h" or "--help":
                     return null;
@@ -211,7 +231,11 @@ internal sealed record CliArgs(
             UseBorderMask: useBorderMask,
             DetectionsCsvPath: detectionsCsv,
             IgnoreTypes: ignoreTypes,
-            Seed: seed);
+            Seed: seed,
+            TruthCal: truthCal,
+            RansacSeedsCsvPath: ransacSeedsCsv,
+            TraceConsole: traceConsole,
+            OtlpEndpoint: otlpEndpoint);
     }
 
     private static (double, double, double, double, bool) ParseSeed(string s)
@@ -225,6 +249,21 @@ internal sealed record CliArgs(
         {
             throw new UserFacingException($"--seed wants 'rot,scale,ox,oy,mirror' (got '{s}')");
         }
+        return (
+            double.Parse(parts[0].Trim(), CultureInfo.InvariantCulture),
+            double.Parse(parts[1].Trim(), CultureInfo.InvariantCulture),
+            double.Parse(parts[2].Trim(), CultureInfo.InvariantCulture),
+            double.Parse(parts[3].Trim(), CultureInfo.InvariantCulture),
+            bool.Parse(parts[4].Trim()));
+    }
+
+    private static (double, double, double, double, bool) ParseTruthCal(string s)
+    {
+        // "scale,rot,ox,oy,mirror" — the known-correct calibration used as a
+        // reference truth for E1-E5 synthesis-probe diagnostics.
+        // NOTE: ordering is scale-first, unlike ParseSeed which is rot-first.
+        var parts = s.Split(',', 5);
+        if (parts.Length != 5) throw new UserFacingException($"--truth-cal wants 'scale,rot,ox,oy,mirror' (got '{s}')");
         return (
             double.Parse(parts[0].Trim(), CultureInfo.InvariantCulture),
             double.Parse(parts[1].Trim(), CultureInfo.InvariantCulture),
@@ -397,6 +436,13 @@ internal sealed record CliArgs(
               --phase self-test             synthetic end-to-end test (no PG/tpk needed)
               --phase synthesis-probe       run E1-E5 icon-likelihood-field diagnostic; emits CSV + PNGs + OTel
               --dry-run                     don't write the baseline JSON, just print what would change
+
+            synthesis-probe diagnostic (--phase synthesis-probe):
+              --truth-cal <scale,rot,ox,oy,mirror>  known-correct calibration for E1-E5 (mirror = true|false)
+              --ransac-seeds-csv <path>             CSV of candidate calibrations to score (E4):
+                                                      label,scale,rot,ox,oy,mirror
+              --trace-console                       emit OTel spans to stdout
+              --otlp <endpoint>                     emit OTel spans to the named OTLP endpoint
             """);
     }
 }
