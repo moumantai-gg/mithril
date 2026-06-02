@@ -1,3 +1,4 @@
+using System;
 using System.Buffers.Binary;
 using System.IO;
 
@@ -23,7 +24,8 @@ internal static class PngHeader
     /// Returns the width and height recorded in the PNG IHDR chunk.
     /// </summary>
     /// <exception cref="InvalidDataException">
-    /// Thrown when the file is too short to contain a valid IHDR chunk.
+    /// Thrown when the file is too short to contain a valid IHDR chunk, does not
+    /// have a valid PNG signature, or records out-of-int-range dimensions.
     /// </exception>
     public static (int Width, int Height) ReadDimensions(string path)
     {
@@ -39,8 +41,18 @@ internal static class PngHeader
             read += n;
         }
 
-        int w = (int)BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(WidthOffset, 4));
-        int h = (int)BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(WidthOffset + 4, 4));
-        return (w, h);
+        // Validate PNG signature so a wrong-format or truncated file fails with a
+        // clear error instead of returning garbage from bytes 16-23.
+        ReadOnlySpan<byte> pngSig = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        if (!buf.AsSpan(0, 8).SequenceEqual(pngSig))
+            throw new InvalidDataException($"File does not have a valid PNG signature: {path}");
+
+        uint uw = BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(WidthOffset, 4));
+        uint uh = BinaryPrimitives.ReadUInt32BigEndian(buf.AsSpan(WidthOffset + 4, 4));
+        if (uw == 0 || uw > int.MaxValue || uh == 0 || uh > int.MaxValue)
+            throw new InvalidDataException(
+                $"PNG IHDR contains out-of-range dimensions ({uw}×{uh}): {path}");
+
+        return ((int)uw, (int)uh);
     }
 }
