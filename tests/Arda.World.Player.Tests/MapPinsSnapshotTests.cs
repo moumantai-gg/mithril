@@ -50,30 +50,6 @@ public sealed class MapPinsSnapshotTests
         pins.Pins.Should().HaveCount(2, "a fresh read sees the up-to-date set");
     }
 
-    [Fact]
-    public void PinsList_ReturnsSnapshot_NotLiveView()
-    {
-        var bus = new RecordingPublisher();
-        var pins = new MapPins(bus);
-
-        pins.PinAddHandler.Handle(
-            "1, 0, 1, (100.00, 0.00, 200.00), \"first\"".AsSpan(),
-            "ProcessMapPinAdd".AsSpan(),
-            "Player.log",
-            Meta());
-
-        var captured = pins.PinsList;
-
-        pins.PinAddHandler.Handle(
-            "1, 0, 1, (300.00, 0.00, 400.00), \"second\"".AsSpan(),
-            "ProcessMapPinAdd".AsSpan(),
-            "Player.log",
-            Meta());
-
-        captured.Should().HaveCount(1);
-        pins.PinsList.Should().HaveCount(2);
-    }
-
     private sealed class RecordingPublisher : IDomainEventPublisher
     {
         public void Publish<T>(T domainEvent) where T : struct { }

@@ -21,7 +21,7 @@ internal sealed class FakeMapPinState : IMapPinState
 {
     private readonly List<MapPinEntry> _pins = new();
 
-    public IReadOnlyCollection<MapPinEntry> Pins => _pins.AsReadOnly();
+    public IReadOnlyList<MapPinEntry> Pins => _pins.AsReadOnly();
 
     public void Add(MapPinEntry pin) => _pins.Add(pin);
 

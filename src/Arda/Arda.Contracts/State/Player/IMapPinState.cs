@@ -16,5 +16,5 @@ public interface IMapPinState
     /// returns a fresh snapshot — consumers may enumerate the result from any
     /// thread without coordinating with the Arda ingest thread.
     /// </summary>
-    IReadOnlyCollection<MapPinEntry> Pins { get; }
+    IReadOnlyList<MapPinEntry> Pins { get; }
 }
