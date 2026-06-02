@@ -1,4 +1,6 @@
 using FluentAssertions;
+using Mithril.MapCalibration;
+using Mithril.MapCalibration.Detection;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Experiments;
 using Xunit;
@@ -18,7 +20,7 @@ public class E5_ColdGridTests
                 f[y, x] = Math.Exp(-(dx * dx + dy * dy) / (2 * 3.0 * 3.0));
             }
         var fields = new Dictionary<string, double[,]> { ["Portal"] = f };
-        var refs = new[] { new ReferencePoint("p1", "Portal", 0, 0) };
+        var refs = new[] { new LandmarkReference("Portal", "p1", new WorldCoord(0, 0, 0)) };
         var truth = new CandidateTransform(1.0, 0.0, false, 64, 64);
 
         var dir = Path.Combine(Path.GetTempPath(), "synth-probe-e5-" + Guid.NewGuid().ToString("N"));

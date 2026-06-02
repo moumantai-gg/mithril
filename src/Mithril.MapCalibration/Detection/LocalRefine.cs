@@ -1,17 +1,17 @@
-namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
+namespace Mithril.MapCalibration.Detection;
 
-internal static class LocalRefine
+/// <summary>
+/// Hill-climbing ascent on (Tx, Ty, Scale) maximising <see cref="JEvaluator.Evaluate"/>.
+/// At each iteration, tries ±step in each axis and takes the move with the best
+/// J; halves the step when no axis improves. Holds Rot and Mirror fixed (those
+/// are discrete branches at the RANSAC / orientation level).
+/// </summary>
+public static class LocalRefine
 {
-    /// <summary>
-    /// Hill-climbing ascent on (Tx, Ty, Scale). At each iteration, tries +step in
-    /// each axis (and -step) and takes the move with the best J; halves the step
-    /// when no axis improves. Holds Rot and Mirror fixed (those are discrete
-    /// branches at the grid level).
-    /// </summary>
     public static CandidateTransform Run(
         CandidateTransform seed,
         IReadOnlyDictionary<string, double[,]> fields,
-        IReadOnlyList<ReferencePoint> refs,
+        IReadOnlyList<LandmarkReference> refs,
         int maxIter,
         double stepInit)
     {

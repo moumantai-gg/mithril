@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using Mithril.MapCalibration.Detection;
 
 namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 

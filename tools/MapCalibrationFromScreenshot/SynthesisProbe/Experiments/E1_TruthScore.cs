@@ -1,10 +1,12 @@
+using Mithril.MapCalibration.Detection;
+
 namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Experiments;
 
 internal static class E1_TruthScore
 {
     public static JResult Run(
         IReadOnlyDictionary<string, double[,]> fieldsByType,
-        IReadOnlyList<ReferencePoint> refs,
+        IReadOnlyList<LandmarkReference> refs,
         CandidateTransform truth,
         SynthesisProbeWriter writer)
     {

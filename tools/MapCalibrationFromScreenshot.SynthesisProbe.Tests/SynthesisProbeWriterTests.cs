@@ -1,5 +1,6 @@
 // SynthesisProbeWriterTests.cs
 using FluentAssertions;
+using Mithril.MapCalibration.Detection;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 using Xunit;
 

@@ -1,4 +1,6 @@
 using FluentAssertions;
+using Mithril.MapCalibration;
+using Mithril.MapCalibration.Detection;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Experiments;
 using Xunit;
@@ -7,12 +9,12 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Tests.Experi
 
 public class E1_E2_E3_Tests
 {
-    private static (IReadOnlyDictionary<string, double[,]> fields, IReadOnlyList<ReferencePoint> refs, CandidateTransform truth) SyntheticScene()
+    private static (IReadOnlyDictionary<string, double[,]> fields, IReadOnlyList<LandmarkReference> refs, CandidateTransform truth) SyntheticScene()
     {
         // 64x64 portal field with one strong peak at (20,20).
         var portal = new double[64, 64];
         portal[20, 20] = 0.9;
-        var refs = new[] { new ReferencePoint("p1", "Portal", WorldX: 0, WorldZ: 0) };
+        var refs = new[] { new LandmarkReference("Portal", "p1", new WorldCoord(0, 0, 0)) };
         var truth = new CandidateTransform(Scale: 1.0, RotRadians: 0.0, Mirror: false, Tx: 20.0, Ty: 20.0);
         return (new Dictionary<string, double[,]> { ["Portal"] = portal }, refs, truth);
     }
