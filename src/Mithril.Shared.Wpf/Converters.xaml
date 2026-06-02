@@ -13,4 +13,5 @@
     <c:LinkGlyphToLucideKindConverter x:Key="LinkGlyphToLucideKind"/>
     <c:LinkGlyphToVisibilityConverter x:Key="LinkGlyphToVis"/>
     <c:FontSizeTimesConverter x:Key="FontSizeTimes"/>
+    <c:EmptyStringFallbackConverter x:Key="EmptyStringFallback"/>
 </ResourceDictionary>

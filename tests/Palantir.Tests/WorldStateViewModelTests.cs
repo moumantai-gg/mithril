@@ -173,7 +173,7 @@ public sealed class WorldStateViewModelTests
     }
 
     [Fact]
-    public void Dispose_stops_observing_pins()
+    public void Dispose_stops_updating_PinsObservedAtText()
     {
         var pins = new FakeMapPinState();
         using var vm = NewVm(out var bus, pins: pins);

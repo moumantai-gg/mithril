@@ -144,7 +144,7 @@
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal" Margin="0,2">
-                                    <TextBlock Text="{Binding Label, FallbackValue='Unnamed pin', TargetNullValue='Unnamed pin'}"
+                                    <TextBlock Text="{Binding Label, Converter={StaticResource EmptyStringFallback}, ConverterParameter='Unnamed pin'}"
                                                FontWeight="SemiBold" Margin="0,0,8,0"/>
                                     <TextBlock>
                                         <Run Text="X "/>

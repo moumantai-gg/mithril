@@ -216,6 +216,25 @@ public sealed class FontSizeTimesConverter : IValueConverter
 }
 
 /// <summary>
+/// Returns <see cref="IValueConverter.Convert"/>'s parameter (cast to string) when the
+/// input is null, empty, or all-whitespace; otherwise returns the input value unchanged.
+/// Used as the WPF fallback for binding to string properties whose empty-string value
+/// should display a placeholder (WPF's <c>TargetNullValue</c> only fires for null, not
+/// for <c>""</c>).
+/// </summary>
+public sealed class EmptyStringFallbackConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is string s && !string.IsNullOrWhiteSpace(s)) return s;
+        return parameter as string ?? string.Empty;
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
 /// Two-way converter between an enum value and <c>bool</c> for radio-button bindings.
 /// Usage: <c>IsChecked="{Binding Foo, Converter={StaticResource EnumToBoolConverter}, ConverterParameter=SomeEnumValue}"</c>.
 /// </summary>
