@@ -33,7 +33,7 @@ public sealed class FeatureMatchingNegativeTests
                                $"Fixture {wrongTextureFolder}: no base texture for area {wrongAreaKey}");
 
         var refiner = new FeatureMatchingRefiner(new MapCalibrationLocateOptions());
-        var result = refiner.Refine(capture, wrongTexture, minScore: 0);
+        var result = refiner.Refine(capture, wrongTexture);
 
         result.AcceptedRect.Should().BeNull(
             "RANSAC should not converge on a fit, or the inlier/ratio gate should reject the random correspondences");

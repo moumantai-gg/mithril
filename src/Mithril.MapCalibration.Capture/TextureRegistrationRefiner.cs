@@ -41,7 +41,7 @@ public sealed class TextureRegistrationRefiner : IMapRegionRefiner
     private const double Epsilon = 1e-6;
     private const int GaussFiltSize = 5;
 
-    public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture, double minScore)
+    public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture)
     {
         // Always run the threshold-free locator so the coarse seed is preserved on
         // both accept and reject; the threshold gate used to be applied here using
@@ -49,7 +49,6 @@ public sealed class TextureRegistrationRefiner : IMapRegionRefiner
         // MapRect record. The refiner no longer threshold-gates — the engine
         // observes acceptance via AcceptedRect being non-null and triages via the
         // locator metrics (Task 15) rather than via a score baked into the rect.
-        _ = minScore;
         var seed = MapRectLocator.AutoDetectBest(
             capturedGray, baseTexture, MapRectLocator.DefaultWorkingLongEdgePx);
         if (seed is null)
@@ -85,13 +84,13 @@ public sealed class TextureRegistrationRefiner : IMapRegionRefiner
                 Height: (int)Math.Round(sh * scaleY),
                 TextureWidth: baseTexture.Width,
                 TextureHeight: baseTexture.Height);
-            return new MapRegionRefineResult(AcceptedRect: refined, BestCoarseRect: seed);
+            return new MapRegionRefineResult(AcceptedRect: refined, RawFitRect: seed, Metrics: null);
         }
         catch (OpenCVException)
         {
             // Non-convergence (and any other OpenCV-internal failure): fall back to
             // the coarse seed so the engine sees no worse than the pre-#978 behaviour.
-            return new MapRegionRefineResult(AcceptedRect: seed, BestCoarseRect: seed);
+            return new MapRegionRefineResult(AcceptedRect: seed, RawFitRect: seed, Metrics: null);
         }
     }
 

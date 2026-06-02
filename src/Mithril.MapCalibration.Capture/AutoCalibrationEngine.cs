@@ -262,7 +262,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         MapRegionRefineResult refineResult;
         using (var refineAct = MithrilActivitySources.MapCalibration.StartActivity("calibration.refine"))
         {
-            refineResult = _refiner.Refine(gray, baseTexture, RefineMinScore);
+            refineResult = _refiner.Refine(gray, baseTexture);
             refineAct?.SetTag("map.located", refineResult.AcceptedRect is not null);
         }
         // Surface the raw fit rect + metrics on EITHER branch — the diagnostic bundle

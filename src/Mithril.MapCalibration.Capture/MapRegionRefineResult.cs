@@ -22,22 +22,4 @@ public sealed record MapRegionRefineResult(
 {
     /// <summary>Degenerate result — the refiner had no usable fit.</summary>
     public static MapRegionRefineResult None { get; } = new(null, null, null);
-
-    /// <summary>
-    /// PR-1 transitional alias for <see cref="RawFitRect"/> so the in-tree
-    /// <see cref="TextureRegistrationRefiner"/> keeps populating the
-    /// rejection-branch rect under its existing name. PR-3 deletes this
-    /// alongside the rest of the NCC-vocabulary cleanup.
-    /// </summary>
-    [Obsolete("Renamed to RawFitRect. Removed in PR-3.")]
-    public MapRect? BestCoarseRect => RawFitRect;
-
-    /// <summary>
-    /// PR-1 transitional ctor — preserves the existing positional shape
-    /// <c>new MapRegionRefineResult(accepted, bestCoarseRect)</c> so the
-    /// existing <see cref="TextureRegistrationRefiner"/> compiles untouched
-    /// in PR-1. PR-3 rewrites every call site.
-    /// </summary>
-    public MapRegionRefineResult(MapRect? AcceptedRect, MapRect? BestCoarseRect)
-        : this(AcceptedRect, BestCoarseRect, null) { }
 }

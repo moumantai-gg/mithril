@@ -71,9 +71,9 @@ internal sealed class FakeRefiner : IMapRegionRefiner
 {
     private readonly MapRegionRefineResult _result;
     public FakeRefiner(MapRect? rect)
-        => _result = new MapRegionRefineResult(AcceptedRect: rect, BestCoarseRect: rect);
+        => _result = new MapRegionRefineResult(AcceptedRect: rect, RawFitRect: rect, Metrics: null);
     public FakeRefiner(MapRegionRefineResult result) => _result = result;
-    public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture, double minScore) => _result;
+    public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture) => _result;
 }
 
 internal sealed class FakeBaseTextureProvider : IBaseTextureProvider

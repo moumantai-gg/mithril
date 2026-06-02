@@ -82,7 +82,7 @@ public sealed class FeatureMatchingRefinerReplayTests
             "KurMountains-Live-20260602", "AreaKurMountains");
 
         var refiner = new FeatureMatchingRefiner(new MapCalibrationLocateOptions());
-        var result = refiner.Refine(capture, texture, minScore: 0);
+        var result = refiner.Refine(capture, texture);
         DumpMetrics("KurMountains-Live", result);
 
         result.AcceptedRect.Should().NotBeNull(
@@ -111,7 +111,7 @@ public sealed class FeatureMatchingRefinerReplayTests
             "Eltibule-Accepted-20260602", "AreaEltibule");
 
         var refiner = new FeatureMatchingRefiner(new MapCalibrationLocateOptions());
-        var result = refiner.Refine(capture, texture, minScore: 0);
+        var result = refiner.Refine(capture, texture);
         DumpMetrics("Eltibule-Accepted", result);
 
         result.AcceptedRect.Should().NotBeNull(

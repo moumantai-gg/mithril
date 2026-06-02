@@ -11,12 +11,8 @@ public interface IMapRegionRefiner
 {
     /// <summary>
     /// Find where <paramref name="baseTexture"/> sits inside
-    /// <paramref name="capturedGray"/>. The returned
-    /// <see cref="MapRegionRefineResult"/> always preserves the coarse locator's
-    /// best rung (when one was viable), even when the score fell below
-    /// <paramref name="minScore"/> — engine logs and the diagnostic bundle read
-    /// the score from <see cref="MapRegionRefineResult.BestCoarseRect"/> on
-    /// rejection so close-miss vs catastrophic-mismatch is observable.
+    /// <paramref name="capturedGray"/>. The acceptance gate lives inside the
+    /// refiner — there is no per-call score floor.
     /// </summary>
-    MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture, double minScore);
+    MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture);
 }

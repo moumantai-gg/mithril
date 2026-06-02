@@ -89,13 +89,8 @@ public sealed class FeatureMatchingRefiner : IMapRegionRefiner
     /// </summary>
     public void SetAreaKey(string? areaKey) => _currentAreaKey = areaKey;
 
-    public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture, double minScore)
+    public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture)
     {
-        // The minScore arg is a leftover from the NCC interface and is
-        // ignored by FM — PR-3 drops it from IMapRegionRefiner entirely.
-        // The gate that matters lives in _options.
-        _ = minScore;
-
         // texDescriptors lifetime is conditional: when we read from the cache
         // OrbDescriptorBundle.Dispose owns the Mat; when we compute fresh we
         // own it. Tracked by texDescriptorsOwned + cachedBundle below, freed
