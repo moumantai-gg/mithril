@@ -21,6 +21,7 @@ public static class OutcomeVocabulary
     public const string RejectedSolveNoDetections = "rejected-solve-no-detections";
     public const string RejectedSolveInsufficientInliers = "rejected-solve-insufficient-inliers";
     public const string RejectedSolveResidual = "rejected-solve-residual";
+    public const string RejectedNotMonotonic = "rejected-not-monotonic";
     public const string Error = "error";
 
     private static readonly FrozenSet<string> NoBundleOutcomes = FrozenSet.Create(

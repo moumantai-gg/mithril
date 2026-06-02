@@ -60,6 +60,16 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         MinArea: 12, MaxIconArea: 900, MinSolidity: 0.35, MaxAspect: 2.5, MinPeak: 0.7);
     private const double RefineMinScore = 0.5;
 
+    // #988 monotonicity gate: when a stored calibration exists for the area,
+    // a new fit must not regress quality by more than these tolerances.
+    // Tuned from the Eltibule 03:11:05 (0.79 px / 10 inliers, GOOD) vs
+    // 03:11:30 (4.03 px / 4 inliers, WRONG) pair surfaced by PR #986: ratio
+    // 2.0× catches the 5× residual blow-up; delta 2 catches the 6-inlier
+    // drop. Both gates conservative on the cold-start floor (4 inliers /
+    // residual already <12 px) so a marginal-but-correct re-fit still wins.
+    private const double MonotonicResidualRatio = 2.0;
+    private const int MonotonicInlierDelta = 2;
+
     private readonly IAreaState _areaState;
     private readonly IGameWindowLocator _windowLocator;
     private readonly IMapCaptureRegionProvider _region;
@@ -295,6 +305,13 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return Fail(area, "the located map rect fell outside the captured frame — redraw the capture box tightly around the in-game map");
         }
 
+        // #989: the bundle sink reads attempt.MapRect to write 04-maprect.json.
+        // The detect→solve pipeline below operates on the CLAMPED rect (crop,
+        // alignedTexture, alignedRect all derive from `clamped`), so the bundle
+        // JSON must describe the same dims the deviation/aligned/base-texture
+        // images carry — not the pre-clamp ECC value that overshoots the frame.
+        attempt.MapRect = clamped;
+
         var crop = ImageOps.Crop(gray, clamped.OriginX, clamped.OriginY, clamped.Width, clamped.Height);
         var alignedTexture = ImageOps.Resize(baseTexture, clamped.Width, clamped.Height);
         var alignedRect = new MapRect(0, 0, clamped.Width, clamped.Height, clamped.TextureWidth, clamped.TextureHeight);
@@ -350,8 +367,29 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 
         // Gate-accept: persist through the user store stamped AutoCapture, which
         // inherits user-store precedence by construction (Task 20).
-        attempt.Outcome = OutcomeVocabulary.Accepted;
         var stamped = result.Calibration with { Source = CalibrationSource.AutoCapture };
+
+        // #988 monotonicity gate. When a stored calibration already exists for
+        // this area, the new fit must not regress residual/inlier quality (a
+        // wrong-fit second attempt that clears the cold-start gate would
+        // otherwise replace a good first attempt — see the Eltibule 03:11:05
+        // vs 03:11:30 pair in the originating issue). Cold start (no existing)
+        // takes the same accept path it always did.
+        var existing = _calibrationService.GetCalibration(area);
+        if (existing is not null)
+        {
+            var monotonicReason = CheckMonotonicAccept(existing, stamped, result.InlierCount);
+            if (monotonicReason is not null)
+            {
+                attempt.Outcome = OutcomeVocabulary.RejectedNotMonotonic;
+                _logger?.LogInformation(
+                    "Auto-calibration rejected for {Area}: monotonicity gate — {Reason}. Prior calibration kept (residual {PriorResidual:0.00}px, refs {PriorRefs}).",
+                    area, monotonicReason, existing.ResidualPixels, existing.ReferenceCount);
+                return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: monotonicReason);
+            }
+        }
+
+        attempt.Outcome = OutcomeVocabulary.Accepted;
         _calibrationService.SaveUserRefinement(area, stamped);
         _logger?.LogInformation(
             "Auto-calibration persisted for {Area} (residual {Residual:0.00} px, {Inliers} inliers).",
@@ -497,6 +535,33 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     {
         _logger?.LogInformation("Auto-calibration not attempted for {Area}: {Reason}.", string.IsNullOrEmpty(area) ? "<none>" : area, reason);
         return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason);
+    }
+
+    /// <summary>
+    /// #988 monotonicity gate. A new fit may REPLACE an existing stored
+    /// calibration only if it isn't meaningfully worse. Rejects when the new
+    /// residual exceeds the existing by <see cref="MonotonicResidualRatio"/>×
+    /// OR the new inlier count is below the existing by more than
+    /// <see cref="MonotonicInlierDelta"/>. Returns null on accept, or a
+    /// human-readable reason on reject.
+    ///
+    /// <para>Cold start (no <paramref name="existing"/>) is the caller's
+    /// problem — this helper is consulted only after the engine looks up a
+    /// prior calibration and finds one. The cold-start accept path is
+    /// unchanged per the issue's out-of-scope list.</para>
+    /// </summary>
+    internal static string? CheckMonotonicAccept(AreaCalibration existing, AreaCalibration candidate, int candidateInlierCount)
+    {
+        if (existing.ResidualPixels > 0
+            && candidate.ResidualPixels > existing.ResidualPixels * MonotonicResidualRatio)
+        {
+            return $"new residual {candidate.ResidualPixels:0.00}px exceeds existing {existing.ResidualPixels:0.00}px × {MonotonicResidualRatio:0.0}";
+        }
+        if (candidateInlierCount < existing.ReferenceCount - MonotonicInlierDelta)
+        {
+            return $"new inlier count {candidateInlierCount} below existing {existing.ReferenceCount} − {MonotonicInlierDelta}";
+        }
+        return null;
     }
 }
 

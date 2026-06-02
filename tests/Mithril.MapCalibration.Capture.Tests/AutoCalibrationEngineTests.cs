@@ -183,6 +183,62 @@ public sealed class AutoCalibrationEngineTests
     // ── Bundle-sink (#984 Block D) ───────────────────────────────────────────
 
     [Fact]
+    public async Task Recorded_MapRect_height_matches_clamped_height_when_ECC_rect_overshoots_frame()
+    {
+        // #989: per-attempt bundle's 04-maprect.json must record the height the
+        // engine actually used (the clamped height), not the pre-clamp ECC-located
+        // height — otherwise the JSON disagrees with the deviation/aligned/
+        // base-texture image dims in the same bundle. Reproduce the overshoot:
+        // a 100×100 captured frame + an ECC rect that asks for 150 rows starting
+        // at row 50 (would extend to row 200; clamps to row 100, i.e. height 50).
+        var capture = new GrayImage(100, 100, new byte[100 * 100]);
+        var baseTex = new GrayImage(200, 200, new byte[200 * 200]);
+        var overshootingRect = new MapRect(
+            OriginX: 0, OriginY: 50, Width: 100, Height: 150,
+            TextureWidth: 200, TextureHeight: 200,
+            AutoDetectScore: 0.9, SourceScaleFactor: 1.0);
+
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        var h = new EngineHarness
+        {
+            BaseTexture = baseTex,
+            Refiner = new FakeRefiner(overshootingRect),
+            Solve = Accepted(residual: 0.65, inliers: 5),
+            SinkSelector = selector,
+        };
+        // Override the default 64×64 SpyCapture with a 100×100 one matching the
+        // overshoot scenario. EngineHarness.Capture is get-only, but a fresh
+        // harness with the right capture isn't expressible without constructing
+        // the engine directly (Capture is initialized in the field initializer).
+        // So construct the engine inline using the same shape as the harness.
+        var captureSpy = new SpyCapture(capture);
+        var solver = new SpySolver(h.Solve);
+        var engine = new AutoCalibrationEngine(
+            new FakeAreaState(Area),
+            new FakeWindowLocator(h.GameWindow),
+            new FakeRegionProvider(h.Bbox),
+            captureSpy,
+            h.Refiner,
+            new FakeBaseTextureProvider(baseTex),
+            new FakeAreaRefs(new[] { new LandmarkReference("landmark_npc", "x", new WorldCoord(1, 0, 1)) }),
+            solver,
+            h.IconProvider,
+            h.Service,
+            logger: null,
+            sinkSelector: selector);
+
+        await engine.TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        var ctx = captured[0];
+        ctx.MapRect.Should().NotBeNull();
+        ctx.MapRect!.Height.Should().Be(50,
+            "the engine clamped 150→50 to stay within the 100-row frame; the bundle must record the height it actually used");
+        ctx.MapRect.OriginY.Should().Be(50, "OriginY is in-bounds and untouched by the clamp");
+    }
+
+    [Fact]
     public async Task TryCalibrate_passes_populated_context_to_sink_on_accept()
     {
         var captured = new List<CalibrationAttemptContext>();
@@ -346,6 +402,89 @@ public sealed class AutoCalibrationEngineTests
         captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedSolveInsufficientInliers);
     }
 
+    // ── #988 monotonicity gate (engine-level) ────────────────────────────────
+
+    [Fact]
+    public async Task Replaces_existing_when_new_fit_is_better()
+    {
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, MakeCal(residual: 3.0, refs: 6));
+        var h = new EngineHarness { Solve = Accepted(residual: 0.65, inliers: 8), Service = svc };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeTrue();
+        svc.Saved.Should().ContainKey(Area);
+        svc.Saved[Area].ResidualPixels.Should().Be(0.65);
+    }
+
+    [Fact]
+    public async Task Rejects_when_new_residual_blows_up_vs_existing()
+    {
+        // Mirrors the PR #986 Eltibule case: existing residual 0.79 px, new 4.03 px.
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, MakeCal(residual: 0.79, refs: 10));
+        var h = new EngineHarness { Solve = Accepted(residual: 4.03, inliers: 4), Service = svc };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeFalse();
+        outcome.RejectReason.Should().Contain("residual");
+        svc.Saved.Should().NotContainKey(Area); // existing untouched
+    }
+
+    [Fact]
+    public async Task Rejects_when_new_inlier_count_drops_vs_existing()
+    {
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, MakeCal(residual: 1.0, refs: 10));
+        var h = new EngineHarness { Solve = Accepted(residual: 1.0, inliers: 4), Service = svc };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeFalse();
+        outcome.RejectReason.Should().Contain("inlier");
+        svc.Saved.Should().NotContainKey(Area);
+    }
+
+    // ── #988 monotonicity gate (helper-level) ────────────────────────────────
+
+    [Fact]
+    public void Monotonicity_helper_accepts_better_residual_and_same_inliers()
+    {
+        var existing = MakeCal(residual: 2.0, refs: 8);
+        var candidate = MakeCal(residual: 1.0, refs: 8);
+        AutoCalibrationEngine.CheckMonotonicAccept(existing, candidate, candidateInlierCount: 8)
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void Monotonicity_helper_rejects_residual_blowup_beyond_ratio()
+    {
+        var existing = MakeCal(residual: 1.0, refs: 8);
+        var candidate = MakeCal(residual: 3.0, refs: 8); // 3× > 2× threshold
+        AutoCalibrationEngine.CheckMonotonicAccept(existing, candidate, candidateInlierCount: 8)
+            .Should().Contain("residual");
+    }
+
+    [Fact]
+    public void Monotonicity_helper_rejects_inlier_drop_beyond_delta()
+    {
+        var existing = MakeCal(residual: 1.0, refs: 10);
+        var candidate = MakeCal(residual: 1.0, refs: 10); // ReferenceCount on the cal is metadata
+        AutoCalibrationEngine.CheckMonotonicAccept(existing, candidate, candidateInlierCount: 4) // 10 − 4 = 6 > delta 2
+            .Should().Contain("inlier");
+    }
+
+    [Fact]
+    public void Monotonicity_helper_accepts_marginal_within_tolerances()
+    {
+        var existing = MakeCal(residual: 1.0, refs: 8);
+        var candidate = MakeCal(residual: 1.8, refs: 8); // 1.8 < 1.0 × 2.0
+        AutoCalibrationEngine.CheckMonotonicAccept(existing, candidate, candidateInlierCount: 7) // 8 − 7 = 1 ≤ delta 2
+            .Should().BeNull();
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private static CalibrationAttemptBundleSinkSelector MakeSinkSelector(ICalibrationAttemptBundleSink sink) =>
@@ -372,6 +511,10 @@ public sealed class AutoCalibrationEngineTests
 
     private static AreaCalibration SomeBaseline() =>
         new(1.0, 0, 50, 50, 4, 3.0) { Source = CalibrationSource.BundledBaseline };
+
+    private static AreaCalibration MakeCal(double residual, int refs) => new(
+        Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
+        ReferenceCount: refs, ResidualPixels: residual);
 
     /// <summary>
     /// Mutable harness: each property has a sensible "happy path" default; a test
