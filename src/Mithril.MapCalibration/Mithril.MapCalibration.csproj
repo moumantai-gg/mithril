@@ -9,11 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Mithril.MapCalibration.Tests" />
-    <!-- Replay tests in the Capture.Tests project construct CachedBaseTextureProvider
-         directly to load committed calibration bundles (Task 7 of feature-matching
-         locate plan). The provider is the public sidecar-cache reader; it's only
-         marked internal because the DI path is the production seam. -->
-    <InternalsVisibleTo Include="Mithril.MapCalibration.Capture.Tests" />
   </ItemGroup>
   <ItemGroup>
     <!-- Deliberately no ProjectReference to Mithril.Shared: this assembly is

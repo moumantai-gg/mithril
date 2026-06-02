@@ -1,9 +1,10 @@
 using System.IO;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
+using Mithril.MapCalibration.DependencyInjection;
 using Mithril.MapCalibration.Detection;
-using Mithril.MapCalibration.Detection.Internal;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -23,10 +24,15 @@ public sealed class FeatureMatchingRefinerReplayTests
 
     private static (GrayImage capture, GrayImage texture) LoadBundle(string folder, string areaKey)
     {
-        var capturePath = Path.Combine(FixturesRoot, folder, "capture.png");
+        var bundleDir = Path.Combine(FixturesRoot, folder);
+        var capturePath = Path.Combine(bundleDir, "capture.png");
         var capture = PngFixtureLoader.LoadGray(capturePath);
 
-        var provider = new CachedBaseTextureProvider(Path.Combine(FixturesRoot, folder));
+        var provider = new ServiceCollection()
+            .AddMithrilMapCalibrationEngine(bundleDir)
+            .BuildServiceProvider()
+            .GetRequiredService<IBaseTextureProvider>();
+
         var texture = provider.TryGetBaseTexture(areaKey)
                       ?? throw new InvalidOperationException(
                           $"Fixture {folder}: no base texture for area {areaKey}");
@@ -85,12 +91,17 @@ public sealed class FeatureMatchingRefinerReplayTests
         result.Metrics!.InlierRatio.Should().BeGreaterThan(0.90);
         result.Metrics.InlierCount.Should().BeGreaterThan(500);
 
-        // Ground truth: (159, 82, 971, 973) per PR #1008's investigation
-        // (https://github.com/moumantai-gg/mithril/pull/1008).
+        // Recovered rect on the committed 2048×2048 fixture:
+        //   recovered_size ≈ texture_size × Scale ≈ 2048 × 0.4742 ≈ 971 px
+        // (both Width and Height — the texture is square; on a 2048×2033 source
+        // the Height would be ~973, which is PR #1008's framing
+        // (https://github.com/moumantai-gg/mithril/pull/1008). The ±2 tolerance
+        // here is for feature-match noise on the fixture we ship, NOT for
+        // absorbing source-texture aspect drift.)
         result.AcceptedRect!.OriginX.Should().BeCloseTo(159, 2);
         result.AcceptedRect.OriginY.Should().BeCloseTo(82, 2);
         result.AcceptedRect.Width.Should().BeCloseTo(971, 2);
-        result.AcceptedRect.Height.Should().BeCloseTo(973, 2);
+        result.AcceptedRect.Height.Should().BeCloseTo(971, 2);
     }
 
     [Fact]
