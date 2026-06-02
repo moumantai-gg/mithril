@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration.Detection.Internal;
@@ -110,10 +111,12 @@ public static class MapCalibrationServiceCollectionExtensions
         });
         services.AddSingleton<ICalibrationDetector, DeviationBlobCalibrationDetector>();
         services.AddSingleton<ICalibrationConfidenceGate, CalibrationConfidenceGate>();
+        services.TryAddSingleton<MapCalibrationSolverOptions>();
         services.AddSingleton(sp => new MapCalibrationSolveEngine(
             sp.GetRequiredService<ICalibrationDetector>(),
             sp.GetRequiredService<ICalibrationConfidenceGate>(),
-            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Engine")));
+            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Engine"),
+            sp.GetRequiredService<MapCalibrationSolverOptions>()));
         return services;
     }
 }

@@ -18,15 +18,18 @@ public sealed class MapCalibrationSolveEngine
     private readonly ICalibrationDetector _detector;
     private readonly ICalibrationConfidenceGate _gate;
     private readonly ILogger? _logger;
+    private readonly MapCalibrationSolverOptions _options;
 
     public MapCalibrationSolveEngine(
         ICalibrationDetector detector,
         ICalibrationConfidenceGate gate,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        MapCalibrationSolverOptions? options = null)
     {
         _detector = detector;
         _gate = gate;
         _logger = logger;
+        _options = options ?? new MapCalibrationSolverOptions();
     }
 
     /// <summary>
