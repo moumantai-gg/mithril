@@ -189,3 +189,80 @@ Neither of these is wired into the CLI's `--phase full` or into the synthesis pr
 ### Architectural takeaway so far (provisional)
 
 The synthesis objective `J(T) = Σ L_t(T·r)` is consistent with what we'd want — but it inherits the same data-ambiguity gap that already bites RANSAC: without ECC-aligned inputs and a physically-meaningful scale prior, both objectives can be dominated by tiny-scale clustered "fits" that project all refs into a small high-noise region. So whichever solver we eventually ship — Proposal A (cold synthesis), Proposal B (RANSAC seed + synthesis re-rank), or a third option — it MUST consume ECC-aligned inputs AND constrain scale within the physically-plausible range. Today's runs were below that bar; the open questions above are how to get above it.
+
+---
+
+## 2026-06-02 — bundle-driven runs
+
+Three per-attempt calibration bundles produced by the live engine (Mithril.MapCalibration's `AutoCalibrationEngine`, post-#985) were fed to the probe via the new `--bundle-dir`/`--maprect-json`/`--recovered-cal-json`/`--aligned-deviation`/`--hand-truth-cal` flags. The bundles consume post-ECC, post-subtraction deviation maps directly — the cleanest synthesis input we can give the probe today.
+
+All three bundles are AreaEltibule. Hand-truth-cal for B and C is the bundled-baseline entry (`map-calibration-baseline.json` — `scale=0.7632337, rotation=3.141276, origin=(2146.21, -202.47), mirror=false, residual=0.65 px, 5 refs`).
+
+### Run summary
+
+| Bundle | Production verdict | E1 J(truth) | E1 refs ≥ 0.5 | E2 J_best | E3 J_best | E5 J_best_refined | E5 truth in top-8? | E5 best-dist to truth |
+|---|---|---|---|---|---|---|---|---|
+| A (031105-069, accepted, 10 inliers, 0.79 px) | clean accept | **19.02** | **21 / 38** | 19.02 | 19.02 | 5.10 | **no** | 542 px |
+| B (031130-122, wrong-fit accept, 4 inliers, 4.03 px) — hand-truth | wrong | **−2.76** | **0 / 38** | 11.33 | 4.99 | 6.84 | no | 335 px |
+| B (031130-122) — production-recovered | wrong | +0.39 | 2 / 38 | 4.06 | 3.22 | 6.78 | no | 65 px |
+| C (031004-908, rejected, only 3 inliers) — hand-truth | rejected | **13.96** | **13 / 38** | 15.39 | 13.96 | 5.12 | **no** | 290 px |
+
+E2 sweeps ±32 px around truth at 1 px step (4 225 evals); E3 sweeps scale ±25 % at 1 % step (51 evals); E5 cold-grid is ~118 k–250 k evals depending on MapRect-bracketed scale span, with the top-8 hill-climbed after sampling.
+
+### Bundle A — positive control: J(truth) dominates locally, but cold-grid misses globally
+
+E1 J(truth)=19.02 with 21/38 refs above 0.5 clears the design-criterion threshold of "≥20 refs above 0.5". E2 J_best = J_truth → truth IS the local maximum in the ±32 px translation neighborhood. E3 J_best = J_truth → truth IS the maximum in the ±25 % scale neighborhood. E2 falls off rapidly: at +6.7 px from truth J drops to 6.06 (-68 %), at +9.5 px J drops to 5.45 (-71 %). Sharp peak, as required.
+
+But E5 cold-grid + LM refine **misses** truth: top-8 refined J values are all in the 4.1–5.1 range (vs J_truth=19.02), the closest top-8 candidate is 542 px from truth, and none of the eight survive the ≤5 px design criterion. The MapRect-bracketed scale span did exclude the tiny-scale degeneracy (E5 scales are 0.27–0.37, within ±25 % of truth's 0.337) — what remains is the spacing trap the design spec called out: at 16 px grid stride no sample lands within 5 px of truth, and the LM refine basin doesn't reach truth from 8–11 px away because J falls below the local-search horizon within 6 px.
+
+**Verdict on A:** synthesis correctly *scores* truth as the dominant peak when it's given. Cold synthesis (Proposal A) does NOT find that peak from a uniform grid + LM refine. **Proposal B** (RANSAC seed + synthesis re-rank/refine) is consistent with this data.
+
+### Bundle B — degraded ECC alignment; synthesis CANNOT rescue it
+
+Bundle B's deviation map (07-deviation.png) is visibly contaminated: terrain features and map borders fluoresce at the same intensity as icons, and icon peaks are blurred. Production's 4-inlier residual-4.03 px accept reflects this — the detector found just enough matches to clear the gate floor but pointed RANSAC at a geometrically wrong fit (scale=0.582, rotation=-2.046 rad, mirror=true, 117° off truth).
+
+The probe's hand-truth-cal `J = −2.76` with **0 / 38 refs above 0.5** is the headline: at the geometrically-correct cal, no ref projects onto a deviation peak. Production's wrong-recovered cal scores higher (J=+0.39, 2 refs above 0.5) — only because its 4 inliers were picked to line up with *whatever the noisy deviation map happens to show*. The wrong-fit is consistent with the contaminated input.
+
+Neither candidate dominates: E5 cold-grid finds an unrelated candidate at J=6.84 some 335 px from hand-truth and 65 px from production-recovered (i.e., synthesis re-rank would prefer the E5 candidate over either named "truth"). The cold-grid candidate is also wrong — it's just the highest peak in a noisy field.
+
+The Bundle B failure is at the **ECC stage**, not the solver. The right fix isn't a better solver; it's either (i) rejecting captures with poor ECC alignment, or (ii) better ECC. Synthesis is downstream of that gate. (See follow-up §1 below.)
+
+Also note: Bundle B's MapRect.json records `height=999`, but the deviation/aligned-screenshot/base-texture-resampled files are actually 1006 × **986** (the screenshot is 1274 × 1047, so origin.y=61 + height=999 = 1060 overflows by 13 px and the engine clamps to fit). The probe ran with an override MapRect `(143, 61, 1006, 986)` written to scratch. The bundle's recorded height is a small live-engine bug (see follow-up §2).
+
+### Bundle C — production rejected, synthesis scores truth correctly
+
+Bundle C is the **architecturally interesting case**: production rejected with "only 3 inliers (need ≥ 4)" because NPC detection starved on the more-zoomed-out 688 × 683 view (per the pre-flight investigation: 0 NPCs detected vs 3 in Bundle A; Eltibule has 17 NPCs = 45 % of the 38-ref pool, so losing them all crippled same-type RANSAC). The probe's E1 J(hand-truth) = **13.96** with **13 / 38 refs above 0.5** and `refs_off_crop=0` shows that synthesis evaluates truth correctly even on the smaller MapRect. E3 J_best = J_truth → truth is the scale peak. E2 J_best=15.39 slightly above J_truth, with the small offset consistent with the hand-truth-cal's published residual of 0.65 px.
+
+So on the rejected-908 capture: **production rejected, synthesis would have ACCEPTED truth given a near-truth seed**. The same continuous-evidence objective that aggregates `L_t(T·r)` over all 38 refs without a per-type discrete threshold doesn't care that 0 NPCs cleared the NCC threshold — the weak NPC-field correlations still contribute positive J, and the 13 portals + meditation pillars carry the rest. This is exactly the architectural case for the redesign predicted in the pre-flight notes.
+
+E5 cold-grid still misses (truth_in_topk=false, best-distance=290 px) — same spacing-vs-peak-width trap as Bundle A.
+
+**Verdict on C:** synthesis re-rank/refine layered on top of *any* near-truth seed source (current RANSAC, a wider RANSAC, hand-clicked anchors, or an ECC-based seed) would rescue Bundle C. Pure cold synthesis would not.
+
+### Architectural verdict: **Proposal B** (RANSAC seed + synthesis re-rank), with ECC quality as a prerequisite
+
+Three independent data points, all from real bundles:
+
+- **A:** synthesis scores truth as the dominant local peak (J=19, 21/38 refs); cold grid misses by 542 px. → Re-rank wins; cold doesn't.
+- **B:** ECC alignment failed → deviation map degraded → J(truth)=−2.76. Synthesis CAN'T fix what RANSAC also can't fix here. → Out of solver scope; needs ECC quality gate.
+- **C:** production rejected (insufficient inliers) but J(truth)=14 with 13/38 refs; cold grid misses by 290 px. → Re-rank rescues this rejection; cold doesn't.
+
+The criterion table at the top of this spec said Proposal B was the verdict when "E1 high AND E4 truth ≫ all RANSAC candidates AND E2 + E3 sharp at truth, but E5 misses (no near-truth in top-8)". That's exactly the A and C signature. B is below the bar for either proposal — but the failure is upstream of where either solver intervenes.
+
+What this means for an implementation plan:
+
+1. **Keep RANSAC as the cheap seed generator.** It's not bad at producing near-truth candidates when the deviation is clean; A's production solve is proof. Synthesis isn't going to replace it cold.
+2. **Replace the post-RANSAC inlier-count gate with a synthesis-J re-rank.** RANSAC nominates K candidates → score each via `J(T_k)` → pick top, LM-refine, accept/reject by `J ≥ J_min` and `refs_above_0.5 ≥ N_min`. This change alone would have rejected Bundle B's wrong-fit (J=0.39, 2 refs vs the A baseline of J=19, 21 refs) and would have accepted Bundle C (synthesis's J=14, 13 refs vs no current acceptance path at all).
+3. **Add an ECC-quality gate upstream** so degraded captures don't reach any solver. Bundle B was correctly *captured* but poorly *aligned*; production accepted a wrong-fit largely because the gate floor is inlier-count, not deviation-map quality. (See follow-up §1.)
+
+Cold synthesis (Proposal A) is not warranted by this evidence. The spec's E5 design criterion ("at least one of the top-8 grid maxima within 5 px of truth after a local LM refine") fails on every bundle, including the positive control. The fix isn't to widen the cold-grid scale span — that's already MapRect-bracketed and the result is unchanged — it's to seed it.
+
+### Follow-ups (out of scope for this PR)
+
+1. **Acceptance-gate monotonicity check (Mithril-engine-side).** Bundle A was a clean accept (0.79 px residual) at 03:11:05; Bundle B's wrong-fit was accepted at 03:11:30, *replacing* Bundle A's good calibration in `UserRefinements.json`. The acceptance gate should reject a new fit when its J (or its residual) is meaningfully worse than the currently-stored calibration's J for the same area. This is a small surgical fix in `AutoCalibrationEngine`'s accept path — file as a separate issue after this PR lands.
+
+2. **Bundle MapRect height clamp.** Bundle B's `04-maprect.json` records `height=999` but the engine clamps to 986 to fit the 1047-tall screenshot, so the recorded MapRect is inconsistent with the 1006×986 deviation/aligned files. File as a small data-quality bug; the fix is to record the clamped height.
+
+3. **Investigate rejected-908 (Bundle C) NPC NCC starvation.** The pre-flight investigation found 0/17 NPCs detected because the more-zoomed-out 688×683 view (vs Bundle A's 905×898) put NPC icons below the 0.90 same-type NCC threshold. That detection-side issue is real and would benefit from either (i) a zoom-aware NCC threshold, (ii) a smaller NPC template that survives the resize, or (iii) the synthesis re-rank above — which makes the NPC-NCC starvation moot because synthesis aggregates *weak* field correlations rather than requiring a per-template threshold. The synthesis re-rank in follow-up #2 (above) is the simplest dominant fix; the detection-side tweaks become optional.
+
+4. **Cold-grid spacing-vs-peak-width.** Bundle A's E5 misses by 542 px not because the peak isn't there but because at 16 px grid stride no sample lands within 5 px of truth, and the LM refine basin is narrower than the half-stride. If we ever wanted to revisit Proposal A, the cold grid would need either (i) a finer stride (proportional to template size, not equal to it) or (ii) a more aggressive multi-restart refine that explores beyond the nearest local max. Not worth it now given the seed-and-rerank path is cleaner.
