@@ -63,7 +63,8 @@ Once `TelemetrySettings.EnableOtlpExport` is enabled (Settings → Diagnostics �
 | `arda_dispatch` | [`DispatchTable.Dispatch`](../src/Arda/Arda.Dispatch/DispatchTable.cs) (L2) | Per dispatched line; gated on `Activity.Current` so zero-cost when no recording session |
 | `arda_compose` | [`DomainEventBus.Publish`](../src/Arda/Arda.Dispatch/DomainEventBus.cs) (L4 and below) | One span per subscriber-callback per published event; gated on `ActivitySource.HasListeners()` |
 | `overlay_project` | [`OverlayWindowService.OnSurfaceRender`](../src/Mithril.Overlay/Internal/OverlayWindowService.cs) (#835) | One span per per-tick projection; tag `area`, `marker_count`. Scaffold-only — fires only after a migration PR shows the overlay. |
-| `meter_counter` | All `Meter`-counter producers (Arda lines/verb-unmatched/grammar-break, reference fetch_outcome, domain-event-published, overlay projection.latency_ms + frame.markers) | Sums per (instrument, tag-set) flushed once per second |
+| `calibration_synthesis_rerank` | Map auto-calibration Detection layer (synthesis-J re-rank) via [`MapCalibrationDiagnostics`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) | One span per solve carrying the synthesis-J re-rank outcome. Tag list TBD per Task 16 of the synthesis-rerank plan. Scaffold-only — producer wiring lands in Task 16. |
+| `meter_counter` | All `Meter`-counter producers (Arda lines/verb-unmatched/grammar-break, reference fetch_outcome, domain-event-published, overlay projection.latency_ms + frame.markers, map-calibration synthesis-J histograms + disagree counter) | Sums per (instrument, tag-set) flushed once per second |
 | `scope` | _ad-hoc_ | Fallback record kind for any `Mithril.*` Activity that doesn't match a dedicated dispatch arm. Reaches via the `scope` arm until a dedicated `overlay_*` dispatch arm lands in `PerfFileExporter`. |
 
 If you read a trace and a kind you expected is missing, check the producer column first.
@@ -287,9 +288,27 @@ Companion `Mithril.Overlay` meter instruments emitted in `meter_counter` records
 
 Scaffold-only — fires only after a Migration step 2+ PR registers Legolas drawers and shows the overlay. A clean scaffold-only build emits zero overlay records.
 
+### `calibration_synthesis_rerank` (synthesis-J scaffold)
+
+Per-solve span emitted from the Map auto-calibration Detection layer (`Mithril.MapCalibration.Detection` ActivitySource) carrying the synthesis-J re-rank outcome for a single solve. The catalog lives in [`Mithril.MapCalibration.Diagnostics.MapCalibrationDiagnostics`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) — *local* to `Mithril.MapCalibration` rather than the Shared catalog because `Mithril.MapCalibration.csproj` deliberately doesn't reference `Mithril.Shared` (it must stay consumable by Shared peers without depending up the layering). This mirrors Arda's pattern with [`ArdaActivitySources`](../src/Arda/Arda.Abstractions/Diagnostics/ArdaActivitySources.cs) / [`ArdaMeters`](../src/Arda/Arda.Abstractions/Diagnostics/ArdaMeters.cs). Pointer comments in `MithrilActivitySources` + `MithrilMeters` document the split so future contributors don't reflexively add a duplicate `MapCalibration` static and create a vocabulary fork.
+
+The parent `calibration.solve` span lives on the Capture-layer source [`MithrilActivitySources.MapCalibration`](../src/Mithril.Shared/Diagnostics/Telemetry/MithrilActivitySources.cs); the Detection-layer `calibration.synthesis_rerank` child nests under it when both sources are listened-to.
+
+| Property | Meaning |
+|---|---|
+| _Tag list TBD per Task 16 of the synthesis-rerank plan._ | Producer wiring lands in Task 16; this section will be filled in then. Surfaces under the fallback `scope` arm of `PerfFileExporter` until a dedicated dispatch arm lands. |
+
+Companion `Mithril.MapCalibration.Detection` meter instruments emitted in `meter_counter` records (below):
+
+- `mithril.map_calibration.synthesis.j` — histogram (`double`). Winning candidate's `J(T_k)`. Tag: `verdict` ∈ {`accept`, `reject`} (per synthesis-J).
+- `mithril.map_calibration.synthesis.refs_above_threshold` — histogram (`long`). Count of refs whose sampled `L_t(T·r) ≥ 0.5` for the winning candidate. Tag: `verdict`.
+- `mithril.map_calibration.synthesis.disagree` — counter (`long`). Synthesis-J disagreed with the legacy inlier-count gate. Tag: `change` ∈ {`accept_to_reject`, `reject_to_accept`}.
+
+Scaffold-only — fires only after Task 16 wires the producer. A clean scaffold-only build emits zero calibration-synthesis records.
+
 ### `meter_counter`
 
-Aggregated `System.Diagnostics.Metrics.Meter` counter sum, flushed once per second per (instrument, tag-set). Covers PR B's counters: Arda lines/verb-unmatched/grammar-break/verb-unhandled/domain-event-published, reference fetch-outcome, Mithril.Overlay projection latency + frame markers (#835), and any future counters added via the `Mithril.*` Meter prefix.
+Aggregated `System.Diagnostics.Metrics.Meter` counter sum, flushed once per second per (instrument, tag-set). Covers PR B's counters: Arda lines/verb-unmatched/grammar-break/verb-unhandled/domain-event-published, reference fetch-outcome, Mithril.Overlay projection latency + frame markers (#835), Mithril.MapCalibration synthesis-J histograms + disagree counter (synthesis-rerank plan Task 10), and any future counters added via the `Mithril.*` Meter prefix.
 
 | Property | Meaning |
 |---|---|

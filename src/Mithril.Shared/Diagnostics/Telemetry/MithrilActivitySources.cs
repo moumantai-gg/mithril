@@ -39,6 +39,12 @@ public static class MithrilActivitySources
     // because Arda projects can't take a dependency on Mithril.Shared. Both catalogs
     // share the "Mithril." prefix below so listeners receive both uniformly.
 
+    // MapCalibration Detection-layer sources live in Mithril.MapCalibration.
+    // Diagnostics.MapCalibrationDiagnostics because Mithril.MapCalibration.csproj
+    // deliberately doesn't take a dependency on Mithril.Shared (it must be
+    // consumable by Mithril.Shared peers without depending up the layering).
+    // The "Mithril." prefix below picks both catalogs up uniformly.
+
     /// <summary>Prefix all sources share — listeners filter on this so they receive every Mithril emit (including Arda's per-layer sources).</summary>
     public const string Prefix = "Mithril.";
 }
