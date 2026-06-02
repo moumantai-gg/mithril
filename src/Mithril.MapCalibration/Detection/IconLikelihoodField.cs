@@ -1,8 +1,6 @@
-using Mithril.MapCalibration.Detection;
+namespace Mithril.MapCalibration.Detection;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
-
-internal static class IconLikelihoodField
+public static class IconLikelihoodField
 {
     /// <summary>
     /// Builds the per-type likelihood field L_t for <paramref name="template"/> by:

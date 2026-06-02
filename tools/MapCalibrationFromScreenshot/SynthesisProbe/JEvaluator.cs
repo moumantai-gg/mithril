@@ -1,4 +1,5 @@
 using Mithril.MapCalibration;
+using Mithril.MapCalibration.Detection;
 
 namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 
