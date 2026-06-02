@@ -10,7 +10,7 @@ Claude Design's V1 passed the gate clean, owner-ratified 2026-05-17.
 > the rulings narrative; this doc is the per-region grammar contract Phase 4
 > (the #435 build) encodes against, so the spec isn't bundle-trapped. It is the
 > source of truth for the Power/Profile detail panes; do not re-derive grammar
-> calls — cite [`silmarillion-visual-grammar.md`](../silmarillion-visual-grammar.md)
+> calls — cite [`silmarillion-visual-grammar.md`](../../silmarillion-visual-grammar.md)
 > (G3 + G-d, binding) and this doc.
 
 ## Implementation amendment — Recipes leg deferred to #214 (2026-05-18)

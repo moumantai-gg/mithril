@@ -29,9 +29,9 @@
    against it or re-decide any grammar value.** Grammar is done.
 4. The just-merged grammar baseline so you know the *rendered* shape you must
    not disturb: PR #427 / #424 (the migrated `src/Mithril.Shared.Wpf/ItemDetailView.xaml`
-   + the additive carriers in `ItemDetailViewModel.cs`) and its dispatch
-   `docs/agent-plans/2026-05-17-silmarillion-424-itemdetail-grammar.md` (the
-   structural sibling of this effort — same blast-radius discipline).
+   + the additive carriers in `ItemDetailViewModel.cs`) — the structural sibling
+   of this effort, same blast-radius discipline. (The original dispatch doc was
+   scratch and never landed in the repo; see the PR description for the design.)
 5. The projection code (where the duplication is *produced*, and where the fix
    belongs — **not** XAML):
    - `src/Silmarillion.Module/ViewModels/ItemsTabViewModel.cs` —
@@ -175,8 +175,7 @@ decision **well-posed and cheap to ratify**, not to pick it unilaterally:
 - Coverage-axis owner doc: `docs/silmarillion-field-coverage.md` (write the
   ratified policy here).
 - Structural sibling (the just-merged grammar effort, same blast-radius
-  discipline): `docs/agent-plans/2026-05-17-silmarillion-424-itemdetail-grammar.md`,
-  PR #427.
+  discipline): #424 / PR #427 (dispatch doc was scratch — not in repo).
 - Projection: `Silmarillion.Module/ViewModels/ItemsTabViewModel.cs`,
   `Mithril.Shared.Wpf/ItemDetail{ViewModel,Context}.cs`,
   `Mithril.Shared/Reference/ItemSource.cs`,

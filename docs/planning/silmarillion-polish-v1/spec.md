@@ -8,7 +8,7 @@ Three #207 follow-up polish issues for the Silmarillion reference browser, bundl
 
 - **#229** — add `mithril://silmarillion/item/<name>` and `mithril://silmarillion/recipe/<name>` module-scoped routes alongside the existing `mithril://item/` / `mithril://recipe/` schemes.
 - **#231** — replace the master-detail card layout (~80px per row, ~17 visible) with a compact two-line row layout (~36px per row, ~40+ visible).
-- **#234** — move the cross-link sections (Sources / Produced by / Used in) from the bottom of [ItemDetailView.xaml](../../src/Mithril.Shared.Wpf/ItemDetailView.xaml) to immediately after Description, so sparse items don't force the user's eye past a dead zone of empty Effects-region to reach the recipes that produce/consume them.
+- **#234** — move the cross-link sections (Sources / Produced by / Used in) from the bottom of [ItemDetailView.xaml](../../../src/Mithril.Shared.Wpf/ItemDetailView.xaml) to immediately after Description, so sparse items don't force the user's eye past a dead zone of empty Effects-region to reach the recipes that produce/consume them.
 - **#239** — convert `IReferenceNavigator`'s three hardcoded `EntityKind` dispatches (the `V1TabbedKinds` HashSet and two switches in `SilmarillionViewModel`) into a `IReferenceKindTarget` registry. Forcing function: the next Silmarillion PR adds the **NPCs tab** (third kind), and per the upcoming-tabs research note, seven more Bucket-B tabs follow it. Refactoring now means each subsequent tab PR is purely additive (register one more target).
 
 The DeepLinkRouter refactor: `Handle`'s big `switch (action)` has grown to six structurally-identical cases (validate payload regex → null-check optional import target → call one method on it → log a diagnostic), and #229 is the first multi-segment route that doesn't fit the existing shape. Adding case #7 inline would mean a nested switch; extracting to a handler registry is the natural home for the new route. Bundled here rather than deferred because the registry is *what makes #229 clean*.
@@ -25,7 +25,7 @@ The navigator refactor (#239) is the parallel pattern, motivated by Bucket-B rat
 
 **Card-shaped rows become row-shaped rows.** The card template chosen for #207 was modelled after Celebrimbor's RecipeCard, but Celebrimbor uses cards as inspect-popups; Silmarillion uses them for browsable catalogue navigation, which needs density. Two-line compact (24px icon + name on line 1, dim subtitle on line 2) was chosen over single-line+tail because the subtitle (equip slot / skill+level) is genuinely useful at scan time and the second line costs ~8px versus the four-line card it replaces.
 
-**ItemDetailView's reading order is restructured by dropping the `Height="*"` slack-absorber.** The outer `Grid` with 23 explicit `RowDefinition`s becomes a `DockPanel` with the internal-name footer `Dock="Bottom"` and a `StackPanel` body. With the footer pinned by `DockPanel`, no body row needs to absorb slack, so the cross-link sections move from rows 19–21 to immediately after Description — the structural change *enables* the reorder. This mirrors the pattern already used by [RecipeDetailView.xaml](../../src/Silmarillion.Module/Views/RecipeDetailView.xaml), making the two detail views structurally consistent.
+**ItemDetailView's reading order is restructured by dropping the `Height="*"` slack-absorber.** The outer `Grid` with 23 explicit `RowDefinition`s becomes a `DockPanel` with the internal-name footer `Dock="Bottom"` and a `StackPanel` body. With the footer pinned by `DockPanel`, no body row needs to absorb slack, so the cross-link sections move from rows 19–21 to immediately after Description — the structural change *enables* the reorder. This mirrors the pattern already used by [RecipeDetailView.xaml](../../../src/Silmarillion.Module/Views/RecipeDetailView.xaml), making the two detail views structurally consistent.
 
 **The navigator becomes a kind-target registry.** Each tab module registers an `IReferenceKindTarget` that knows its `EntityKind`, how to select an entity by internal name, and how to open the current detail in a popup window. `SilmarillionReferenceNavigator` takes `IEnumerable<IReferenceKindTarget>` and exposes `CanOpen` as a registry membership check; `SilmarillionViewModel`'s `OnNavigated` and `OpenInWindow` look up the target for the current kind and delegate. The interface lives in `Mithril.Shared` so future tabs can register from their own modules if ownership ever splits — every v1+v2 implementer is in Silmarillion today. Tab-index ordering stays simple: each target carries the index it expects.
 
@@ -67,11 +67,11 @@ New files in each owning module project, alongside the existing import-target im
 - `Legolas.Module/Sharing/LegolasDeepLinkHandler.cs` — `Action = "legolas"`. Sits next to `LegolasShareImportTarget.cs`.
 - `Elrond.Module/Services/ElrondDeepLinkHandler.cs` — `Action = "elrond"`. Sits next to `ElrondSkillImportTarget.cs`.
 
-Each module's `Register(IServiceCollection)` adds `services.AddSingleton<IDeepLinkHandler, FooDeepLinkHandler>()`. Item and Recipe handlers register from shell DI ([ServiceCollectionExtensions.cs](../../src/Mithril.Shared/DependencyInjection/ServiceCollectionExtensions.cs)) since they live in the shared layer.
+Each module's `Register(IServiceCollection)` adds `services.AddSingleton<IDeepLinkHandler, FooDeepLinkHandler>()`. Item and Recipe handlers register from shell DI ([ServiceCollectionExtensions.cs](../../../src/Mithril.Shared/DependencyInjection/ServiceCollectionExtensions.cs)) since they live in the shared layer.
 
 ### 3. `DeepLinkRouter` — rewrite as dispatcher
 
-[DeepLinkRouter.cs](../../src/Mithril.Shared.Wpf/Modules/DeepLinkRouter.cs):
+[DeepLinkRouter.cs](../../../src/Mithril.Shared.Wpf/Modules/DeepLinkRouter.cs):
 
 - Constructor takes `IEnumerable<IDeepLinkHandler> handlers` and `IDiagnosticsSink? diag`. Builds `Dictionary<string, IDeepLinkHandler>` keyed by `Action.ToLowerInvariant()`. Duplicate `Action` registrations throw at construction time (DI ordering bug — fail loud).
 - `Handle(string uri)` becomes: validate well-formed URI, check scheme is `mithril`, look up handler by host, call `handler.TryHandle(parsed.AbsolutePath.TrimStart('/'), _diag)`. Unknown host → diag info + return false (existing behavior).
@@ -85,11 +85,11 @@ New file `src/Silmarillion.Module/Navigation/SilmarillionDeepLinkHandler.cs`:
 - `TryHandle` splits `subPath` on first `/` → `(kind, name)`. Validates `name` against `EntityPayloadPattern`. Unknown `kind` → diag info + return false. Dispatch:
   - `kind == "item"` → `_navigator.Open(EntityRef.Item(name))`
   - `kind == "recipe"` → `_navigator.Open(EntityRef.Recipe(name))`
-- Register from [SilmarillionModule.Register](../../src/Silmarillion.Module/SilmarillionModule.cs).
+- Register from [SilmarillionModule.Register](../../../src/Silmarillion.Module/SilmarillionModule.cs).
 
 ### 5. Compact row templates
 
-[src/Silmarillion.Module/Views/Resources.xaml](../../src/Silmarillion.Module/Views/Resources.xaml) — rewrite both DataTemplates. Border removed; row is a `DockPanel` with `IconImage` on the left and a `StackPanel` body.
+[src/Silmarillion.Module/Views/Resources.xaml](../../../src/Silmarillion.Module/Views/Resources.xaml) — rewrite both DataTemplates. Border removed; row is a `DockPanel` with `IconImage` on the left and a `StackPanel` body.
 
 ```xml
 <DataTemplate x:Key="ItemCardTemplate">
@@ -118,7 +118,7 @@ Key keeps `*CardTemplate` despite no longer being cards — renaming would rippl
 
 ### 6. ItemDetailView restructure
 
-[ItemDetailView.xaml](../../src/Mithril.Shared.Wpf/ItemDetailView.xaml) — rewrite the top-level structure:
+[ItemDetailView.xaml](../../../src/Mithril.Shared.Wpf/ItemDetailView.xaml) — rewrite the top-level structure:
 
 ```xml
 <Border Padding="14,12">
@@ -147,7 +147,7 @@ Key keeps `*CardTemplate` despite no longer being cards — renaming would rippl
 </Border>
 ```
 
-All sections become `StackPanel` children; their `Visibility` bindings already hide them when empty. The host `ContentControl` keeps its `MinHeight="{Binding ViewportHeight, ElementName=DetailScroller}"` binding (set in [ItemsTabView.xaml:78-85](../../src/Silmarillion.Module/Views/ItemsTabView.xaml#L78-L85)), so the DockPanel stretches to viewport and the footer pins to the bottom of the viewport for short content.
+All sections become `StackPanel` children; their `Visibility` bindings already hide them when empty. The host `ContentControl` keeps its `MinHeight="{Binding ViewportHeight, ElementName=DetailScroller}"` binding (set in [ItemsTabView.xaml:78-85](../../../src/Silmarillion.Module/Views/ItemsTabView.xaml#L78-L85)), so the DockPanel stretches to viewport and the footer pins to the bottom of the viewport for short content.
 
 Cross-link section internal ordering preserved (Sources → Produced by → Used in), matching the issue's recommended layout.
 
@@ -181,14 +181,14 @@ Interface lives in `Mithril.Shared` (not `Mithril.Shared.Wpf`) because `EntityKi
 
 New files in `src/Silmarillion.Module/Navigation/`:
 
-- `ItemsKindTarget.cs` — `Kind = EntityKind.Item`, `TabIndex = 0`. Constructor takes `ItemsTabViewModel` and `IReferenceDataService`. `TrySelectByInternalName` does `_refData.ItemsByInternalName.TryGetValue(...)` and sets `_vm.SelectedItem`. `TryOpenInWindow` reads `_vm.DetailViewModel` and instantiates [ItemDetailWindow](../../src/Mithril.Shared.Wpf/ItemDetailWindow.xaml).
-- `RecipesKindTarget.cs` — `Kind = EntityKind.Recipe`, `TabIndex = 1`. Same shape; uses `_refData.RecipesByInternalName` and `_vm.SelectedRecipe` / [RecipeDetailWindow](../../src/Silmarillion.Module/Views/RecipeDetailWindow.xaml).
+- `ItemsKindTarget.cs` — `Kind = EntityKind.Item`, `TabIndex = 0`. Constructor takes `ItemsTabViewModel` and `IReferenceDataService`. `TrySelectByInternalName` does `_refData.ItemsByInternalName.TryGetValue(...)` and sets `_vm.SelectedItem`. `TryOpenInWindow` reads `_vm.DetailViewModel` and instantiates [ItemDetailWindow](../../../src/Mithril.Shared.Wpf/ItemDetailWindow.xaml).
+- `RecipesKindTarget.cs` — `Kind = EntityKind.Recipe`, `TabIndex = 1`. Same shape; uses `_refData.RecipesByInternalName` and `_vm.SelectedRecipe` / [RecipeDetailWindow](../../../src/Silmarillion.Module/Views/RecipeDetailWindow.xaml).
 
-Both registered in [SilmarillionModule.Register](../../src/Silmarillion.Module/SilmarillionModule.cs) via `services.AddSingleton<IReferenceKindTarget, ItemsKindTarget>()` / `RecipesKindTarget`.
+Both registered in [SilmarillionModule.Register](../../../src/Silmarillion.Module/SilmarillionModule.cs) via `services.AddSingleton<IReferenceKindTarget, ItemsKindTarget>()` / `RecipesKindTarget`.
 
 ### 9. `SilmarillionReferenceNavigator` — registry-driven `CanOpen` (issue #239)
 
-[SilmarillionReferenceNavigator.cs](../../src/Silmarillion.Module/Navigation/SilmarillionReferenceNavigator.cs):
+[SilmarillionReferenceNavigator.cs](../../../src/Silmarillion.Module/Navigation/SilmarillionReferenceNavigator.cs):
 
 - Constructor takes `IEnumerable<IReferenceKindTarget> targets`. Build `Dictionary<EntityKind, IReferenceKindTarget>`; duplicate `Kind` registrations throw at construction time (same fail-loud as DeepLinkRouter).
 - `V1TabbedKinds` field deleted.
@@ -197,7 +197,7 @@ Both registered in [SilmarillionModule.Register](../../src/Silmarillion.Module/S
 
 ### 10. `SilmarillionViewModel` — registry lookups replace switches (issue #239)
 
-[SilmarillionViewModel.cs](../../src/Silmarillion.Module/ViewModels/SilmarillionViewModel.cs):
+[SilmarillionViewModel.cs](../../../src/Silmarillion.Module/ViewModels/SilmarillionViewModel.cs):
 
 - Constructor takes `IEnumerable<IReferenceKindTarget> targets` and stores the same `Dictionary<EntityKind, IReferenceKindTarget>` (or reuses the navigator's via a small accessor — either way is fine; the dictionary is small).
 - `OnNavigated`: replace the `switch (e.Current.Kind) { case Item: ...; case Recipe: ... }` block with `if (_targets.TryGetValue(e.Current.Kind, out var target)) { SelectedTabIndex = target.TabIndex; target.TrySelectByInternalName(e.Current.InternalName); }`. Unknown kind silently no-ops (matches today's degradation).
@@ -210,15 +210,15 @@ Both registered in [SilmarillionModule.Register](../../src/Silmarillion.Module/S
 
 - Document `mithril://silmarillion/item/<internalName>` and `mithril://silmarillion/recipe/<internalName>` as the **preferred** forms.
 - Mark `mithril://item/<internalName>` / `mithril://recipe/<internalName>` as **legacy but still supported**.
-- Update the example in [AboutSettingsView.xaml:146](../../src/Mithril.Shell/Views/AboutSettingsView.xaml#L146) to use the module-scoped form.
+- Update the example in [AboutSettingsView.xaml:146](../../../src/Mithril.Shell/Views/AboutSettingsView.xaml#L146) to use the module-scoped form.
 
-Wiki commit goes in the [project-gorgon.wiki](../../../project-gorgon.wiki) checkout (note: that repo's default branch is `master`, not `main` — distinct from this repo).
+Wiki commit goes in the [project-gorgon.wiki](../../../../project-gorgon.wiki) checkout (note: that repo's default branch is `master`, not `main` — distinct from this repo).
 
 ## Testing
 
 ### Router refactor (commit 1)
 
-[tests/Mithril.Shared.Tests/Modules/DeepLinkRouterTests.cs](../../tests/Mithril.Shared.Tests/Modules/DeepLinkRouterTests.cs) — existing test cases stay; refactor the test setup to register handlers via DI rather than passing import targets to the router constructor. Per-handler unit tests can live alongside each handler later — not blocking, since coverage is preserved end-to-end through the router tests.
+[tests/Mithril.Shared.Tests/Modules/DeepLinkRouterTests.cs](../../../tests/Mithril.Shared.Tests/Modules/DeepLinkRouterTests.cs) — existing test cases stay; refactor the test setup to register handlers via DI rather than passing import targets to the router constructor. Per-handler unit tests can live alongside each handler later — not blocking, since coverage is preserved end-to-end through the router tests.
 
 ### Silmarillion handler (commit 2)
 
@@ -249,11 +249,11 @@ Manual verification only — XAML restructure with no behavioral change. Confirm
 
 - Sparse item (e.g. a lorebook or candle-wick material): cross-link sections (Sources / Produced by / Used in) appear immediately after description; internal-name footer pins to the bottom of the right pane.
 - Effect-heavy item (e.g. a weapon or armor piece): all sections render in the new order; scrolling works; no visual regressions.
-- Popup [ItemDetailWindow.xaml](../../src/Mithril.Shared.Wpf/ItemDetailWindow.xaml) (which hosts the same view) still renders correctly. The popup sizes to content so the footer-pin behavior is irrelevant there; verify the new section order looks reasonable.
+- Popup [ItemDetailWindow.xaml](../../../src/Mithril.Shared.Wpf/ItemDetailWindow.xaml) (which hosts the same view) still renders correctly. The popup sizes to content so the footer-pin behavior is irrelevant there; verify the new section order looks reasonable.
 
 ### Navigator kind-target registry (commit 5)
 
-[tests/Silmarillion.Tests/Navigation/SilmarillionReferenceNavigatorTests.cs](../../tests/Silmarillion.Tests/Navigation/SilmarillionReferenceNavigatorTests.cs) — update existing `CanOpen` tests to register fake targets via DI rather than rely on the deleted `V1TabbedKinds` constant. Add:
+[tests/Silmarillion.Tests/Navigation/SilmarillionReferenceNavigatorTests.cs](../../../tests/Silmarillion.Tests/Navigation/SilmarillionReferenceNavigatorTests.cs) — update existing `CanOpen` tests to register fake targets via DI rather than rely on the deleted `V1TabbedKinds` constant. Add:
 
 - `CanOpen_KnownKind_ReturnsTrue` — registered target for Item → `CanOpen(EntityRef.Item(...))` returns true.
 - `CanOpen_UnknownKind_ReturnsFalse` — no target registered for Npc → `CanOpen(EntityRef.Npc(...))` returns false.

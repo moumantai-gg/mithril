@@ -14,7 +14,7 @@
 
 G1 (tiers) → Phase 1 (Recipe pilot) → Phase 2 (nine-view sweep) → G2 → Phase 3
 (designer) → **G3 ✅ CLEARED**. The ratified grammar is on `main` at
-[`docs/silmarillion-visual-grammar.md`](../silmarillion-visual-grammar.md) with
+[`docs/silmarillion-visual-grammar.md`](../../silmarillion-visual-grammar.md) with
 **four binding Phase-4 carry-forwards**. This dispatch produces the primitives;
 **Phase 5** (call-site migration, one detail view per PR, each gated by G4
 maintainer review) and **Phase 6** (conformance guardrail) are separate
@@ -22,10 +22,10 @@ dispatches. Coverage axis (#407, #408) is out of scope.
 
 ## Read first (authoritative, in order)
 
-1. [`docs/silmarillion-visual-grammar.md`](../silmarillion-visual-grammar.md) —
+1. [`docs/silmarillion-visual-grammar.md`](../../silmarillion-visual-grammar.md) —
    the G3-ratified grammar (Claude Design's verbatim text) **and** its
    "Phase-4 carry-forward" section (4 pins — binding).
-2. [`docs/agent-plans/2026-05-16-silmarillion-404-visual-grammar.md`](2026-05-16-silmarillion-404-visual-grammar.md) — the program plan (Phase 4 = "encode the standard as a shared primitive").
+2. [`spec.md`](spec.md) — the program plan (Phase 4 = "encode the standard as a shared primitive").
 3. Issue #404, the **"G1 — CLEARED"**, **"G2 — CLEARED"** (`4468464536`), and
    **"G3 — CLEARED"** (`4468731461`) comments — principles P1/P2, the
    availability corollary, the ratified findings.
@@ -116,8 +116,8 @@ resource key in the PR description.
 
 - Primitives + legacy: `src/Mithril.Shared.Wpf/` (`EntityChip`,
   `ItemSourceChip`, `DetailExportHost`, `Resources.xaml`).
-- Ratified target: [`docs/silmarillion-visual-grammar.md`](../silmarillion-visual-grammar.md) (+ its Phase-4 carry-forward).
-- Phase 3 provenance: [`2026-05-17-silmarillion-404-phase3-design.md`](2026-05-17-silmarillion-404-phase3-design.md) (EXECUTED).
+- Ratified target: [`docs/silmarillion-visual-grammar.md`](../../silmarillion-visual-grammar.md) (+ its Phase-4 carry-forward).
+- Phase 3 provenance: [`phase3-design.md`](phase3-design.md) (EXECUTED).
 
 ---
 

@@ -1,8 +1,8 @@
 # Silmarillion · Tab Cookbook
 
-> **Companion doc:** [silmarillion-roadmap.md](silmarillion-roadmap.md) — *why* each tab exists. This doc covers *how* to build one.
+> **Companion doc:** [roadmaps/silmarillion.md](roadmaps/silmarillion.md) — *why* each tab exists. This doc covers *how* to build one.
 
-How to add a new master-detail tab to Silmarillion, after the Items + Recipes v1 shipped (PR #236), the navigator was refactored to a kind-target registry (#239), and the tab-strip moved to MVVM `ItemsSource` binding via [`ModuleTab`](../src/Mithril.Shared.Wpf/ModuleTab.cs) (#272 / #233). Every Bucket B tab follows the same scaffold; this doc is the scaffold. Per-tab handoffs in [`docs/agent-plans/`](agent-plans/) own the entity-specific decisions.
+How to add a new master-detail tab to Silmarillion, after the Items + Recipes v1 shipped (PR #236), the navigator was refactored to a kind-target registry (#239), and the tab-strip moved to MVVM `ItemsSource` binding via [`ModuleTab`](../src/Mithril.Shared.Wpf/ModuleTab.cs) (#272 / #233). Every Bucket B tab follows the same scaffold; this doc is the scaffold. Per-tab handoffs in [`docs/planning/`](planning/) (e.g. `silmarillion-244-effects-tab/`, `silmarillion-249-storagevaults-tab/`) own the entity-specific decisions.
 
 ## What's in scope vs. what your handoff still owns
 
@@ -266,5 +266,5 @@ Every Bucket B PR should pass these in order:
 ## When the cookbook doesn't apply
 
 - **Single-pane tabs** (no master-detail). Not in scope for any Bucket B entry; lorebooks are still master-detail with a long-form body in the detail pane. Revisit this doc if a future tab needs a different shape.
-- **Calculator-shaped surfaces** (e.g. a hypothetical Powers / TSys tab). Per [silmarillion-roadmap.md](silmarillion-roadmap.md) these are out of scope for Silmarillion; their natural home is Celebrimbor.
+- **Calculator-shaped surfaces** (e.g. a hypothetical Powers / TSys tab). Per [roadmaps/silmarillion.md](roadmaps/silmarillion.md) these are out of scope for Silmarillion; their natural home is Celebrimbor.
 - **Cross-module dependencies** (e.g. NPCs cross-links from Arwen's favor service). Pure read access to other modules' DI-exposed services is fine; if a new tab needs to *push* data back, that's a design question outside the cookbook — file an issue first.

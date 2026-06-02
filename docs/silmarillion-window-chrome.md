@@ -104,7 +104,7 @@ default.
 ## Pointers
 
 - `docs/silmarillion-visual-grammar.md` — G-b, § "What this doc does NOT do".
-- `docs/agent-plans/2026-05-17-silmarillion-404-phase5-fanout.md` — scope list
+- `docs/planning/silmarillion-404-visual-grammar/phase5-fanout.md` — scope list
   proving chrome was never in remit.
 - `src/Mithril.Shared.Wpf/Resources.xaml` — the four `MithrilChromeWindow*`
   keys (the single swap point for options B/C).

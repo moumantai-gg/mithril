@@ -11,7 +11,7 @@ namespace Mithril.Shared.Reference;
 /// reverse-lookup index carries the same provenance-retaining structure. The popup
 /// renders membership <em>and</em> provenance from this index directly — there is no
 /// second (query-string) derivation that could silently diverge from the materialized
-/// set (see <c>docs/agent-plans/silmarillion-1n-provenance-popups.md</c>).
+/// set (see the #318 invariant).
 /// <para>
 /// <b>This relationship is single-reason.</b> A recipe is "used as" a slot-match for a
 /// keyword tag iff it has a <see cref="RecipeKeywordIngredient"/> slot whose

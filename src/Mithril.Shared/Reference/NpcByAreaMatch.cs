@@ -8,7 +8,7 @@ namespace Mithril.Shared.Reference;
 /// reverse-lookup index carries the same provenance-retaining structure. The popup
 /// renders membership <em>and</em> provenance from this index directly — there is no
 /// second (query-string) derivation that could silently diverge (the #318 invariant; see
-/// <c>docs/agent-plans/silmarillion-1n-provenance-popups.md</c>).
+/// the #318 invariant).
 /// <para>
 /// <b>This relationship is single-reason.</b> An NPC is "in this area" iff its
 /// <see cref="Mithril.Reference.Models.Npcs.Npc.AreaName"/> equals the area key — the

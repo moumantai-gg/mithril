@@ -3,8 +3,8 @@
 **Tracked in:** #244 — `module:silmarillion` / `area:ui` / `type:feature`.
 
 **Companion docs:**
-- [silmarillion-tab-cookbook.md](../silmarillion-tab-cookbook.md) — the scaffolding pattern. Read this first; this handoff only covers the *Effects-specific* decisions.
-- [silmarillion-roadmap.md](../silmarillion-roadmap.md) — Bucket B, sequenced after Abilities (which shipped via #293). The Effects tab is the natural rendering destination for the conditional-rule sub-tables plumbed by #288/#296 (`AbilityDynamicDots`, `AbilityDynamicSpecialValues`).
+- [silmarillion-tab-cookbook.md](../../silmarillion-tab-cookbook.md) — the scaffolding pattern. Read this first; this handoff only covers the *Effects-specific* decisions.
+- [roadmaps/silmarillion.md](../../roadmaps/silmarillion.md) — Bucket B, sequenced after Abilities (which shipped via #293). The Effects tab is the natural rendering destination for the conditional-rule sub-tables plumbed by #288/#296 (`AbilityDynamicDots`, `AbilityDynamicSpecialValues`).
 
 ## ⚠️ Critical — the issue body has four wrong assumptions
 
@@ -13,9 +13,9 @@ The original #244 issue body was drafted pre-data-shape-verification and pre-#23
 ### Wrong assumption 1 — "AbilitiesApplyingEffect" reverse lookup
 
 Abilities **do not reference effects by InternalName**. They reference them by *keyword*:
-- [`Ability.EffectKeywordReqs`](../../src/Mithril.Reference/Models/Abilities/Ability.cs#L98) — `IReadOnlyList<string>?`. "Required keyword to be present on an active effect."
-- [`Ability.EffectKeywordsIndicatingEnabled`](../../src/Mithril.Reference/Models/Abilities/Ability.cs#L73) — same shape.
-- [`Ability.TargetEffectKeywordReq`](../../src/Mithril.Reference/Models/Abilities/Ability.cs#L92) — singleton string variant.
+- [`Ability.EffectKeywordReqs`](../../../src/Mithril.Reference/Models/Abilities/Ability.cs#L98) — `IReadOnlyList<string>?`. "Required keyword to be present on an active effect."
+- [`Ability.EffectKeywordsIndicatingEnabled`](../../../src/Mithril.Reference/Models/Abilities/Ability.cs#L73) — same shape.
+- [`Ability.TargetEffectKeywordReq`](../../../src/Mithril.Reference/Models/Abilities/Ability.cs#L92) — singleton string variant.
 
 Plus three POCOs with effect-keyword predicates already known via `AbilityDetailViewModel` chip-stub work:
 - `EffectKeywordUnsetAbilityRequirement.EffectKeyword` (an `AbilitySpecialCasterRequirement` subclass)
@@ -26,21 +26,21 @@ The reverse lookup is therefore **keyword-set intersection**, not InternalName f
 
 ### Wrong assumption 2 — "ItemsApplyingEffect" reverse lookup
 
-Items do not reference effects at all. [`Item.EffectDescs`](../../src/Mithril.Reference/Models/Items/Item.cs#L50) is a list of **procedural placeholder strings** (e.g. `"{MAX_ARMOR}{49}"`) resolved at render time via `attributes.json`. The strings are *not* foreign keys to `effects.json`. There is no clean data-shape join from effect to item.
+Items do not reference effects at all. [`Item.EffectDescs`](../../../src/Mithril.Reference/Models/Items/Item.cs#L50) is a list of **procedural placeholder strings** (e.g. `"{MAX_ARMOR}{49}"`) resolved at render time via `attributes.json`. The strings are *not* foreign keys to `effects.json`. There is no clean data-shape join from effect to item.
 
 **Drop this section from v1.** A possible future direction: parse `EffectDescs` placeholder tokens, cross-reference against the `Attribute` table, and surface "items that boost attributes referenced by this effect's keyword rules" — but that's at least one tab-PR worth of work, several heuristics deep, and belongs in a follow-up issue.
 
 ### Wrong assumption 3 — "reuse the Celebrimbor ResultEffects renderer"
 
-[`ResultEffectsParser`](../../src/Mithril.Shared/Reference/ResultEffectsParser.cs) parses **recipe** outputs (`Recipe.ResultEffects` — method-call-style strings like `"GiveTSysItem(GoblinSword1)"`). It has no overlap with `effects.json` entries; "Effect" in the name refers to recipe-result effects, not the Effect entity. **Do not import it into the Effects tab.**
+[`ResultEffectsParser`](../../../src/Mithril.Shared/Reference/ResultEffectsParser.cs) parses **recipe** outputs (`Recipe.ResultEffects` — method-call-style strings like `"GiveTSysItem(GoblinSword1)"`). It has no overlap with `effects.json` entries; "Effect" in the name refers to recipe-result effects, not the Effect entity. **Do not import it into the Effects tab.**
 
 The natural rendering precedents for Effect detail are:
-- [`AbilityDetailViewModel`](../../src/Silmarillion.Module/ViewModels/AbilityDetailViewModel.cs) for the wide-POCO row pattern.
-- [`QuestDetailProjector`](../../src/Silmarillion.Module/ViewModels/QuestDetailProjector.cs) for chip projections.
+- [`AbilityDetailViewModel`](../../../src/Silmarillion.Module/ViewModels/AbilityDetailViewModel.cs) for the wide-POCO row pattern.
+- [`QuestDetailProjector`](../../../src/Silmarillion.Module/ViewModels/QuestDetailProjector.cs) for chip projections.
 
 ### Wrong assumption 4 — `EntityRef.Effect` is currently misused by call sites that pass a keyword
 
-[`QuestDetailProjector.cs:264`](../../src/Silmarillion.Module/ViewModels/QuestDetailProjector.cs#L264) and [`tests/Mithril.Shared.Tests/Reference/ReferenceDataEntityNameResolverTests.cs:229`](../../tests/Mithril.Shared.Tests/Reference/ReferenceDataEntityNameResolverTests.cs#L229) both construct `EntityRef.Effect(keyword)` — passing a **keyword** (e.g. `"FrostShard"`) as the `InternalName` payload. This was a stub anchor written knowing the Effects tab wasn't yet shipped; the call site even has a comment saying so.
+[`QuestDetailProjector.cs:264`](../../../src/Silmarillion.Module/ViewModels/QuestDetailProjector.cs#L264) and [`tests/Mithril.Shared.Tests/Reference/ReferenceDataEntityNameResolverTests.cs:229`](../../../tests/Mithril.Shared.Tests/Reference/ReferenceDataEntityNameResolverTests.cs#L229) both construct `EntityRef.Effect(keyword)` — passing a **keyword** (e.g. `"FrostShard"`) as the `InternalName` payload. This was a stub anchor written knowing the Effects tab wasn't yet shipped; the call site even has a comment saying so.
 
 But the Effects tab's natural entity-anchor is the **envelope key** (`effect_10003`), not a keyword. `Effect.Keywords` is many-to-many — `"Buff"` alone matches thousands of entries. A keyword cannot select a row; it can only filter the tab.
 
@@ -55,7 +55,7 @@ This means the **existing call site at `QuestDetailProjector.cs:264` migrates to
 
 ## Effect POCO shape — what's available
 
-[`Mithril.Reference.Models.Effects.Effect`](../../src/Mithril.Reference/Models/Effects/Effect.cs):
+[`Mithril.Reference.Models.Effects.Effect`](../../../src/Mithril.Reference/Models/Effects/Effect.cs):
 
 ```csharp
 public sealed class Effect
@@ -88,9 +88,9 @@ public sealed class Effect
 
 ### `InternalName` lift — architectural amendment to the issue body
 
-The Effect POCO ships without an `InternalName` field today. Every other Silmarillion-tabbed kind has one (true field on the POCO, or lifted from the envelope key by the deserializer like [`Item.Id`](../../src/Mithril.Reference/Models/Items/Item.cs#L23)). Leaving Effects out creates structural asymmetry in `EntityRef`, kind targets, and the deep-link grammar.
+The Effect POCO ships without an `InternalName` field today. Every other Silmarillion-tabbed kind has one (true field on the POCO, or lifted from the envelope key by the deserializer like [`Item.Id`](../../../src/Mithril.Reference/Models/Items/Item.cs#L23)). Leaving Effects out creates structural asymmetry in `EntityRef`, kind targets, and the deep-link grammar.
 
-**Add `string? InternalName` to `Effect.cs` and lift the envelope key onto it in `ReferenceDeserializer.ParseEffects`** — mirror the lift in [`ParseItems`](../../src/Mithril.Reference/Serialization/ReferenceDeserializer.cs#L85-L110) but storing the raw envelope key (e.g. `"effect_10003"`) since there's no human-form name to extract:
+**Add `string? InternalName` to `Effect.cs` and lift the envelope key onto it in `ReferenceDeserializer.ParseEffects`** — mirror the lift in [`ParseItems`](../../../src/Mithril.Reference/Serialization/ReferenceDeserializer.cs#L85-L110) but storing the raw envelope key (e.g. `"effect_10003"`) since there's no human-form name to extract:
 
 ```csharp
 foreach (var pair in result)
@@ -158,11 +158,11 @@ The reverse-index rebuild trigger matrix (extend the cookbook table):
 
 Implementation lives in `ReferenceDataService.ParseAndSwapEffects` + a `BuildEffectAbilityCrossLinkIndices` helper called from both `ParseAndSwapEffects` and `ParseAndSwapAbilities`. Mirror the existing `BuildRecipeCrossLinkIndices` / `BuildAbilityCrossLinkIndices` shape.
 
-`effects.json` parser already exists ([`ReferenceDeserializer.ParseEffects`](../../src/Mithril.Reference/Serialization/ReferenceDeserializer.cs#L250-L258)). Wire it into `LoadEffects` / `ParseAndSwapEffects` / `RefreshAsync` switch / `RefreshAllAsync` / `Keys` list / `GetSnapshot` switch — same checklist as #288/#296 followed for the rule files, just with the cross-link index step added.
+`effects.json` parser already exists ([`ReferenceDeserializer.ParseEffects`](../../../src/Mithril.Reference/Serialization/ReferenceDeserializer.cs#L250-L258)). Wire it into `LoadEffects` / `ParseAndSwapEffects` / `RefreshAsync` switch / `RefreshAllAsync` / `Keys` list / `GetSnapshot` switch — same checklist as #288/#296 followed for the rule files, just with the cross-link index step added.
 
 ### 2. Synthetic `EntityKind.EffectKeyword` + kind target
 
-Append to [`EntityRef.cs`](../../src/Mithril.Shared/Reference/EntityRef.cs):
+Append to [`EntityRef.cs`](../../../src/Mithril.Shared/Reference/EntityRef.cs):
 
 ```csharp
 EffectKeyword,
@@ -174,7 +174,7 @@ Plus the factory:
 public static EntityRef EffectKeyword(string keyword) => new(EntityKind.EffectKeyword, keyword);
 ```
 
-New file `src/Silmarillion.Module/Navigation/EffectKeywordKindTarget.cs`, mirroring [`ItemKeywordKindTarget`](../../src/Silmarillion.Module/Navigation/ItemKeywordKindTarget.cs) almost exactly:
+New file `src/Silmarillion.Module/Navigation/EffectKeywordKindTarget.cs`, mirroring [`ItemKeywordKindTarget`](../../../src/Silmarillion.Module/Navigation/ItemKeywordKindTarget.cs) almost exactly:
 
 - `Kind => EntityKind.EffectKeyword`
 - `TabIndex => 5` (Effects tab — see *Tab order*, below)
@@ -185,7 +185,7 @@ No `ItemKeys+`-joined composite form is needed — quest/ability effect-keyword 
 
 ### 3. `EntityKind.Effect` kind target (entity row-select)
 
-New file `src/Silmarillion.Module/Navigation/EffectsKindTarget.cs`, mirroring [`AbilityKindTarget`](../../src/Silmarillion.Module/Navigation/AbilityKindTarget.cs):
+New file `src/Silmarillion.Module/Navigation/EffectsKindTarget.cs`, mirroring [`AbilityKindTarget`](../../../src/Silmarillion.Module/Navigation/AbilityKindTarget.cs):
 
 - `Kind => EntityKind.Effect`
 - `TabIndex => 5`
@@ -249,14 +249,14 @@ public sealed record EffectListRow(
     IReadOnlyList<EffectKeywordValue> Keywords);  // IQueryStringValue wrapper for CONTAINS
 ```
 
-Wrap individual keyword strings in an `EffectKeywordValue` record implementing `IQueryStringValue` (mirror [`IngredientKeywordValue`](../../src/Silmarillion.Module/ViewModels/IngredientKeywordValue.cs)) so the query box supports `Keywords CONTAINS "Buff"`.
+Wrap individual keyword strings in an `EffectKeywordValue` record implementing `IQueryStringValue` (mirror [`IngredientKeywordValue`](../../../src/Silmarillion.Module/ViewModels/IngredientKeywordValue.cs)) so the query box supports `Keywords CONTAINS "Buff"`.
 
 #### `EffectDetailViewModel` sections (in order)
 
 1. **Header** — Icon, Name, envelope key in mono small footer (per the *Detail-view internal-name footer convention* memory).
 2. **Description** — `Effect.Desc` rendered through the `FormattedText` attached property (the cookbook warns to grep for plain `Text="{Binding Description}"` consumers — Effect descs may carry `<i>...</i>` markup).
 3. **Metadata strip** — Duration (special-case `"Permanent"` string vs int seconds → "30 seconds" / "5 minutes" / "1 hour" via simple bucketing), Stacking type chip, Display mode chip when non-default. Filter out default values per the cookbook *Default-value noise filtering* rule (`DisplayMode == "Effect"` is the universal default; null it out so the chip hides).
-4. **Keywords** — chip row, each chip is `EntityChipVm` with `Reference = EntityRef.EffectKeyword(tag)` and `IsNavigable = _navigator.CanOpen(reference)`. Resolves to "open Effects tab filtered to this keyword" via the synthetic kind. Apply `KeywordDisplayOverrides`-style friendly-name resolution if you discover collisions; otherwise CamelCase-split the raw tag for display (mirror [`KeywordDisplayOverrides`](../../src/Silmarillion.Module/ViewModels/KeywordDisplayOverrides.cs) shape from #267).
+4. **Keywords** — chip row, each chip is `EntityChipVm` with `Reference = EntityRef.EffectKeyword(tag)` and `IsNavigable = _navigator.CanOpen(reference)`. Resolves to "open Effects tab filtered to this keyword" via the synthetic kind. Apply `KeywordDisplayOverrides`-style friendly-name resolution if you discover collisions; otherwise CamelCase-split the raw tag for display (mirror [`KeywordDisplayOverrides`](../../../src/Silmarillion.Module/ViewModels/KeywordDisplayOverrides.cs) shape from #267).
 5. **Conditional rules that fire on this effect** — feed from #296's plumbed `AbilityDynamicDots` and `AbilityDynamicSpecialValues`. Filter via `AbilityRulePredicate.Matches(rule.ReqEffectKeywords, effect.Keywords)`. Two sub-sections:
    - "DoT effects layered on by abilities" — list each matching `AbilityDynamicDot`'s `DamagePerTick × NumTicks ticks of DamageType, gated by [ReqAbilityKeywords]`.
    - "Tooltip values surfaced by abilities" — list each `AbilityDynamicSpecialValue`'s `"<Label> <Value> <Suffix>" gated by [ReqAbilityKeywords]`.
@@ -271,7 +271,7 @@ Wrap individual keyword strings in an `EffectKeywordValue` record implementing `
 
 #### `EffectsTabView.xaml` + `EffectDetailView.xaml`
 
-Mirror [`AbilitiesTabView.xaml`](../../src/Silmarillion.Module/Views/AbilitiesTabView.xaml) line-for-line for the list-pane structure (`MithrilQueryBox` top, virtualized `ListBox` left, `ScrollViewer` right with detail). Detail view's section layout follows [`AbilityDetailView.xaml`](../../src/Silmarillion.Module/Views/AbilityDetailView.xaml)'s `DockPanel` + footer pattern.
+Mirror [`AbilitiesTabView.xaml`](../../../src/Silmarillion.Module/Views/AbilitiesTabView.xaml) line-for-line for the list-pane structure (`MithrilQueryBox` top, virtualized `ListBox` left, `ScrollViewer` right with detail). Detail view's section layout follows [`AbilityDetailView.xaml`](../../../src/Silmarillion.Module/Views/AbilityDetailView.xaml)'s `DockPanel` + footer pattern.
 
 ### 5. DI registration in `SilmarillionModule.Register`
 
@@ -289,7 +289,7 @@ services.AddSingleton<IReferenceKindTarget>(sp => new EffectKeywordKindTarget(
     sp.GetService<IDiagnosticsSink>()));
 ```
 
-Per cookbook step 4: add `<DataTemplate DataType="{x:Type vm:EffectsTabViewModel}"><local:EffectsTabView/></DataTemplate>` to [`SilmarillionView.xaml`](../../src/Silmarillion.Module/Views/SilmarillionView.xaml)'s `UserControl.Resources`.
+Per cookbook step 4: add `<DataTemplate DataType="{x:Type vm:EffectsTabViewModel}"><local:EffectsTabView/></DataTemplate>` to [`SilmarillionView.xaml`](../../../src/Silmarillion.Module/Views/SilmarillionView.xaml)'s `UserControl.Resources`.
 
 The `SilmarillionViewModel` ctor doesn't change — `ITabViewModel` enumerable composition is the post-#293 default. `Tabs` recomposes itself from DI; tab strip ordering follows `TabOrder`.
 
@@ -312,17 +312,17 @@ Before opening the PR, grep for all stale call sites and migrate them:
 
 | Call site | Current | Migrate to |
 |---|---|---|
-| [`QuestDetailProjector.cs:264`](../../src/Silmarillion.Module/ViewModels/QuestDetailProjector.cs#L264) — `HasEffectKeywordRequirement` chip | `EntityRef.Effect(h.Keyword!)` + comment "registered tab `(#244)` not present" | `EntityRef.EffectKeyword(h.Keyword!)`; delete the wait-for-#244 comment |
-| [`AbilityDetailViewModel.cs:93`](../../src/Silmarillion.Module/ViewModels/AbilityDetailViewModel.cs#L93) — `EffectKeywordReqsDisplay` plain-string `string.Join(", ", ...)` | plain text | Convert to `IReadOnlyList<EntityChipVm>` with `EntityRef.EffectKeyword(tag)` per entry. Wire the chip ItemsControl in [`AbilityDetailView.xaml:268`](../../src/Silmarillion.Module/Views/AbilityDetailView.xaml#L268). |
+| [`QuestDetailProjector.cs:264`](../../../src/Silmarillion.Module/ViewModels/QuestDetailProjector.cs#L264) — `HasEffectKeywordRequirement` chip | `EntityRef.Effect(h.Keyword!)` + comment "registered tab `(#244)` not present" | `EntityRef.EffectKeyword(h.Keyword!)`; delete the wait-for-#244 comment |
+| [`AbilityDetailViewModel.cs:93`](../../../src/Silmarillion.Module/ViewModels/AbilityDetailViewModel.cs#L93) — `EffectKeywordReqsDisplay` plain-string `string.Join(", ", ...)` | plain text | Convert to `IReadOnlyList<EntityChipVm>` with `EntityRef.EffectKeyword(tag)` per entry. Wire the chip ItemsControl in [`AbilityDetailView.xaml:268`](../../../src/Silmarillion.Module/Views/AbilityDetailView.xaml#L268). |
 | `AbilityDetailViewModel.cs:347` — `TargetEffectKeywordReq` "Target effect keyword" flag row | plain string | Same upgrade: chip with `EntityRef.EffectKeyword(...)`. |
 | `AbilityDetailViewModel.cs:271-273` — `EffectKeywordMustExist` / `EffectKeywordMustNotExist` conditional descriptions | plain string `$"When effect keyword present: {c.EffectKeywordMustExist}"` | Migrate in the same PR. Once `EntityKind.EffectKeyword` exists, these are ~4-line changes each. Leaving them text creates an orphaned half-migration where every other effect-keyword surface is a chip and these two stay text. Do them. |
-| [`tests/Mithril.Shared.Tests/Reference/ReferenceDataEntityNameResolverTests.cs:229`](../../tests/Mithril.Shared.Tests/Reference/ReferenceDataEntityNameResolverTests.cs#L229) | `EntityRef.Effect("FrostShard")` (asserts raw-passthrough fallback) | Update to `EntityRef.Effect("effect_10003")` against bundled-fixture data, OR keep the existing assertion semantics with `EntityRef.EffectKeyword("FrostShard")` — whichever reads cleaner. |
+| [`tests/Mithril.Shared.Tests/Reference/ReferenceDataEntityNameResolverTests.cs:229`](../../../tests/Mithril.Shared.Tests/Reference/ReferenceDataEntityNameResolverTests.cs#L229) | `EntityRef.Effect("FrostShard")` (asserts raw-passthrough fallback) | Update to `EntityRef.Effect("effect_10003")` against bundled-fixture data, OR keep the existing assertion semantics with `EntityRef.EffectKeyword("FrostShard")` — whichever reads cleaner. |
 
-Add `EntityKind.Effect` to [`ReferenceDataEntityNameResolver.cs`](../../src/Mithril.Shared/Reference/ReferenceDataEntityNameResolver.cs) — `_refData.Effects.TryGetValue(envelopeKey, out var effect)`, fall back to envelope key. `EffectKeyword` doesn't need a resolver case (it's a payload-as-display kind; the synthetic kind target reads it as a tag).
+Add `EntityKind.Effect` to [`ReferenceDataEntityNameResolver.cs`](../../../src/Mithril.Shared/Reference/ReferenceDataEntityNameResolver.cs) — `_refData.Effects.TryGetValue(envelopeKey, out var effect)`, fall back to envelope key. `EffectKeyword` doesn't need a resolver case (it's a payload-as-display kind; the synthetic kind target reads it as a tag).
 
 ### 7. `mithril://silmarillion/effect/<envelope-key>` deep-link route
 
-The [`SilmarillionDeepLinkHandler`](../../src/Silmarillion.Module/Navigation/SilmarillionDeepLinkHandler.cs) (introduced via #229) is target-agnostic — it parses `(kind, name)` and calls `_navigator.Open(new EntityRef(kind, name))`. The new kind picks up automatically as long as `EntityKind.Effect` parses from the URL segment `"effect"`. Verify by running through the existing path-parser test; no handler code changes expected. Add a deep-link round-trip test under [`tests/Silmarillion.Tests/Navigation/SilmarillionDeepLinkHandlerTests.cs`](../../tests/Silmarillion.Tests/Navigation/SilmarillionDeepLinkHandlerTests.cs) for the `effect_NNNN` form.
+The [`SilmarillionDeepLinkHandler`](../../../src/Silmarillion.Module/Navigation/SilmarillionDeepLinkHandler.cs) (introduced via #229) is target-agnostic — it parses `(kind, name)` and calls `_navigator.Open(new EntityRef(kind, name))`. The new kind picks up automatically as long as `EntityKind.Effect` parses from the URL segment `"effect"`. Verify by running through the existing path-parser test; no handler code changes expected. Add a deep-link round-trip test under [`tests/Silmarillion.Tests/Navigation/SilmarillionDeepLinkHandlerTests.cs`](../../../tests/Silmarillion.Tests/Navigation/SilmarillionDeepLinkHandlerTests.cs) for the `effect_NNNN` form.
 
 `effectkeyword` is **not** a routable deep-link target by default — keywords are filter pivots, not URL-stable entities. If you want one anyway, add it explicitly in the handler's `IsKnownKind` set with an explanatory comment. Defer unless there's a concrete need.
 
@@ -332,13 +332,13 @@ Per cookbook:
 
 1. **`tests/Silmarillion.Tests/ViewModels/EffectsTabViewModelTests.cs`** — list construction, sort order, keyword-CONTAINS filter, `FileUpdated` re-bind preserves selection by envelope key, detail-VM build cross-link projection. Stub `IReferenceDataService` via `StubReferenceData` (extend it with `Effects` / `EffectsByKeyword` / `EffectsByStackingType` / `AbilitiesByEffectKeyword` properties — the interface defaults mean other tests don't ripple).
 
-2. **`tests/Silmarillion.Tests/Navigation/EffectsKindTargetTests.cs`** — `Kind` / `TabIndex` properties, `TrySelectByInternalName` (hit by envelope key, miss → returns false), `TryOpenInWindow` (with and without current detail). Mirror [`AbilityKindTargetTests`](../../tests/Silmarillion.Tests/Navigation/AbilityKindTargetTests.cs).
+2. **`tests/Silmarillion.Tests/Navigation/EffectsKindTargetTests.cs`** — `Kind` / `TabIndex` properties, `TrySelectByInternalName` (hit by envelope key, miss → returns false), `TryOpenInWindow` (with and without current detail). Mirror [`AbilityKindTargetTests`](../../../tests/Silmarillion.Tests/Navigation/AbilityKindTargetTests.cs).
 
-3. **`tests/Silmarillion.Tests/Navigation/EffectKeywordKindTargetTests.cs`** — `Kind` / `TabIndex` / `TrySelectByInternalName` (mutates `QueryText`, returns true for known keyword), `TryOpenInWindow() => false`. Mirror [`ItemKeywordKindTargetTests`](../../tests/Silmarillion.Tests/Navigation/ItemKeywordKindTargetTests.cs).
+3. **`tests/Silmarillion.Tests/Navigation/EffectKeywordKindTargetTests.cs`** — `Kind` / `TabIndex` / `TrySelectByInternalName` (mutates `QueryText`, returns true for known keyword), `TryOpenInWindow() => false`. Mirror [`ItemKeywordKindTargetTests`](../../../tests/Silmarillion.Tests/Navigation/ItemKeywordKindTargetTests.cs).
 
 4. **Extend `SilmarillionReferenceNavigatorTests`** — verify the duplicate-registration guard still trips with both new kinds in the mix. Add `Open_Effect_SwitchesToEffectsTab_AndSelects` and `Open_EffectKeyword_SwitchesToEffectsTab_AndSetsQueryText` tests mirroring the existing Ability + ItemKeyword test pairs.
 
-5. **`tests/Mithril.Shared.Tests/Reference/ReferenceDataServiceEffectCrossLinkIndexTests.cs`** (new) — synthetic-fixture round-trip for the five new index properties. Canonical precedent: [`ReferenceDataServiceAbilityCrossLinkIndexTests`](../../tests/Mithril.Shared.Tests/Reference/ReferenceDataServiceAbilityCrossLinkIndexTests.cs) — that file uses an in-test temp `_bundledDir` and writes JSON fixtures inline (not real bundled data), so no `[SkippableFact]` is needed. Tests:
+5. **`tests/Mithril.Shared.Tests/Reference/ReferenceDataServiceEffectCrossLinkIndexTests.cs`** (new) — synthetic-fixture round-trip for the five new index properties. Canonical precedent: [`ReferenceDataServiceAbilityCrossLinkIndexTests`](../../../tests/Mithril.Shared.Tests/Reference/ReferenceDataServiceAbilityCrossLinkIndexTests.cs) — that file uses an in-test temp `_bundledDir` and writes JSON fixtures inline (not real bundled data), so no `[SkippableFact]` is needed. Tests:
    - `EffectsByKeyword_GroupsByEachKeywordTag` — an effect with `Keywords = ["Buff", "OrranInv"]` appears under both keys.
    - `EffectsByStackingType_GroupsByStackingType` — entries sharing `StackingType = "WordOfPowerInventory"` co-locate.
    - `AbilitiesByEffectKeyword_IndexesEffectKeywordReqs` — union of `EffectKeywordReqs`, `EffectKeywordsIndicatingEnabled`, `TargetEffectKeywordReq` against a synthesised ability fixture.

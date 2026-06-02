@@ -1,6 +1,6 @@
 # Silmarillion · detail-view field coverage
 
-> **Companion to [silmarillion-roadmap.md](silmarillion-roadmap.md).** The roadmap
+> **Companion to [roadmaps/silmarillion.md](roadmaps/silmarillion.md).** The roadmap
 > answers *which entities get a tab* (the Bucket A/B/C/D rule). This doc answers a
 > different question: *within a shipped detail view, which POCO properties reach the
 > user, which are deliberately omitted, and which are genuine gaps.*
@@ -8,7 +8,7 @@
 ## Why this is its own axis
 
 Every CDN source has a faithful `Mithril.Reference` POCO (parser coverage is total —
-see [mithril-reference-roadmap.md](mithril-reference-roadmap.md)). A detail view is a
+see [roadmaps/mithril-reference.md](roadmaps/mithril-reference.md)). A detail view is a
 *curated projection* of that POCO, not a property dump: the right design surfaces the
 player-relevant mechanics and drops engine noise. So "property X is not bound" is not
 automatically a defect — it is only a defect if X is player-relevant.

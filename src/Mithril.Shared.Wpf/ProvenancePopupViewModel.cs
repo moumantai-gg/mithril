@@ -14,7 +14,7 @@ namespace Mithril.Shared.Wpf;
 /// in the source index (which retains <em>why</em> each member qualified); the popup is a
 /// view over that object. There is no second derivation — the popup never re-runs a query
 /// to populate itself, so the silent-divergence bug class it dissolves cannot recur. See
-/// <c>docs/agent-plans/silmarillion-1n-provenance-popups.md</c>.
+/// the #318 invariant.
 /// </para>
 /// <para>
 /// <b>Single-reason collapse.</b> A provenance section with one trivial reason is noise

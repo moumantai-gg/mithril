@@ -506,7 +506,7 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 
 ### Silmarillion (reference data browser)
 
-**Charter:** read-only reference data browser; the canonical "what Mithril knows about X" display surface ([`module-charters.md`](module-charters.md); detailed in [`silmarillion-roadmap.md`](silmarillion-roadmap.md)).
+**Charter:** read-only reference data browser; the canonical "what Mithril knows about X" display surface ([`module-charters.md`](module-charters.md); detailed in [`roadmaps/silmarillion.md`](roadmaps/silmarillion.md)).
 
 **Inputs**
 - Reference: `IReferenceDataService.FileUpdated` per data file (items / recipes / skills / NPCs / quests / abilities / effects / areas / landmarks / lorebooks / titles / storage vaults / TSys)
@@ -523,7 +523,7 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 
 ### Celebrimbor (crafting / leveling planner)
 
-**Charter:** multi-step crafting plans + leveling plan documents ([`module-charters.md`](module-charters.md); detailed in [`celebrimbor-roadmap.md`](celebrimbor-roadmap.md)).
+**Charter:** multi-step crafting plans + leveling plan documents ([`module-charters.md`](module-charters.md); detailed in [`roadmaps/celebrimbor.md`](roadmaps/celebrimbor.md)).
 
 **Inputs**
 - Reference: `IReferenceDataService`

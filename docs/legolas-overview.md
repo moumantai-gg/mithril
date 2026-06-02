@@ -2,7 +2,7 @@
 
 A bootstrap-context doc for future contributors (human or LLM) starting work on Legolas. Covers Survey mode end-to-end as it works **today**. Motherlode is out of scope here — see [`MotherlodeFlowController`](../src/Legolas.Module/Flow/MotherlodeFlowController.cs) and [`MotherlodeViewModel`](../src/Legolas.Module/ViewModels/MotherlodeViewModel.cs) for that side.
 
-The model has been through a significant rewrite (#454/#460/#476/#477/#478/#481–#483). This doc describes the **as-built** code; the [History](#history) section at the end records what changed and why, so the rationale that `docs/` is meant to hold isn't lost. Companion plan docs (`docs/agent-plans/legolas-state-machine.md`, `docs/agent-plans/legolas-wizard.md`) are historical scratch — superseded by this doc; read them only for archaeology.
+The model has been through a significant rewrite (#454/#460/#476/#477/#478/#481–#483). This doc describes the **as-built** code; the [History](#history) section at the end records what changed and why, so the rationale that `docs/` is meant to hold isn't lost. The companion plan doc [`docs/planning/legolas-wizard/spec.md`](planning/legolas-wizard/spec.md) is historical scratch — superseded by this doc; read it only for archaeology.
 
 ## What Legolas does
 

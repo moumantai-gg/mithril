@@ -8,7 +8,7 @@ namespace Mithril.Shared.Reference;
 /// the index used to flatten that union to a dedup'd ability set, discarding which field
 /// matched. Retaining the reason is the invariant that lets the relationship explain
 /// itself rather than requiring a second (query-string) derivation to agree with the
-/// index (see <c>docs/agent-plans/silmarillion-1n-provenance-popups.md</c>).
+/// index (see the #318 invariant).
 /// <para>
 /// The three reasons are not mutually exclusive: one ability can qualify for the same
 /// tag via more than one field (e.g. it both requires and is enabled by the keyword).

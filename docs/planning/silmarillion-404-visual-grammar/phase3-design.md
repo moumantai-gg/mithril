@@ -4,7 +4,7 @@
 
 > **Status: EXECUTED — G3 ratified 2026-05-17.** This dispatch is spent;
 > retained for provenance. Claude Design's ratified output is
-> [`docs/silmarillion-visual-grammar.md`](../silmarillion-visual-grammar.md).
+> [`docs/silmarillion-visual-grammar.md`](../../silmarillion-visual-grammar.md).
 > Phase 4 (shared WPF primitives) is the next dispatch — do not re-run this one.
 
 > **For the designer (Claude Design).** This is the Phase 3 spec of the #404
@@ -29,7 +29,7 @@ The presentation axis is the only axis. The coverage axis is separately tracked
 
 ## Read first (authoritative, in order)
 
-1. [`docs/agent-plans/2026-05-16-silmarillion-404-visual-grammar.md`](2026-05-16-silmarillion-404-visual-grammar.md) — the program plan.
+1. [`spec.md`](spec.md) — the program plan (sibling in this slug folder).
 2. Issue #404, comment **"G1 — CLEARED. Final ratified visual grammar"** — the
    five tiers (Fact · Control · Link · Set-reference · Structure), principles
    P1/P2, the availability corollary.

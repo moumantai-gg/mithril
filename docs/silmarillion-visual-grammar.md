@@ -1,8 +1,8 @@
 # Mithril · Silmarillion visual grammar (G3 ratified)
 
 > Issue: [#404](https://github.com/moumantai-gg/mithril/issues/404) ·
-> Program plan: [`docs/agent-plans/2026-05-16-silmarillion-404-visual-grammar.md`](agent-plans/2026-05-16-silmarillion-404-visual-grammar.md) ·
-> Phase 3 dispatch: [`docs/agent-plans/2026-05-17-silmarillion-404-phase3-design.md`](agent-plans/2026-05-17-silmarillion-404-phase3-design.md) ·
+> Program plan: [`docs/planning/silmarillion-404-visual-grammar/spec.md`](planning/silmarillion-404-visual-grammar/spec.md) ·
+> Phase 3 dispatch: [`docs/planning/silmarillion-404-visual-grammar/phase3-design.md`](planning/silmarillion-404-visual-grammar/phase3-design.md) ·
 > Decision date: 2026-05-17 ·
 > Phase: 3 — closed at gate G3.
 >

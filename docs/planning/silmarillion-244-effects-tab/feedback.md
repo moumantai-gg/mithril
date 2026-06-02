@@ -1,6 +1,6 @@
 # Feedback on the Effects tab handoff (#244 → PR #298)
 
-Implementation feedback for [`silmarillion-244-effects-tab.md`](silmarillion-244-effects-tab.md) and the [cookbook](../silmarillion-tab-cookbook.md), gathered during execution.
+Implementation feedback for [`silmarillion-244-effects-tab.md`](silmarillion-244-effects-tab.md) and the [cookbook](../../silmarillion-tab-cookbook.md), gathered during execution.
 
 ## What the plan got right
 

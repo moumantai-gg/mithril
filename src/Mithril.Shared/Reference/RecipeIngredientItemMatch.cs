@@ -9,7 +9,7 @@ namespace Mithril.Shared.Reference;
 /// slice 1 so every 1:N reverse-lookup index carries the same provenance-retaining
 /// structure. The popup renders membership <em>and</em> provenance from this index
 /// directly — there is no second (query-string) derivation that could silently diverge
-/// (see <c>docs/agent-plans/silmarillion-1n-provenance-popups.md</c>).
+/// (see the #318 invariant).
 /// <para>
 /// <b>This relationship is single-reason.</b> An item is "used in" a recipe iff the recipe
 /// references it through a direct <see cref="RecipeItemIngredient"/> (numeric item-code

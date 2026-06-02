@@ -132,6 +132,5 @@ VM-projection idiom (`*Links`, wrapper VMs, `FactTableVm`, `FactFooterVm`,
   decision log).
 - #404: G1/G2/G3-CLEARED, G3 amend-1/2, the layout-pin reaffirmation, the
   authoritative-source correction, G4-CLEARED, Phase-1/2 matrices.
-- Prior dispatches (provenance): `2026-05-16-silmarillion-404-visual-grammar.md`
-  (program plan), `2026-05-17-silmarillion-404-phase3-design.md` (EXECUTED),
-  `2026-05-17-silmarillion-404-phase4-primitives.md` (EXECUTED).
+- Prior dispatches (provenance, all sibling files in this slug folder): `spec.md`
+  (program plan), `phase3-design.md` (EXECUTED), `phase4-primitives.md` (EXECUTED).
