@@ -47,26 +47,8 @@ public static class DeviationBlobDetector
 
         if (rim == RimMaskMode.DeviationFlood)
         {
-            // Edge-connected deviation flood: the rim is the foreground component
-            // that touches the image edge; interior icons are isolated foreground
-            // islands, and the matching interior terrain isn't foreground at all.
-            // So this drops the rim without eating the interior the colour
-            // BorderMask over-masks (mithril#897 — Eltibule 11.3% vs colour 67.6%).
-            var rimMask = new bool[n];
-            var q = new Queue<int>();
-            void Enq(int x, int y)
-            {
-                if (x < 0 || x >= w || y < 0 || y >= h) return;
-                int k = y * w + x;
-                if (fg[k] && !rimMask[k]) { rimMask[k] = true; q.Enqueue(k); }
-            }
-            for (int x = 0; x < w; x++) { Enq(x, 0); Enq(x, h - 1); }
-            for (int y = 0; y < h; y++) { Enq(0, y); Enq(w - 1, y); }
-            while (q.Count > 0)
-            {
-                int k = q.Dequeue(); int x = k % w, y = k / w;
-                Enq(x - 1, y); Enq(x + 1, y); Enq(x, y - 1); Enq(x, y + 1);
-            }
+            // Edge-connected deviation flood: see DeviationFloodRimMask docs.
+            var rimMask = DeviationFloodRimMask.Build(dev, w, h, devThr);
             for (int i = 0; i < n; i++) if (rimMask[i]) fg[i] = false;
         }
 
