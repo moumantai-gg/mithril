@@ -1,5 +1,6 @@
 using System.IO;
 using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -131,13 +132,15 @@ internal sealed class OrbDescriptorBundle : IDisposable
             offset += 24;
         }
 
+        // Bulk-copy descriptors via Marshal.Copy into the freshly-allocated
+        // (and therefore contiguous) Mat backing buffer — beats the
+        // 256k-iteration p/invoke loop (descriptors.Set per byte) by ~3
+        // orders of magnitude on the cache-hit hot path.
         var descriptors = new Mat(n, 32, MatType.CV_8UC1);
-        for (int i = 0; i < n; i++)
+        int byteCount = n * 32;
+        if (byteCount > 0)
         {
-            for (int j = 0; j < 32; j++)
-            {
-                descriptors.Set(i, j, blob[offset + i * 32 + j]);
-            }
+            Marshal.Copy(blob, offset, descriptors.Data, byteCount);
         }
         return new OrbDescriptorBundle(keypoints, descriptors);
     }
