@@ -116,7 +116,7 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     /// value into <see cref="DumpCalibrationBundles"/>. Dropped from the persisted
     /// schema in v2 — this property is write-only for migration purposes only.
     /// </summary>
-    [Obsolete("Renamed to DumpCalibrationBundles in schema v2. Read-only shim for migration of persisted v1 state.")]
+    [Obsolete("Renamed to DumpCalibrationBundles in schema v2. Write-only shim for migration of old persisted state.")]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public bool DumpCalibrationCaptureFrames
     {
@@ -130,7 +130,7 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     /// is silently dropped in v2. This setter absorbs the deserialized value and
     /// discards it (the gray frame is now written unconditionally inside the bundle).
     /// </summary>
-    [Obsolete("Removed in schema v2 — gray frame is always included in the bundle when DumpCalibrationBundles is on.")]
+    [Obsolete("Removed in schema v2 — gray frame is always included in the bundle when DumpCalibrationBundles is on. Write-only shim for migration of old persisted state.")]
     [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
     public bool DumpCalibrationGrayFrames
     {

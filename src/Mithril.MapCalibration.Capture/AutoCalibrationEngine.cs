@@ -42,7 +42,7 @@ namespace Mithril.MapCalibration.Capture;
 /// first-session calibration succeeds on a fresh icon cache without a restart. A
 /// still-empty set fails soft: no typed detections → the gate rejects.</para>
 ///
-/// <para><b>Diagnostic bundle (#984).</b> Each public attempt is wrapped in a
+/// <para><b>Diagnostic bundle.</b> Each public attempt is wrapped in a
 /// <c>try { … } finally { sink.Write(attempt); }</c> so the sink receives the
 /// partial context on every exit path — success, gate-reject, exception, or
 /// cancellation. The active sink is resolved per attempt from
