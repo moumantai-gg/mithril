@@ -6,10 +6,9 @@ using Xunit;
 namespace Mithril.Shell.Tests;
 
 /// <summary>
-/// #966 Task 3: the Settings → Diagnostics capture-frame-dump checkboxes flip
-/// <see cref="ShellSettings.DumpCalibrationCaptureFrames"/> /
-/// <see cref="ShellSettings.DumpCalibrationGrayFrames"/>, which must mirror onto the
-/// live <see cref="CaptureDiagnosticsOptions"/> singleton the capture seam reads —
+/// #984 Task 9: the Settings → Diagnostics calibration-bundle-dump checkbox flips
+/// <see cref="ShellSettings.DumpCalibrationBundles"/>, which must mirror onto the
+/// live <see cref="CaptureDiagnosticsOptions"/> singleton the engine reads —
 /// without re-resolving the DI graph. Exercises the exact seed + PropertyChanged
 /// wiring <c>ShellComposition</c> registers (<see cref="ShellComposition.MirrorCaptureDiagnostics"/>).
 /// </summary>
@@ -20,14 +19,12 @@ public sealed class CaptureDiagnosticsMirrorTests
     {
         var settings = new ShellSettings
         {
-            DumpCalibrationCaptureFrames = true,
-            DumpCalibrationGrayFrames = true,
+            DumpCalibrationBundles = true,
         };
 
         var options = ShellComposition.MirrorCaptureDiagnostics(settings);
 
-        options.DumpCaptureFrames.Should().BeTrue();
-        options.DumpGrayFrames.Should().BeTrue();
+        options.DumpCalibrationBundles.Should().BeTrue();
     }
 
     [Fact]
@@ -35,33 +32,19 @@ public sealed class CaptureDiagnosticsMirrorTests
     {
         var options = ShellComposition.MirrorCaptureDiagnostics(new ShellSettings());
 
-        options.DumpCaptureFrames.Should().BeFalse();
-        options.DumpGrayFrames.Should().BeFalse();
+        options.DumpCalibrationBundles.Should().BeFalse();
     }
 
     [Fact]
-    public void Flipping_the_color_dump_setting_mirrors_onto_the_singleton()
+    public void Flipping_the_bundle_dump_setting_mirrors_onto_the_singleton()
     {
         var settings = new ShellSettings();
         var options = ShellComposition.MirrorCaptureDiagnostics(settings);
 
-        settings.DumpCalibrationCaptureFrames = true;
-        options.DumpCaptureFrames.Should().BeTrue("flipping the setting must mirror live onto the options POCO");
+        settings.DumpCalibrationBundles = true;
+        options.DumpCalibrationBundles.Should().BeTrue("flipping the setting must mirror live onto the options POCO");
 
-        settings.DumpCalibrationCaptureFrames = false;
-        options.DumpCaptureFrames.Should().BeFalse("turning the setting back off must mirror too");
-    }
-
-    [Fact]
-    public void Flipping_the_gray_dump_setting_mirrors_onto_the_singleton()
-    {
-        var settings = new ShellSettings();
-        var options = ShellComposition.MirrorCaptureDiagnostics(settings);
-
-        settings.DumpCalibrationGrayFrames = true;
-        options.DumpGrayFrames.Should().BeTrue();
-
-        settings.DumpCalibrationGrayFrames = false;
-        options.DumpGrayFrames.Should().BeFalse();
+        settings.DumpCalibrationBundles = false;
+        options.DumpCalibrationBundles.Should().BeFalse("turning the setting back off must mirror too");
     }
 }

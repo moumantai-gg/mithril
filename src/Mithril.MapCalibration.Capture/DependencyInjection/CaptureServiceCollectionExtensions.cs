@@ -121,8 +121,7 @@ public static partial class CaptureServiceCollectionExtensions
             sp.GetRequiredService<IScreenCapture>(),
             sp.GetRequiredService<IOverlayBlanker>(),
             sp.GetRequiredService<CaptureValidation>(),
-            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Service"),
-            sp.GetRequiredService<CaptureDiagnosticsOptions>()));
+            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Service")));
 
         // Reference points + the solve seam.
         services.AddSingleton<IAreaReferenceProvider>(sp => new ReferenceDataAreaReferenceProvider(
@@ -159,6 +158,7 @@ public static partial class CaptureServiceCollectionExtensions
             sp.GetRequiredService<IIconTemplateProvider>(),
             sp.GetRequiredService<IMapCalibrationService>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Engine"),
+            sinkSelector: sp.GetRequiredService<Diagnostics.CalibrationAttemptBundleSinkSelector>(),
             assetExtractor: sp.GetService<IAssetExtractor>(),
             gameConfig: sp.GetRequiredService<GameConfig>(),
             assetCacheDir: assetCacheDir,

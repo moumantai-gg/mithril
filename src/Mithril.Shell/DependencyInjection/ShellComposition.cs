@@ -294,18 +294,14 @@ public static class ShellComposition
     {
         var captureDiag = new Mithril.MapCalibration.Capture.CaptureDiagnosticsOptions
         {
-            DumpCaptureFrames = settings.DumpCalibrationCaptureFrames,
-            DumpGrayFrames = settings.DumpCalibrationGrayFrames,
+            DumpCalibrationBundles = settings.DumpCalibrationBundles,
         };
         settings.PropertyChanged += (_, e) =>
         {
             switch (e.PropertyName)
             {
-                case nameof(ShellSettings.DumpCalibrationCaptureFrames):
-                    captureDiag.DumpCaptureFrames = settings.DumpCalibrationCaptureFrames;
-                    break;
-                case nameof(ShellSettings.DumpCalibrationGrayFrames):
-                    captureDiag.DumpGrayFrames = settings.DumpCalibrationGrayFrames;
+                case nameof(ShellSettings.DumpCalibrationBundles):
+                    captureDiag.DumpCalibrationBundles = settings.DumpCalibrationBundles;
                     break;
             }
         };

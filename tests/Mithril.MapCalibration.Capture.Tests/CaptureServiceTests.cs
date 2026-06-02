@@ -14,7 +14,8 @@ public sealed class CaptureServiceTests
     {
         var blanker = new FakeBlanker();
         var svc = new CaptureService(new FailingCapture(), blanker, new CaptureValidation(), null);
-        (await svc.CaptureMapAsync(new CaptureRect(0, 0, 8, 8), default)).Should().BeNull();
+        var result = await svc.CaptureMapAsync(new CaptureRect(0, 0, 8, 8), default);
+        result.Gray.Should().BeNull();
         blanker.Restored.Should().BeTrue("the overlay must be shown again on the failure path");
     }
 
@@ -24,9 +25,10 @@ public sealed class CaptureServiceTests
         var px = new byte[8 * 8 * 4]; Array.Fill(px, (byte)180);
         var svc = new CaptureService(new FakeCapture(new CapturedFrame(8, 8, px)),
             new FakeBlanker(), new CaptureValidation(), null);
-        var gray = await svc.CaptureMapAsync(new CaptureRect(0, 0, 8, 8), default);
-        gray.Should().NotBeNull();
-        gray!.Width.Should().Be(8);
+        var result = await svc.CaptureMapAsync(new CaptureRect(0, 0, 8, 8), default);
+        result.Gray.Should().NotBeNull();
+        result.Gray!.Width.Should().Be(8);
+        result.Color.Should().NotBeNull("color frame should be returned alongside gray");
     }
 
     [Fact]
@@ -34,7 +36,9 @@ public sealed class CaptureServiceTests
     {
         var svc = new CaptureService(new FakeCapture(new CapturedFrame(8, 8, new byte[8 * 8 * 4])),
             new FakeBlanker(), new CaptureValidation(), null);
-        (await svc.CaptureMapAsync(new CaptureRect(0, 0, 8, 8), default)).Should().BeNull();
+        var result = await svc.CaptureMapAsync(new CaptureRect(0, 0, 8, 8), default);
+        result.Gray.Should().BeNull();
+        result.Color.Should().BeNull();
     }
 
     private sealed class FakeBlanker : IOverlayBlanker

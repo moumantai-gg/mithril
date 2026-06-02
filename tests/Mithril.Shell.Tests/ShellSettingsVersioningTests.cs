@@ -13,20 +13,21 @@ namespace Mithril.Shell.Tests;
 public sealed class ShellSettingsVersioningTests
 {
     [Fact]
-    public void Current_version_is_one_and_fresh_instances_are_current()
+    public void Current_version_is_two_and_fresh_instances_are_current()
     {
-        ShellSettings.CurrentVersion.Should().Be(1);
+        ShellSettings.CurrentVersion.Should().Be(2);
         new ShellSettings().SchemaVersion.Should().Be(ShellSettings.CurrentVersion);
     }
 
     [Fact]
-    public void Migrate_is_an_identity_passthrough()
+    public void Migrate_stamps_current_version_and_preserves_other_fields()
     {
-        var s = new ShellSettings { GameRoot = @"C:\Games\PG", SidebarWidth = 333 };
+        var s = new ShellSettings { GameRoot = @"C:\Games\PG", SidebarWidth = 333, SchemaVersion = 1 };
 
         var migrated = ShellSettings.Migrate(s);
 
         migrated.Should().BeSameAs(s);
+        migrated.SchemaVersion.Should().Be(ShellSettings.CurrentVersion);
         migrated.GameRoot.Should().Be(@"C:\Games\PG");
         migrated.SidebarWidth.Should().Be(333);
     }
@@ -82,31 +83,27 @@ public sealed class ShellSettingsVersioningTests
     }
 
     [Fact]
-    public void Calibration_dump_flags_round_trip_through_json()
+    public void DumpCalibrationBundles_round_trips_through_json()
     {
-        // #966 Task 3: the capture-frame-dump toggles are additive bool fields (no
-        // schema bump). They must persist and reload with the values intact.
+        // #984: the bundle-dump toggle must persist and reload with the value intact.
         var written = JsonSerializer.Serialize(
-            new ShellSettings { DumpCalibrationCaptureFrames = true, DumpCalibrationGrayFrames = true },
+            new ShellSettings { DumpCalibrationBundles = true },
             ShellSettingsJsonContext.Default.ShellSettings);
 
         var loaded = JsonSerializer.Deserialize(
             written, ShellSettingsJsonContext.Default.ShellSettings)!;
 
-        loaded.DumpCalibrationCaptureFrames.Should().BeTrue();
-        loaded.DumpCalibrationGrayFrames.Should().BeTrue();
+        loaded.DumpCalibrationBundles.Should().BeTrue();
     }
 
     [Fact]
-    public void Calibration_dump_flags_default_to_false_when_absent_from_legacy_json()
+    public void DumpCalibrationBundles_defaults_to_false_when_absent_from_json()
     {
-        // A shell.json predating #966 Task 3 has neither key → false on load
-        // (additive bool fields), so the dump stays off until the user opts in.
+        // A shell.json without the key defaults to false (additive bool field).
         var loaded = JsonSerializer.Deserialize(
             """{ "gameRoot": "C:/PG" }""",
             ShellSettingsJsonContext.Default.ShellSettings)!;
 
-        loaded.DumpCalibrationCaptureFrames.Should().BeFalse();
-        loaded.DumpCalibrationGrayFrames.Should().BeFalse();
+        loaded.DumpCalibrationBundles.Should().BeFalse();
     }
 }
