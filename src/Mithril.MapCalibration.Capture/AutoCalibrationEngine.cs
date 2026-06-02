@@ -189,8 +189,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // Per-attempt trace span (#914). Null when no listener is attached (no OTLP
         // export / no perf-recording), so this is zero-overhead when off. Child
         // capture/refine/solve spans nest under it → a Seq waterfall showing which
-        // step is slow (the brute-force refine, until #966). Per-candidate refine
-        // spans live deeper (MapRectLocator, in the Shared-free core) — deferred to #966.
+        // step is slow.
         using var actSpan = MithrilActivitySources.MapCalibration.StartActivity("calibration.attempt");
 
         var area = attempt.Area;
