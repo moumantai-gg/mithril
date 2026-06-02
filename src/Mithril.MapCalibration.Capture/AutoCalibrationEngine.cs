@@ -295,6 +295,13 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return Fail(area, "the located map rect fell outside the captured frame — redraw the capture box tightly around the in-game map");
         }
 
+        // #989: the bundle sink reads attempt.MapRect to write 04-maprect.json.
+        // The detect→solve pipeline below operates on the CLAMPED rect (crop,
+        // alignedTexture, alignedRect all derive from `clamped`), so the bundle
+        // JSON must describe the same dims the deviation/aligned/base-texture
+        // images carry — not the pre-clamp ECC value that overshoots the frame.
+        attempt.MapRect = clamped;
+
         var crop = ImageOps.Crop(gray, clamped.OriginX, clamped.OriginY, clamped.Width, clamped.Height);
         var alignedTexture = ImageOps.Resize(baseTexture, clamped.Width, clamped.Height);
         var alignedRect = new MapRect(0, 0, clamped.Width, clamped.Height, clamped.TextureWidth, clamped.TextureHeight);

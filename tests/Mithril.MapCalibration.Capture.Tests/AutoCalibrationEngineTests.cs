@@ -183,6 +183,62 @@ public sealed class AutoCalibrationEngineTests
     // ── Bundle-sink (#984 Block D) ───────────────────────────────────────────
 
     [Fact]
+    public async Task Recorded_MapRect_height_matches_clamped_height_when_ECC_rect_overshoots_frame()
+    {
+        // #989: per-attempt bundle's 04-maprect.json must record the height the
+        // engine actually used (the clamped height), not the pre-clamp ECC-located
+        // height — otherwise the JSON disagrees with the deviation/aligned/
+        // base-texture image dims in the same bundle. Reproduce the overshoot:
+        // a 100×100 captured frame + an ECC rect that asks for 150 rows starting
+        // at row 50 (would extend to row 200; clamps to row 100, i.e. height 50).
+        var capture = new GrayImage(100, 100, new byte[100 * 100]);
+        var baseTex = new GrayImage(200, 200, new byte[200 * 200]);
+        var overshootingRect = new MapRect(
+            OriginX: 0, OriginY: 50, Width: 100, Height: 150,
+            TextureWidth: 200, TextureHeight: 200,
+            AutoDetectScore: 0.9, SourceScaleFactor: 1.0);
+
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        var h = new EngineHarness
+        {
+            BaseTexture = baseTex,
+            Refiner = new FakeRefiner(overshootingRect),
+            Solve = Accepted(residual: 0.65, inliers: 5),
+            SinkSelector = selector,
+        };
+        // Override the default 64×64 SpyCapture with a 100×100 one matching the
+        // overshoot scenario. EngineHarness.Capture is get-only, but a fresh
+        // harness with the right capture isn't expressible without constructing
+        // the engine directly (Capture is initialized in the field initializer).
+        // So construct the engine inline using the same shape as the harness.
+        var captureSpy = new SpyCapture(capture);
+        var solver = new SpySolver(h.Solve);
+        var engine = new AutoCalibrationEngine(
+            new FakeAreaState(Area),
+            new FakeWindowLocator(h.GameWindow),
+            new FakeRegionProvider(h.Bbox),
+            captureSpy,
+            h.Refiner,
+            new FakeBaseTextureProvider(baseTex),
+            new FakeAreaRefs(new[] { new LandmarkReference("landmark_npc", "x", new WorldCoord(1, 0, 1)) }),
+            solver,
+            h.IconProvider,
+            h.Service,
+            logger: null,
+            sinkSelector: selector);
+
+        await engine.TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        var ctx = captured[0];
+        ctx.MapRect.Should().NotBeNull();
+        ctx.MapRect!.Height.Should().Be(50,
+            "the engine clamped 150→50 to stay within the 100-row frame; the bundle must record the height it actually used");
+        ctx.MapRect.OriginY.Should().Be(50, "OriginY is in-bounds and untouched by the clamp");
+    }
+
+    [Fact]
     public async Task TryCalibrate_passes_populated_context_to_sink_on_accept()
     {
         var captured = new List<CalibrationAttemptContext>();
