@@ -199,3 +199,17 @@ public sealed record CalibrationSolveResult(
 {
     public IReadOnlyList<TypedDetection>? Detections { get; init; }
 }
+
+/// <summary>
+/// Per-orientation synthesis-J winner, used by
+/// <see cref="MapCalibrationSolveEngine"/>'s cross-orientation selector.
+/// Internal — the public consumer sees the unified <see cref="CalibrationSolveResult"/>.
+/// </summary>
+internal sealed record SynthesisOrientationWinner(
+    bool Rotate180,
+    AreaCalibration Calibration,
+    IReadOnlyList<TypeAwareRansacSolver.AssignedReference> Inliers,
+    double J,
+    int RefsAboveHalf,
+    int RefsOffCrop,
+    int RefsTotal);
