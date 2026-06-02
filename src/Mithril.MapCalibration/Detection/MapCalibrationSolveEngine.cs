@@ -193,13 +193,14 @@ public sealed class MapCalibrationSolveEngine
 
         // One template per landmark-type — the per-type L_t fields are keyed by
         // LandmarkType. If a type has multiple templates (e.g. variants), the
-        // first is used; mirror the probe's behaviour (which uses the same
-        // ProbeReferences-driven per-type single template).
+        // LAST in iteration order wins, matching the probe's path at
+        // SynthesisProbePhase.cs (`fieldsByType[template.LandmarkType] = ...`
+        // inside a foreach). Production must match this so Task 17's L_t equality
+        // test holds in any future multi-template-per-type scenario.
         var perType = new Dictionary<string, IconTemplate>(StringComparer.Ordinal);
         foreach (var template in templates.Templates)
         {
-            if (!perType.ContainsKey(template.LandmarkType))
-                perType[template.LandmarkType] = template;
+            perType[template.LandmarkType] = template;
         }
 
         var fields = new Dictionary<string, double[,]>(perType.Count, StringComparer.Ordinal);
