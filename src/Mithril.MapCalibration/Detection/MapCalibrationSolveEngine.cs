@@ -39,8 +39,13 @@ public sealed class MapCalibrationSolveEngine
     /// </summary>
     public CalibrationSolveResult Solve(DetectionRequest request, IReadOnlyList<LandmarkReference> references)
     {
-        CalibrationSolveResult? bestAccepted = null;
-        CalibrationSolveResult? bestRejected = null;
+        // Cache per orientation: L_t fields + top-K + scored winner (when mode != Off).
+        SynthesisOrientationWinner? bestSynthesis = null;
+        CalibrationSolveResult? bestLegacyAccepted = null;
+        CalibrationSolveResult? bestLegacyRejected = null;
+
+        var mode = _options.SynthesisRerankMode;
+        int topK = mode == SynthesisRerankMode.Off ? 1 : Math.Max(1, _options.RansacTopK);
 
         foreach (var rotate180 in new[] { false, true })
         {
@@ -49,46 +54,113 @@ public sealed class MapCalibrationSolveEngine
 
             var detections = _detector.Detect(req);
             LogDetectSummary(rotate180, detections, references);
-            var (cal, inliers) = TypeAwareRansacSolver.Solve(ToMutable(detections), references, request.MapRect);
+            var topKList = TypeAwareRansacSolver.SolveTopK(ToMutable(detections), references, request.MapRect, topK);
             var flatDetections = FlattenDetections(detections);
 
-            if (cal is null)
+            // === Legacy track: pick the lowest-residual gate-accepted top-K[0] (preserves shadow-source-of-truth) ===
+            if (topKList.Count == 0)
             {
-                bestRejected ??= new CalibrationSolveResult(null, inliers.Count, "no geometrically-consistent fit", inliers) { Detections = flatDetections };
-                continue;
-            }
-
-            if (_gate.Accept(cal, inliers.Count, out var reason))
-            {
-                var accepted = new CalibrationSolveResult(cal, inliers.Count, null, inliers) { Detections = flatDetections };
-                // Prefer the lower-residual accepted orientation.
-                if (bestAccepted is null || cal.ResidualPixels < bestAccepted.Calibration!.ResidualPixels)
-                {
-                    bestAccepted = accepted;
-                }
+                bestLegacyRejected ??= new CalibrationSolveResult(
+                    null, 0, "no geometrically-consistent fit", []) { Detections = flatDetections };
             }
             else
             {
-                // Track the closest rejection for a useful reason if nothing passes.
-                if (bestRejected is null || cal.ResidualPixels < (bestRejected.Calibration?.ResidualPixels ?? double.PositiveInfinity))
+                var legacyHead = topKList[0];
+                if (_gate.Accept(legacyHead.Calibration, legacyHead.Inliers.Count, out var legacyReason))
                 {
-                    bestRejected = new CalibrationSolveResult(null, inliers.Count, reason, inliers) { Detections = flatDetections };
+                    var accepted = new CalibrationSolveResult(
+                        legacyHead.Calibration, legacyHead.Inliers.Count, null, legacyHead.Inliers)
+                        { Detections = flatDetections };
+                    if (bestLegacyAccepted is null
+                        || legacyHead.Calibration.ResidualPixels < bestLegacyAccepted.Calibration!.ResidualPixels)
+                    {
+                        bestLegacyAccepted = accepted;
+                    }
                 }
+                else if (bestLegacyRejected is null
+                    || legacyHead.Calibration.ResidualPixels
+                        < (bestLegacyRejected.Calibration?.ResidualPixels ?? double.PositiveInfinity))
+                {
+                    bestLegacyRejected = new CalibrationSolveResult(
+                        null, legacyHead.Inliers.Count, legacyReason, legacyHead.Inliers)
+                        { Detections = flatDetections };
+                }
+            }
+
+            // === Synthesis track (skipped when mode == Off) ===
+            if (mode == SynthesisRerankMode.Off) continue;
+
+            var fields = BuildLikelihoodFieldsFromDeviation(req.Screenshot, req.BaseTexture, req.Templates);
+            var winner = ScoreOrientationCandidates(rotate180, topKList, fields, references, req.MapRect);
+            if (winner is null) continue;
+            if (bestSynthesis is null || winner.J > bestSynthesis.J)
+            {
+                bestSynthesis = winner;
             }
         }
 
-        if (bestAccepted is not null)
+        // Decide the unified result.
+        var legacyResult = bestLegacyAccepted ?? bestLegacyRejected ??
+            new CalibrationSolveResult(null, 0, "no detections");
+
+        if (mode != SynthesisRerankMode.Enabled)
         {
-            _logger?.LogInformation(
-                "Auto-calibration accepted: residual {Residual:0.00} px, {Inliers} inliers.",
-                bestAccepted.Calibration!.ResidualPixels, bestAccepted.InlierCount);
-            LogInlierCorrespondences(bestAccepted.Calibration!, bestAccepted.Inliers);
-            return bestAccepted;
+            // Off + Shadow: legacy is source of truth. Telemetry emission (Task 16)
+            // wraps this whole block in the synthesis_rerank span; bestSynthesis
+            // values are still available for tagging when mode == Shadow.
+            EmitSynthesisRerankTelemetry(mode, bestSynthesis, legacyResult);
+            if (legacyResult.Calibration is not null)
+            {
+                _logger?.LogInformation(
+                    "Auto-calibration accepted: residual {Residual:0.00} px, {Inliers} inliers.",
+                    legacyResult.Calibration.ResidualPixels, legacyResult.InlierCount);
+                LogInlierCorrespondences(legacyResult.Calibration, legacyResult.Inliers);
+            }
+            else
+            {
+                _logger?.LogInformation("Auto-calibration rejected: {Reason}.", legacyResult.RejectReason);
+            }
+            return legacyResult;
         }
 
-        var rejected = bestRejected ?? new CalibrationSolveResult(null, 0, "no detections");
-        _logger?.LogInformation("Auto-calibration rejected: {Reason}.", rejected.RejectReason);
-        return rejected;
+        // Enabled: synthesis-J IS the gate.
+        if (bestSynthesis is null)
+        {
+            _logger?.LogInformation("Auto-calibration rejected (synthesis): no synthesis-J winner.");
+            var noWinner = new CalibrationSolveResult(null, 0, "no synthesis-J winner",
+                legacyResult.Inliers) { Detections = legacyResult.Detections };
+            EmitSynthesisRerankTelemetry(mode, bestSynthesis, noWinner);
+            return noWinner;
+        }
+        bool synthAccept = bestSynthesis.J >= _options.SynthesisJMin
+                        && bestSynthesis.RefsAboveHalf >= _options.SynthesisNMin;
+        CalibrationSolveResult finalResult;
+        if (synthAccept)
+        {
+            finalResult = new CalibrationSolveResult(
+                bestSynthesis.Calibration, bestSynthesis.Inliers.Count, null, bestSynthesis.Inliers)
+                { Detections = legacyResult.Detections };
+            _logger?.LogInformation(
+                "Auto-calibration accepted (synthesis-J): J={J:0.00}, refs>=0.5 {Refs}/{Total}.",
+                bestSynthesis.J, bestSynthesis.RefsAboveHalf, bestSynthesis.RefsTotal);
+        }
+        else
+        {
+            var reason = $"synthesis-J below threshold (J={bestSynthesis.J:0.00} < {_options.SynthesisJMin:0.00} "
+                       + $"OR refs>=0.5 {bestSynthesis.RefsAboveHalf} < {_options.SynthesisNMin})";
+            finalResult = new CalibrationSolveResult(null, bestSynthesis.Inliers.Count, reason, bestSynthesis.Inliers)
+                { Detections = legacyResult.Detections };
+            _logger?.LogInformation("Auto-calibration rejected (synthesis): {Reason}.", reason);
+        }
+        EmitSynthesisRerankTelemetry(mode, bestSynthesis, finalResult);
+        return finalResult;
+    }
+
+    /// <summary>Placeholder — wired in Task 16.</summary>
+    private void EmitSynthesisRerankTelemetry(
+        SynthesisRerankMode mode, SynthesisOrientationWinner? winner, CalibrationSolveResult finalResult)
+    {
+        // Implemented in Task 16.
     }
 
     /// <summary>
