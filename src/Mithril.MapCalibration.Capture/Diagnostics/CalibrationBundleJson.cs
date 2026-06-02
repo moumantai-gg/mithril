@@ -37,9 +37,7 @@ public sealed record MapRectJson(
     int Width,
     int Height,
     int TextureWidth,
-    int TextureHeight,
-    double? AutoDetectScore,
-    double? SourceScaleFactor);
+    int TextureHeight);
 
 public sealed record DetectionJson(
     string LandmarkType,

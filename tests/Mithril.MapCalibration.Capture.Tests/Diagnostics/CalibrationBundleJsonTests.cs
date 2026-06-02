@@ -39,7 +39,7 @@ public sealed class CalibrationBundleJsonTests
     [Fact]
     public void MapRectJson_round_trips()
     {
-        var sut = new MapRectJson(1, 12, 18, 1192, 1020, 4096, 4096, 0.847, null);
+        var sut = new MapRectJson(1, 12, 18, 1192, 1020, 4096, 4096);
         var json = JsonSerializer.Serialize(sut, CalibrationBundleJsonContext.Default.MapRectJson);
         var round = JsonSerializer.Deserialize(json, CalibrationBundleJsonContext.Default.MapRectJson);
         round.Should().BeEquivalentTo(sut);

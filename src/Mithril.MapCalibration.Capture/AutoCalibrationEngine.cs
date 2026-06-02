@@ -264,28 +264,22 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         {
             refineResult = _refiner.Refine(gray, baseTexture, RefineMinScore);
             refineAct?.SetTag("map.located", refineResult.AcceptedRect is not null);
-            // PR-1 transitional: BestCoarseRect is the [Obsolete] alias for RawFitRect
-            // (renamed under feature-matching-locate). The in-tree
-            // TextureRegistrationRefiner still populates it under the old name; PR-3
-            // rewrites every call site to RawFitRect and deletes the alias.
-#pragma warning disable CS0618 // BestCoarseRect: alias removed in PR-3
-            if (refineResult.BestCoarseRect?.AutoDetectScore is { } coarseScore)
-            {
-                refineAct?.SetTag("locator.best_score", coarseScore);
-            }
         }
         // Surface the coarse best-rung rect on EITHER branch — the diagnostic bundle
-        // reads this so a future rejected-map-not-located is self-triaging.
+        // reads this so a future rejected-map-not-located is self-triaging. The
+        // score/factor that used to ride on this rect are gone post-Task-13; Task 15
+        // re-surfaces equivalent info via LocatorMetrics.
+#pragma warning disable CS0618 // BestCoarseRect: alias removed in PR-3
         attempt.LocatorBestRect = refineResult.BestCoarseRect;
         var mapRect = refineResult.AcceptedRect;
         if (mapRect is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedMapNotLocated;
-            if (refineResult.BestCoarseRect is { AutoDetectScore: { } bestScore } best)
+            if (refineResult.BestCoarseRect is { } best)
             {
                 _logger?.LogInformation(
-                    "Auto-calibration {Area}: locate rejected — best coarse NCC = {Score:F3} (need >= {MinScore:F2}), factor = {Factor:F3}, origin = ({X}, {Y}).",
-                    area, bestScore, RefineMinScore, best.SourceScaleFactor ?? double.NaN, best.OriginX, best.OriginY);
+                    "Auto-calibration {Area}: locate rejected — best coarse rect at origin = ({X}, {Y}), size = {W}x{H}.",
+                    area, best.OriginX, best.OriginY, best.Width, best.Height);
             }
             return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map");
         }

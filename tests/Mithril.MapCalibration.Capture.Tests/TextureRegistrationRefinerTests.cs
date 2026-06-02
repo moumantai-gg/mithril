@@ -27,29 +27,27 @@ public sealed class TextureRegistrationRefinerTests
     }
 
     /// <summary>
-    /// Observability seam: when the coarse score falls below the engine's threshold,
-    /// the refiner must still surface what the locator found — the bundle/log
-    /// downstream wants the score and origin even on a "couldn't locate" outcome,
-    /// so future close-miss vs catastrophic-miss is self-triaging.
+    /// Observability seam: the refiner must surface the coarse locator's seed rect
+    /// alongside the accepted rect, so the bundle/log downstream can record where
+    /// the coarse step landed. (Pre-Task-13 this test exercised threshold-gating in
+    /// the refiner; the refiner no longer applies the score threshold — score
+    /// metadata is gone from MapRect and re-surfaces via LocatorMetrics under
+    /// Task 15. We still pin that BestCoarseRect is populated on a real fit.)
     /// </summary>
     [Fact]
-    public void Refine_surfaces_BestCoarseRect_when_below_minScore()
+    public void Refine_surfaces_BestCoarseRect_alongside_accepted_rect()
     {
         var tex = SyntheticMap.NoisyTexture(seed: 3, w: 64, h: 64);
         var frame = SyntheticMap.PasteInto(tex, canvasW: 160, canvasH: 120, atX: 40, atY: 30);
-        // minScore > 1.0 forces rejection without engineering a deliberately-poor
-        // input; the embedded texture's match still scores ~1.0.
-        var result = new TextureRegistrationRefiner().Refine(frame, tex, minScore: 1.5);
+        var result = new TextureRegistrationRefiner().Refine(frame, tex, minScore: 0.5);
 
-        result.AcceptedRect.Should().BeNull("score is below the impossible threshold");
+        result.AcceptedRect.Should().NotBeNull();
         // PR-1 transitional: BestCoarseRect is the [Obsolete] alias for RawFitRect under
         // the feature-matching-locate rename. The refiner under test still populates it
         // via the 2-arg ctor; PR-3 rewrites these assertions onto RawFitRect.
 #pragma warning disable CS0618 // BestCoarseRect: alias removed in PR-3
         result.BestCoarseRect.Should().NotBeNull("the locator did find a best rung — surface it");
-        result.BestCoarseRect!.AutoDetectScore.Should().NotBeNull();
-        result.BestCoarseRect.AutoDetectScore!.Value.Should().BeGreaterThan(0.5);
-        result.BestCoarseRect.OriginX.Should().BeCloseTo(40, 3);
+        result.BestCoarseRect!.OriginX.Should().BeCloseTo(40, 3);
         result.BestCoarseRect.OriginY.Should().BeCloseTo(30, 3);
 #pragma warning restore CS0618
     }

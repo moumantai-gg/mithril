@@ -26,11 +26,12 @@ public sealed class CalibrationAttemptContext
     public GrayImage? BaseTextureResampled { get; set; }
     public MapRect? MapRect { get; set; }
     /// <summary>
-    /// The locator's coarse best-rung rect (with <see cref="MapRect.AutoDetectScore"/>
-    /// + <see cref="MapRect.SourceScaleFactor"/> populated) regardless of whether
-    /// it cleared the engine's accept threshold. Set on both accept and
+    /// The locator's coarse best-rung rect regardless of whether it cleared the
+    /// engine's accept threshold. Set on both accept and
     /// <c>rejected-map-not-located</c> outcomes so the bundle/log makes future
-    /// close-miss vs catastrophic-mismatch self-triaging.
+    /// close-miss vs catastrophic-mismatch self-triaging. (The score/factor metadata
+    /// that used to ride on this rect is being re-surfaced through
+    /// <c>LocatorMetrics</c> under the FM-based locate work — Task 15.)
     /// </summary>
     public MapRect? LocatorBestRect { get; set; }
     public GrayImage? AlignedCrop { get; set; }

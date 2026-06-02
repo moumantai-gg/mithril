@@ -37,8 +37,7 @@ internal static class SynthesisProbePhase
             return new MapRect(
                 j.OriginX, j.OriginY,
                 j.Width, j.Height,
-                j.TextureWidth, j.TextureHeight,
-                j.AutoDetectScore, j.SourceScaleFactor);
+                j.TextureWidth, j.TextureHeight);
         }
 
         // Derive truth-cal per precedence:

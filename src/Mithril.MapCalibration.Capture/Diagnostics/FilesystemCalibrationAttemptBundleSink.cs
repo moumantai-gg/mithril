@@ -115,8 +115,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             var dto = new MapRectJson(1,
                 ctx.MapRect.OriginX, ctx.MapRect.OriginY,
                 ctx.MapRect.Width, ctx.MapRect.Height,
-                ctx.MapRect.TextureWidth, ctx.MapRect.TextureHeight,
-                ctx.MapRect.AutoDetectScore, ctx.MapRect.SourceScaleFactor);
+                ctx.MapRect.TextureWidth, ctx.MapRect.TextureHeight);
             return WriteJson(dir, "04-maprect.json", dto, CalibrationBundleJsonContext.Default.MapRectJson);
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "04-maprect write failed"); return null; }
@@ -247,8 +246,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             : new MapRectJson(1,
                 rect.OriginX, rect.OriginY,
                 rect.Width, rect.Height,
-                rect.TextureWidth, rect.TextureHeight,
-                rect.AutoDetectScore, rect.SourceScaleFactor);
+                rect.TextureWidth, rect.TextureHeight);
 
     private static string WritePng(string dir, string name, BitmapSource src)
     {
