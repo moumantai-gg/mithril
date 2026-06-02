@@ -8,7 +8,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Tests.Experi
 public class E5_ColdGrid_BracketedTests
 {
     [Fact]
-    public void Bracketed_scaleRange_centers_at_expected_scale()
+    public void Bracketed_candidates_stay_within_scale_bracket()
     {
         var portal = new double[64, 64];
         portal[20, 20] = 0.9;

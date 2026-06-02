@@ -27,6 +27,20 @@ internal static class SynthesisProbePhase
             detectionsJsonPath ??= loadedBundle.Attempt.Files.Detections is { } d ? Path.Combine(args.BundleDir, d) : null;
         }
 
+        // Local helper: deserialise + materialise a MapRect from the bundle's
+        // 04-maprect.json. Used by both texture-pixel-space truth-cal branches.
+        MapRect LoadMapRectJson(string path)
+        {
+            var j = JsonSerializer.Deserialize(
+                File.ReadAllText(path),
+                BundleJsonContext.Default.MapRectJson)!;
+            return new MapRect(
+                j.OriginX, j.OriginY,
+                j.Width, j.Height,
+                j.TextureWidth, j.TextureHeight,
+                j.AutoDetectScore, j.SourceScaleFactor);
+        }
+
         // Derive truth-cal per precedence:
         //   1. --truth-cal           (crop-pixel space, wins outright)
         //   2. --hand-truth-cal      (texture-pixel space + MapRect → conversion)
@@ -44,14 +58,7 @@ internal static class SynthesisProbePhase
                 Console.Error.WriteLine("[err] --hand-truth-cal requires --maprect-json (directly or via --bundle-dir).");
                 return 2;
             }
-            var mapRectJson = JsonSerializer.Deserialize(
-                File.ReadAllText(mapRectJsonPath),
-                BundleJsonContext.Default.MapRectJson)!;
-            var mapRect = new MapRect(
-                mapRectJson.OriginX, mapRectJson.OriginY,
-                mapRectJson.Width, mapRectJson.Height,
-                mapRectJson.TextureWidth, mapRectJson.TextureHeight,
-                mapRectJson.AutoDetectScore, mapRectJson.SourceScaleFactor);
+            var mapRect = LoadMapRectJson(mapRectJsonPath);
             var handCalJson = new RecoveredCalibrationJson(
                 SchemaVersion: 1,
                 Scale: htc.Scale, RotationRadians: htc.Rot,
@@ -69,17 +76,10 @@ internal static class SynthesisProbePhase
         }
         else if (mapRectJsonPath is not null && recoveredCalJsonPath is not null)
         {
-            var mapRectJson = JsonSerializer.Deserialize(
-                File.ReadAllText(mapRectJsonPath),
-                BundleJsonContext.Default.MapRectJson)!;
+            var mapRect = LoadMapRectJson(mapRectJsonPath);
             var recoveredCalJson = JsonSerializer.Deserialize(
                 File.ReadAllText(recoveredCalJsonPath),
                 BundleJsonContext.Default.RecoveredCalibrationJson)!;
-            var mapRect = new MapRect(
-                mapRectJson.OriginX, mapRectJson.OriginY,
-                mapRectJson.Width, mapRectJson.Height,
-                mapRectJson.TextureWidth, mapRectJson.TextureHeight,
-                mapRectJson.AutoDetectScore, mapRectJson.SourceScaleFactor);
             truth = MapRectConversion.FromRecoveredCalibration(recoveredCalJson, mapRect, out var anisoPct);
             if (anisoPct > 1.0)
                 Console.Error.WriteLine($"[warn] MapRect resize is anisotropic by {anisoPct:0.00}%; using geometric mean.");
@@ -218,6 +218,7 @@ internal static class SynthesisProbePhase
                 using var fieldSpan = SynthesisProbeTracer.Source.StartActivity("field.build");
                 fieldSpan?.SetTag("template.type", template.LandmarkType);
                 fieldSpan?.SetTag("template.size_px", Math.Max(template.Gray.Width, template.Gray.Height));
+                fieldSpan?.SetTag("source", "screenshot-minus-base");
                 var sw = System.Diagnostics.Stopwatch.StartNew();
                 fieldsByType[template.LandmarkType] = IconLikelihoodField.Build(screenshotCrop, alignedBase, template);
                 fieldSpan?.SetTag("duration_ms", sw.ElapsedMilliseconds);
