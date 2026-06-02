@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Mithril.MapCalibration.Detection;
@@ -22,14 +23,21 @@ public static class DeviationFloodRimMask
     /// <summary>
     /// Build the edge-connected foreground rim mask.
     /// </summary>
-    /// <param name="dev">Deviation values, row-major (length = <paramref name="w"/> * <paramref name="h"/>).</param>
+    /// <param name="dev">Deviation values, row-major. Must have length exactly <paramref name="w"/> * <paramref name="h"/>.</param>
     /// <param name="w">Image width in pixels.</param>
     /// <param name="h">Image height in pixels.</param>
     /// <param name="devThr">Threshold: pixels with <c>dev[i] &gt;= devThr</c> are foreground.</param>
     /// <returns>A boolean array, same length as <paramref name="dev"/>, with true at each rim pixel.</returns>
     public static bool[] Build(float[] dev, int w, int h, double devThr)
     {
+        if (dev is null) throw new ArgumentNullException(nameof(dev));
+        if (w <= 0) throw new ArgumentOutOfRangeException(nameof(w), w, "width must be positive");
+        if (h <= 0) throw new ArgumentOutOfRangeException(nameof(h), h, "height must be positive");
         int n = w * h;
+        if (dev.Length != n)
+            throw new ArgumentException(
+                $"dev.Length ({dev.Length}) must equal w*h ({n}).", nameof(dev));
+
         var rim = new bool[n];
         var q = new Queue<int>();
         void Enq(int x, int y)

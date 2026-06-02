@@ -72,4 +72,19 @@ public sealed class DeviationFloodRimMaskTests
         // Nothing should be masked because no pixel meets the threshold.
         for (int i = 0; i < W * H; i++) rim[i].Should().BeFalse();
     }
+
+    [Fact]
+    public void Build_ThrowsOnMismatchedLength()
+    {
+        var act = () => DeviationFloodRimMask.Build(new float[10], w: 4, h: 4, devThr: 0.5);
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*dev.Length*must equal*");
+    }
+
+    [Fact]
+    public void Build_ThrowsOnNonPositiveDimensions()
+    {
+        var act = () => DeviationFloodRimMask.Build(new float[0], w: 0, h: 4, devThr: 0.5);
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
 }
