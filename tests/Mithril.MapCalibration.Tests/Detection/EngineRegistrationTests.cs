@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Mithril.MapCalibration;
 using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration.DependencyInjection;
 using Xunit;
@@ -61,5 +62,19 @@ public sealed class EngineRegistrationTests
     {
         var act = () => new ServiceCollection().AddMithrilMapCalibrationEngine("");
         act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void AddMithrilMapCalibrationEngine_registers_MapCalibrationSolverOptions_with_Shadow_default()
+    {
+        var services = new ServiceCollection();
+        services.AddMithrilMapCalibrationEngine(assetCacheDir: System.IO.Path.GetTempPath());
+        using var sp = services.BuildServiceProvider();
+
+        var opts = sp.GetRequiredService<MapCalibrationSolverOptions>();
+        opts.SynthesisRerankMode.Should().Be(SynthesisRerankMode.Shadow);
+
+        // Same instance returned per resolve (singleton).
+        sp.GetRequiredService<MapCalibrationSolverOptions>().Should().BeSameAs(opts);
     }
 }

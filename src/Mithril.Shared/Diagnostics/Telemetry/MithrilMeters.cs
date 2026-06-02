@@ -58,6 +58,12 @@ public static class MithrilMeters
     // ArdaActivitySources — Arda can't depend on Mithril.Shared). Listener-side meter
     // dispatch is purely string-based on the instrument name.
 
+    // MapCalibration Detection-layer instruments live in Mithril.MapCalibration.
+    // Diagnostics.MapCalibrationDiagnostics.Meters for the same reason Arda's
+    // do — Mithril.MapCalibration.csproj can't take a dependency on Mithril.
+    // Shared. Listener-side meter dispatch is purely string-based on the
+    // instrument name, so the Shared and Local catalogs feed the same exporters.
+
     /// <summary>Reference-data fetch outcomes (PR B).</summary>
     public static class Reference
     {
