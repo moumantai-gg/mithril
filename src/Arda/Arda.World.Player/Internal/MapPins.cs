@@ -24,8 +24,7 @@ internal sealed class MapPins : IMapPinState
     private readonly IDomainEventPublisher _bus;
     private readonly List<MapPinEntry> _pins = [];
 
-    public IReadOnlyCollection<MapPinEntry> Pins => _pins;
-    internal IReadOnlyList<MapPinEntry> PinsList => _pins;
+    public IReadOnlyList<MapPinEntry> Pins => _pins.ToArray();
 
     public MapPins(IDomainEventPublisher bus) => _bus = bus;
 

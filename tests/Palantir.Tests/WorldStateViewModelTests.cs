@@ -349,12 +349,12 @@ public sealed class WorldStateViewModelTests
 
     internal sealed class FakeMapPinState : IMapPinState
     {
-        public IReadOnlyCollection<MapPinEntry> Pins { get; private set; }
+        public IReadOnlyList<MapPinEntry> Pins { get; private set; }
 
         public FakeMapPinState(IReadOnlyCollection<MapPinEntry>? pins = null)
-            => Pins = pins ?? [];
+            => Pins = (pins as IReadOnlyList<MapPinEntry>) ?? [];
 
-        public void Set(IReadOnlyCollection<MapPinEntry> pins) => Pins = pins;
+        public void Set(IReadOnlyCollection<MapPinEntry> pins) => Pins = (pins as IReadOnlyList<MapPinEntry>) ?? pins.ToList();
     }
 
     internal sealed class FakeCelestialState : ICelestialState

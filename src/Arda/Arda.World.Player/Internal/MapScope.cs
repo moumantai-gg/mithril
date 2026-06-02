@@ -23,5 +23,5 @@ internal sealed class MapScope(Map map, Position position, Weather weather, MapP
     public string? CurrentWeather => weather.CurrentWeather;
     public DateTimeOffset? WeatherMeasuredAt => weather.MeasuredAt;
 
-    public IReadOnlyList<MapPinEntry> Pins => pins.PinsList;
+    public IReadOnlyList<MapPinEntry> Pins => pins.Pins;
 }
