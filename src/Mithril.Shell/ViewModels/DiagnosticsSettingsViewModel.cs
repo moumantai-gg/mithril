@@ -131,6 +131,27 @@ public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
         ReportClean("all logs", result);
     }
 
+    /// <summary>Opens the calibration diagnostics-bundle directory in the OS file browser.</summary>
+    [RelayCommand]
+    private void OpenCalibrationDumpDirectory()
+    {
+        try
+        {
+            Directory.CreateDirectory(CalibrationBundleDirectories.DefaultRoot);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = CalibrationBundleDirectories.DefaultRoot,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to open calibration dump directory {Dir}",
+                CalibrationBundleDirectories.DefaultRoot);
+            MaintenanceStatus = $"Could not open {CalibrationBundleDirectories.DefaultRoot}: {ex.Message}";
+        }
+    }
+
     /// <summary>Opens the unified log directory in the OS file browser. No confirmation.</summary>
     [RelayCommand]
     private void OpenLogDirectory()
