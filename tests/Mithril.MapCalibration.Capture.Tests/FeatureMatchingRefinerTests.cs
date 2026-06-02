@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Mithril.MapCalibration.Capture;
+using Mithril.MapCalibration.Capture.Tests.Fixtures;
 using Mithril.MapCalibration.Detection;
 using Xunit;
 
@@ -27,6 +28,8 @@ public sealed class FeatureMatchingRefinerTests
         Math.Abs(result.Metrics.RotationDegrees).Should().BeLessThan(0.1);
         result.AcceptedRect!.OriginX.Should().BeInRange(-2, 2);
         result.AcceptedRect.OriginY.Should().BeInRange(-2, 2);
+        result.AcceptedRect.Width.Should().BeInRange(254, 258);
+        result.AcceptedRect.Height.Should().BeInRange(254, 258);
     }
 
     [Fact]
@@ -37,7 +40,7 @@ public sealed class FeatureMatchingRefinerTests
         // hurts the inlier ratio after resize; RichNoise survives the bilinear
         // downsample cleanly because ORB's built-in image pyramid lands
         // distinctive features at both 1x and 0.5x.
-        var texture = TestPatterns.RichNoise(width: 512, height: 512, seed: 2);
+        var texture = TestPatterns.RichNoise(width: 512, height: 512);
         var halved = TestPatterns.Resize(texture, 256, 256);
         var result = BuildRefiner().Refine(halved, texture, minScore: 0);
 
@@ -53,7 +56,7 @@ public sealed class FeatureMatchingRefinerTests
         // checker still picks up many wrong-cell pairings that survive Lowe's
         // ratio, dragging the inlier ratio below the gate. RichNoise gives
         // each FAST corner a unique BRIEF signature so the gate clears.
-        var texture = TestPatterns.RichNoise(width: 256, height: 256, seed: 3);
+        var texture = TestPatterns.RichNoise(width: 256, height: 256);
         var screenshot = TestPatterns.PasteInto(
             background: TestPatterns.UniformGray(640, 480, 128),
             foreground: texture,
@@ -64,6 +67,7 @@ public sealed class FeatureMatchingRefinerTests
         result.AcceptedRect.Should().NotBeNull();
         result.AcceptedRect!.OriginX.Should().BeCloseTo(192, 3);
         result.AcceptedRect.OriginY.Should().BeCloseTo(100, 3);
+        result.Metrics!.Scale.Should().BeApproximately(1.0, 0.02);
     }
 
     [Fact]

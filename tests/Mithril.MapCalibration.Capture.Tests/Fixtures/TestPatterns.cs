@@ -1,6 +1,6 @@
 using Mithril.MapCalibration.Detection;
 
-namespace Mithril.MapCalibration.Capture.Tests;
+namespace Mithril.MapCalibration.Capture.Tests.Fixtures;
 
 internal static class TestPatterns
 {
