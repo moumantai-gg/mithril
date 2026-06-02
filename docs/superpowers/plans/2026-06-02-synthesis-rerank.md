@@ -425,6 +425,16 @@ No body changes needed — `JEvaluator.Evaluate` consumes `LandmarkReference` af
 
 (Spot-check: Grep for `r\.LandmarkType\|r\.WorldX\|r\.WorldZ\|r\.Label\|\.Label\b` over each Experiment file; if any direct field access exists, replace it: `LandmarkType` → `Type`, `WorldX` → `World.X`, `WorldZ` → `World.Z`, `Label` → `Name`.)
 
+- [ ] **Step 2b: Update remaining probe consumers**
+
+Three other probe files reference the moved types (`CandidateTransform`, `JResult`, `IconLikelihoodField`) and were NOT in the original plan's enumeration — caught by Task 3's cascade-shape verification:
+
+- `tools/MapCalibrationFromScreenshot/SynthesisProbe/RansacSeedsCsv.cs` — references `CandidateTransform`. Add `using Mithril.MapCalibration.Detection;` if absent.
+- `tools/MapCalibrationFromScreenshot/SynthesisProbe/SynthesisProbeWriter.cs` — references `CandidateTransform` and `JResult`. Add `using Mithril.MapCalibration.Detection;` if absent.
+- Any other file the final-pass Grep surfaces (run `Grep "CandidateTransform\|JResult\|IconLikelihoodField\|LocalRefine" tools/` and audit each hit for a missing `using`).
+
+These files don't take `IReadOnlyList<ReferencePoint>` parameters — they only need the namespace import, no signature changes.
+
 - [ ] **Step 3: Delete `ReferencePoint.cs`**
 
 Delete `tools/MapCalibrationFromScreenshot/SynthesisProbe/ReferencePoint.cs`.
