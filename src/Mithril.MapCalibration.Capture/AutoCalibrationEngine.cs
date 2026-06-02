@@ -58,7 +58,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private const double TypeFloor = 0.80;
     private static readonly BlobOptions BlobOpts = new(
         MinArea: 12, MaxIconArea: 900, MinSolidity: 0.35, MaxAspect: 2.5, MinPeak: 0.7);
-    private const double RefineMinScore = 0.5;
 
     // #988 monotonicity gate: when a stored calibration exists for the area,
     // a new fit must not regress quality by more than these tolerances.
