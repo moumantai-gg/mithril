@@ -8,7 +8,7 @@ What shipped in v1 and the rationale for which CDN sources will (and won't) beco
 
 ## Context
 
-Project Gorgon's CDN serves **29 reference-data files** (pg-data MCP, v470). Every file has a faithful POCO parser as of `Mithril.Reference` Phase 0–6 ([mithril-reference-roadmap.md](mithril-reference-roadmap.md)), so the constraint for the browser module is no longer *can we parse it* — it's *is it worth browsing*.
+Project Gorgon's CDN serves **29 reference-data files** (pg-data MCP, v470). Every file has a faithful POCO parser as of `Mithril.Reference` Phase 0–6 ([mithril-reference.md](mithril-reference.md)), so the constraint for the browser module is no longer *can we parse it* — it's *is it worth browsing*.
 
 Silmarillion v1 (PR #236, merged 2026-05-13) shipped the two highest-payoff browse surfaces: **Items** and **Recipes**. The architecture is built to fan out:
 

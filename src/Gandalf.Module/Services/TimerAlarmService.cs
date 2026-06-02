@@ -16,7 +16,7 @@ namespace Gandalf.Services;
 /// dragging derived rows into the user-tab alarm path would surface an audible
 /// alarm for every chest re-loot the player observes, which isn't the user's
 /// expressed preference. Cross-source notification belongs in a future shell
-/// inbox subsystem (see docs/gandalf-roadmap.md non-goals).
+/// inbox subsystem (see docs/roadmaps/gandalf.md non-goals).
 /// </summary>
 public sealed class TimerAlarmService : IDisposable
 {

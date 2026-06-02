@@ -4,7 +4,7 @@
 
 **Companion docs:**
 - [silmarillion-tab-cookbook.md](../silmarillion-tab-cookbook.md) — the scaffolding pattern. Read this first; this handoff only covers the *Effects-specific* decisions.
-- [silmarillion-roadmap.md](../silmarillion-roadmap.md) — Bucket B, sequenced after Abilities (which shipped via #293). The Effects tab is the natural rendering destination for the conditional-rule sub-tables plumbed by #288/#296 (`AbilityDynamicDots`, `AbilityDynamicSpecialValues`).
+- [roadmaps/silmarillion.md](../roadmaps/silmarillion.md) — Bucket B, sequenced after Abilities (which shipped via #293). The Effects tab is the natural rendering destination for the conditional-rule sub-tables plumbed by #288/#296 (`AbilityDynamicDots`, `AbilityDynamicSpecialValues`).
 
 ## ⚠️ Critical — the issue body has four wrong assumptions
 

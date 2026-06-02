@@ -457,7 +457,7 @@ channel rule, and this strategic principle):
   render reference data incidentally to their own purpose, but "being the browser" is
   Silmarillion's charter alone. Field-level scope:
   [silmarillion-field-coverage.md](silmarillion-field-coverage.md); tab scope:
-  [silmarillion-roadmap.md](silmarillion-roadmap.md).
+  [roadmaps/silmarillion.md](roadmaps/silmarillion.md).
 - **In scope — owner-ratified (2026-05-17; supersedes the 2026-05-16 "popup"
   framing):** Silmarillion owns a dedicated **Treasure System tab** (**#412**) — a
   browse/query surface over `tsysclientinfo` (the **Power** entity: skill-tagged,
@@ -472,7 +472,7 @@ channel rule, and this strategic principle):
     sources are a faceted entity table + named-set table — **card-shaped and
     crystal-free**. The earlier roadmap Bucket-D "calculator-shaped, not a Silmarillion
     tab" verdict reasoned from the raw-JSON label, not the contents; **overturned**
-    (recorded in [silmarillion-roadmap.md](silmarillion-roadmap.md) + History below).
+    (recorded in [roadmaps/silmarillion.md](roadmaps/silmarillion.md) + History below).
   - *Pool/recipe linkage — verified `recipes.json`/`items.json`/`ResultEffectsParser`
     2026-05-16:* the `*E` *"(enchanted)"* recipe's `TSysCraftedEquipment(template)`
     ResultEffect → `TryBuildCraftedEquipmentPool` → the crafted-equipment template's
@@ -512,7 +512,7 @@ channel rule, and this strategic principle):
   make N units of X": multi-recipe selection, shopping-list aggregation, on-hand
   cross-reference, the craft-step ladder. **It accounts for no logic beyond the
   quantity math** — no optimization, no strategy, no decision about *what* or *how
-  much* to make. (See [celebrimbor-roadmap.md](celebrimbor-roadmap.md).)
+  much* to make. (See [roadmaps/celebrimbor.md](roadmaps/celebrimbor.md).)
 - **Does NOT own:**
   - **✅ confirmed (owner, 2026-05-16)** — *Any logic beyond "make N of X".* Leveling
     optimization, what-to-craft strategy, ROI — all out. Celebrimbor only ever

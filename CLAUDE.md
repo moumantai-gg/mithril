@@ -125,15 +125,17 @@ Project knowledge is split across four tiers. Route new content by what it is:
 
 | If you're writing… | Put it… |
 |---|---|
-| A pending unit of work (bug, feature, chore) | A GitHub Issue. Use the bug/feature template; the dropdowns auto-apply `module:*` and `area:*` labels. |
-| Roadmap / prioritisation state | The [**Mithril Roadmap** Project](https://github.com/orgs/moumantai-gg/projects/1) (org-level, replaced the legacy user-level board 2026-05-21). Custom fields: `Status`, `Priority`, `Module`. (Earlier scheme had `Effort` + `Target Version`; dropped to reduce maintenance friction — re-add only if a real need surfaces.) Don't add inline checklists to roadmap docs — the doc holds *why*, the issue holds *what*. |
+| A pending unit of work (bug, feature, chore) | A GitHub Issue. Use the bug/feature template; the dropdowns auto-apply `module:*` and `area:*` labels. The issue body can be a brief description that refers to the relevant spec/plan in `docs/planning/<slug>/`. |
+| Roadmap / prioritisation state | `docs/roadmaps/` in this repo (one file per module/area). The [**Mithril Roadmap** Project](https://github.com/orgs/moumantai-gg/projects/1) (org-level, replaced the legacy user-level board 2026-05-21) is still the queryable board; custom fields: `Status`, `Priority`, `Module`. Don't add inline checklists to roadmap docs — the doc holds *why*, the issue holds *what*. |
 | Stable reference, process, how-to, user guide | The [wiki](https://github.com/moumantai-gg/mithril/wiki). Stable content; doesn't co-evolve with code. |
-| Design rationale that co-evolves with code | `docs/` in this repo. Roadmap *narrative* (why we deferred X, what would unblock Y), design notebooks, architecture decisions. |
-| Implementation spec / finalized plan for a follow-up agent | The **GitHub Issue body itself**. Fold the full spec — struct dumps, caveats, "verification owed", test plan — into the issue so a cold/spawned session is self-contained from the issue alone. **GitHub is the only home for finalized plans.** |
+| Design rationale that co-evolves with code | `docs/` in this repo. Architecture decisions, design notebooks, cross-cutting concerns. |
+| **Spec or plan for a feature / agent task** | `docs/planning/<human-readable-slug>/` in this repo. Specs and plans for the same effort live side by side (e.g. `docs/planning/gwaihir-v1.0/spec.md` + `plan.md`). Every new slug folder must be appended to `docs/planning/INDEX.md` with status + linked issue/PR. |
 
 **Workflow rules:**
 
 1. **Backlog item → Issue first.** Don't add a checkbox to a roadmap doc. Issues are queryable, have state, and surface on the Project board.
-2. **Issue references doc, doc doesn't list issues.** Each issue body links to the relevant `docs/` or wiki page for context. Roadmap docs link to the *Project* (which lists the issues), not to individual issues, so docs don't rot when issues close.
+2. **Issue references plan, plan/roadmap doesn't list issues inline.** Each issue body links to the relevant `docs/planning/<slug>/` or `docs/roadmaps/<file>` for context. Roadmap docs link to the *Project* (which lists the issues), not to individual issues, so docs don't rot when issues close.
 3. **Anything load-bearing-but-unverified gets a "Verification owed" marker** in the design notebook. Filing an issue for the spot-check is the *task side*; the doc entry stays for context.
-4. **Finalized plans live in GitHub only; local plan files are scratch.** Implementation specs go in the issue body, not a checked-in plan doc. `docs/agent-plans/`, `.claude/plans/`, and temp files are *thinking scratch only* — never the canonical artifact, never required reading for a spawned session, and **deleted once the implementation lands** (plain delete; if it was never committed, just `rm`). Do not commit a plan doc solely so a cold session can read it — fold it into the issue instead.
+4. **Specs and plans are durable artifacts under `docs/planning/<slug>/`.** They are NOT scratch and are NOT deleted when implementation lands — the `INDEX.md` row gets its status flipped (e.g. `active` → `shipped`) instead. A cold/spawned session reads the issue, the issue links to the slug folder, and the folder is self-contained from there.
+5. **Append to the index every time.** `docs/planning/INDEX.md` is the agent-readable directory. Every new slug folder MUST add a row: `slug | status | issue/PR | one-line description`. Status values: `active`, `shipped`, `deferred`, `abandoned`.
+6. **Scratch is `.claude/plans/` and tempfiles, NOT `docs/`.** Pre-commit thinking, throwaway analysis, and one-shot drafts don't belong in `docs/planning/` — that directory is for content worth keeping. Use `.claude/plans/` or `$env:TEMP` for true scratch and delete it.
