@@ -128,9 +128,9 @@ The probe's `ReferencePoint` record (Label, LandmarkType, WorldX, WorldZ) duplic
 
 Write `src/Mithril.MapCalibration/Detection/JEvaluator.cs`:
 
-```csharp
-using System.Collections.Generic;
+(Note: `Directory.Build.props` enables `<ImplicitUsings>enable</ImplicitUsings>` repo-wide — `System`, `System.Collections.Generic`, `System.Linq` etc. are global. **Do NOT add explicit `using System.Collections.Generic;` / `using System;`** in the new files in this plan — they trigger CS8019 / CS8933 warnings, and the repo's warnings-as-errors policy treats those as build failures in some configurations. Only add `using` for namespaces NOT in the global set.)
 
+```csharp
 namespace Mithril.MapCalibration.Detection;
 
 /// <summary>
@@ -227,11 +227,9 @@ The new `FromCalibration` factory takes an in-memory `AreaCalibration` + `MapRec
 
 - [ ] **Step 1: Write the new file**
 
-Write `src/Mithril.MapCalibration/Detection/CandidateTransform.cs`:
+Write `src/Mithril.MapCalibration/Detection/CandidateTransform.cs` (omit explicit `using System;` — global via ImplicitUsings):
 
 ```csharp
-using System;
-
 namespace Mithril.MapCalibration.Detection;
 
 /// <summary>
@@ -322,12 +320,9 @@ Don't build yet — Task 2 left the build red. Tasks 4 + 5 complete the cascade.
 
 - [ ] **Step 1: Write the new file**
 
-Write `src/Mithril.MapCalibration/Detection/LocalRefine.cs`:
+Write `src/Mithril.MapCalibration/Detection/LocalRefine.cs` (omit explicit `using System;` + `using System.Collections.Generic;` — both global via ImplicitUsings):
 
 ```csharp
-using System;
-using System.Collections.Generic;
-
 namespace Mithril.MapCalibration.Detection;
 
 /// <summary>
@@ -1610,14 +1605,11 @@ Replace the `EmitSynthesisRerankTelemetry` placeholder from Task 15 with the act
 
 - [ ] **Step 1: Add the using statements**
 
-At the top of `src/Mithril.MapCalibration/Detection/MapCalibrationSolveEngine.cs`, add:
+At the top of `src/Mithril.MapCalibration/Detection/MapCalibrationSolveEngine.cs`, add ONLY the Diagnostics using (the existing file already has `using System.Collections.Generic;` explicitly — leave the existing line alone, but don't add a duplicate):
 
 ```csharp
-using System.Collections.Generic;
 using Mithril.MapCalibration.Diagnostics;
 ```
-
-(`System.Collections.Generic` may already be present; keep the import list deduplicated.)
 
 **Do NOT add a `ProjectReference` to `Mithril.Shared`.** `Mithril.MapCalibration.csproj` has a load-bearing comment refusing that reference: *"Deliberately no ProjectReference to Mithril.Shared: this assembly is meant to be consumable by Mithril.Shared too (and by any module/peer) without depending up the layering."* Task 10's `MapCalibrationDiagnostics` catalog exists precisely to avoid that dependency; Task 16 consumes the LOCAL catalog. The decoder-free invariant is preserved by construction (`MapCalibrationDiagnostics` only uses `System.Diagnostics` + `System.Diagnostics.Metrics`, both BCL). `ShippedGraphDecoderFreeTests` remains green.
 
