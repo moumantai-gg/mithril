@@ -95,13 +95,13 @@ public static partial class CaptureServiceCollectionExtensions
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Window")));
         services.AddSingleton<IScreenCapture>(sp => new BitBltScreenCapture(
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Screen")));
-        // PR-4 Task 17: FeatureMatchingRefiner is the production refiner; the NCC-
-        // based TextureRegistrationRefiner is retired from the auto-capture path
-        // (still buildable for direct unit-test use). The internal cache-aware ctor
-        // wires the on-disk ORB descriptor reader+writer registered below — the
-        // engine calls FeatureMatchingRefiner.SetAreaKey(area) before each Refine
-        // so the cache key is populated (the IMapRegionRefiner interface stays
-        // narrow; runtime-cast in AutoCalibrationEngine).
+        // PR-4: FeatureMatchingRefiner is the production refiner; the NCC-based
+        // TextureRegistrationRefiner was deleted in PR-4 Task 19. The internal
+        // cache-aware ctor wires the on-disk ORB descriptor reader+writer
+        // registered below — the engine calls FeatureMatchingRefiner.SetAreaKey
+        // (area) before each Refine so the cache key is populated (the
+        // IMapRegionRefiner interface stays narrow; runtime-cast in
+        // AutoCalibrationEngine).
         services.AddSingleton<IMapRegionRefiner>(sp =>
             new FeatureMatchingRefiner(
                 options: sp.GetRequiredService<MapCalibrationLocateOptions>(),
