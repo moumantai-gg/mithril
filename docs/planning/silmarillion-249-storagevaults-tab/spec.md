@@ -3,14 +3,14 @@
 **Tracked in:** #249 — `module:silmarillion` / `area:ui` / `type:feature`. #203 umbrella (Bucket B long-tail).
 
 **Companion docs:**
-- [silmarillion-tab-cookbook.md](../silmarillion-tab-cookbook.md) — **read first.** Standard tab scaffolding. The chip-vs-popup rule is fully shipped; **this tab has no 1:N fan-out surface** — every cross-link here is a 1:1 `EntityChip`. Do not invent a popup or a synthetic kind.
+- [silmarillion-tab-cookbook.md](../../silmarillion-tab-cookbook.md) — **read first.** Standard tab scaffolding. The chip-vs-popup rule is fully shipped; **this tab has no 1:N fan-out surface** — every cross-link here is a 1:1 `EntityChip`. Do not invent a popup or a synthetic kind.
 - Reference implementations to mirror (merged): `LorebooksKindTarget`/`LorebooksTabViewModel`/`LorebookDetailViewModel` + views (PR #322) for scaffolding; `AreaDetailViewModel` (PR #324) for the per-group table-style rendering pattern.
 
 > Lowest-payoff tab in Bucket B. Keep it tight. The only non-mechanical work: the `Levels` favor→slots capacity table, the polymorphic `Requirements` rendering, and the **Bilbo-overlap check the issue explicitly demands**.
 
 ## Data shape — StorageVault
 
-[`Mithril.Reference.Models.Misc.StorageVault`](../../src/Mithril.Reference/Models/Misc/StorageVault.cs) (`storagevaults.json`, small dataset, envelope key = NPC internal name, `*`-prefixed for account-wide):
+[`Mithril.Reference.Models.Misc.StorageVault`](../../../src/Mithril.Reference/Models/Misc/StorageVault.cs) (`storagevaults.json`, small dataset, envelope key = NPC internal name, `*`-prefixed for account-wide):
 
 ```csharp
 public sealed class StorageVault
@@ -53,7 +53,7 @@ None of these is a fan-out set. **Do not build a `ProvenancePopupViewModel` here
 
 ## Scope
 
-1. **Service plumbing on `IReferenceDataService`.** `ParseStorageVaults` exists ([`ReferenceDeserializer.cs:207`](../../src/Mithril.Reference/Serialization/ReferenceDeserializer.cs#L207)) but is **not** plumbed onto the service. Add `IReadOnlyDictionary<string, StorageVault> StorageVaults` (envelope key → POCO) + empty-default fallback; wire `LoadStorageVaults`/`ParseAndSwapStorageVaults` into ctor + `RefreshAsync` switch + `RefreshAllAsync` + `Keys` + `GetSnapshot`; `FileUpdated("storagevaults")`. Mirror exactly the Lorebooks plumbing pattern PR #322 established.
+1. **Service plumbing on `IReferenceDataService`.** `ParseStorageVaults` exists ([`ReferenceDeserializer.cs:207`](../../../src/Mithril.Reference/Serialization/ReferenceDeserializer.cs#L207)) but is **not** plumbed onto the service. Add `IReadOnlyDictionary<string, StorageVault> StorageVaults` (envelope key → POCO) + empty-default fallback; wire `LoadStorageVaults`/`ParseAndSwapStorageVaults` into ctor + `RefreshAsync` switch + `RefreshAllAsync` + `Keys` + `GetSnapshot`; `FileUpdated("storagevaults")`. Mirror exactly the Lorebooks plumbing pattern PR #322 established.
 2. **Kind target** `StorageVaultsKindTarget.cs` mirroring `LorebooksKindTarget`. `Kind => EntityKind.StorageVault` (already enumerated); `EntityRef.StorageVault(string)` already exists (`EntityRef.cs:114`) — grep for stale call sites, fix in-PR if any. Next free `TabIndex`; `TrySelectByInternalName`; `TryOpenInWindow`.
 3. **Tab VM + view + detail VM + view + DI**, standard cookbook scaffolding mirroring the Lorebooks set + the `<DataTemplate>` in `SilmarillionView.xaml`. Row record: envelope key (selection), `NpcFriendlyName` (display), Area key, account-wide flag (derived from `*` prefix / `HasAssociatedNpc`), effective slot summary, Grouping facet. Detail sections:
    - **Header** — `NpcFriendlyName`, internal-name footer (envelope key, mono small per convention).

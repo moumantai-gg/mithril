@@ -8,7 +8,7 @@
 
 The Silmarillion item-detail "Used as" section now has navigable keyword chips. Clicking a chip on Massive Tourmaline's detail page (e.g. "Crystal") flips to the Recipes tab and pre-populates `QueryText = IngredientKeywords CONTAINS "Crystal"`, leveraging #260/#261's collection-`CONTAINS`-via-`IQueryStringValue` plumbing.
 
-The **forward direction is still asymmetric**: when a user opens a recipe's detail page and sees a keyword ingredient chip (e.g. the "Crystal" slot on an enchanting recipe), the chip is rendered but **not clickable** — it carries a sentinel `EntityRef` and `IsNavigable: false`. From [src/Silmarillion.Module/ViewModels/RecipesTabViewModel.cs:184-188](../../src/Silmarillion.Module/ViewModels/RecipesTabViewModel.cs#L184-L188):
+The **forward direction is still asymmetric**: when a user opens a recipe's detail page and sees a keyword ingredient chip (e.g. the "Crystal" slot on an enchanting recipe), the chip is rendered but **not clickable** — it carries a sentinel `EntityRef` and `IsNavigable: false`. From [src/Silmarillion.Module/ViewModels/RecipesTabViewModel.cs:184-188](../../../src/Silmarillion.Module/ViewModels/RecipesTabViewModel.cs#L184-L188):
 
 ```csharp
 private static EntityChipVm BuildKeywordChip(RecipeKeywordIngredient kwIng)
@@ -44,7 +44,7 @@ The end state:
 ## Why this works under PR #267's plumbing
 
 - `Item.Keywords` is `IReadOnlyList<ItemKeyword>`, and `ItemKeyword(string Tag, int Quality)` already implements `IQueryStringValue` via `Tag` (per `Mithril.Reference/Models/Items/ItemKeyword.cs`). The query engine's collection-CONTAINS path (`QueryCompiler` in `Mithril.Shared.Wpf.Query`) picks this up automatically.
-- The kind-target pattern is well-established. `RecipeIngredientKeywordKindTarget` ([src/Silmarillion.Module/Navigation/RecipeIngredientKeywordKindTarget.cs](../../src/Silmarillion.Module/Navigation/RecipeIngredientKeywordKindTarget.cs)) is the template — copy and invert.
+- The kind-target pattern is well-established. `RecipeIngredientKeywordKindTarget` ([src/Silmarillion.Module/Navigation/RecipeIngredientKeywordKindTarget.cs](../../../src/Silmarillion.Module/Navigation/RecipeIngredientKeywordKindTarget.cs)) is the template — copy and invert.
 - `ItemsKindTarget` already exists for the entity (specific item) direction. The new target is its filter-action sibling.
 
 ## Files to touch

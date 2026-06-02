@@ -4,7 +4,7 @@
 
 ## Context
 
-Today's Samwise alarms ([AlarmService.cs](../../src/Samwise.Module/Alarms/AlarmService.cs), [AlarmSettings.cs](../../src/Samwise.Module/Alarms/AlarmSettings.cs)) are one-shot per `(char|plot|stage)` and rely on a single global toggle for cross-sound behavior: [`AudioPlayer.ConcurrentPlayback`](../../src/Mithril.Shared/Audio/AudioPlayer.cs#L22), surfaced as the "Allow concurrent alarm sounds" checkbox in both [SamwiseSettingsView.xaml:35-37](../../src/Samwise.Module/Views/SamwiseSettingsView.xaml#L35-L37) and [GandalfSettingsView.xaml:18-20](../../src/Gandalf.Module/Views/GandalfSettingsView.xaml#L18-L20).
+Today's Samwise alarms ([AlarmService.cs](../../../src/Samwise.Module/Alarms/AlarmService.cs), [AlarmSettings.cs](../../../src/Samwise.Module/Alarms/AlarmSettings.cs)) are one-shot per `(char|plot|stage)` and rely on a single global toggle for cross-sound behavior: [`AudioPlayer.ConcurrentPlayback`](../../../src/Mithril.Shared/Audio/AudioPlayer.cs#L22), surfaced as the "Allow concurrent alarm sounds" checkbox in both [SamwiseSettingsView.xaml:35-37](../../../src/Samwise.Module/Views/SamwiseSettingsView.xaml#L35-L37) and [GandalfSettingsView.xaml:18-20](../../../src/Gandalf.Module/Views/GandalfSettingsView.xaml#L18-L20).
 
 The user wants three behaviors:
 
@@ -30,21 +30,21 @@ The cross-module audio question ("does Samwise interrupt Gandalf?") is shell-own
 
 ### 1. `AudioPlayer` — concurrent default + loop support
 
-[AudioPlayer.cs](../../src/Mithril.Shared/Audio/AudioPlayer.cs)
+[AudioPlayer.cs](../../../src/Mithril.Shared/Audio/AudioPlayer.cs)
 
-- Default `ConcurrentPlayback = true`. The static initializer or backing field flips to `true`. Existing wiring in [Program.cs:254-261](../../src/Mithril.Shell/Program.cs#L254-L261) that writes the flag from `audioSettings.ConcurrentAlarms` becomes a no-op write — see file (2) for the cleanup.
+- Default `ConcurrentPlayback = true`. The static initializer or backing field flips to `true`. Existing wiring in [Program.cs:254-261](../../../src/Mithril.Shell/Program.cs#L254-L261) that writes the flag from `audioSettings.ConcurrentAlarms` becomes a no-op write — see file (2) for the cleanup.
 - Add `loop: bool = false` parameter to `Play(path, volume, callerId, loop)`. When true, the `WaveStream` returned by `OpenReader` is wrapped in `LoopStream` before `ToSampleProvider()`. `LoopStream` is a small internal class implementing `WaveStream` that overrides `Read` to seek to 0 when the underlying reader hits EOF. NAudio doesn't ship a built-in for this — keep the helper file-local.
 
 ### 2. Remove the user-facing "Allow concurrent alarm sounds" wiring
 
 The flag is no longer user-controllable. Audit and remove:
 
-- [AudioSettings.cs](../../src/Mithril.Shared/Settings/AudioSettings.cs) — delete the `ConcurrentAlarms` property (the whole class is just that one field; either delete the file or leave it as a marker if other audio settings are imminent — current call sites suggest delete).
-- [ShellSettings.cs:23-24](../../src/Mithril.Shell/ShellSettings.cs#L23-L24) — delete `ConcurrentAlarms` field/property. Persisted JSON in users' `%LocalAppData%/Mithril/shell.json` will silently drop the field on next save.
-- [Program.cs:131-135, 254-262](../../src/Mithril.Shell/Program.cs#L131-L135) — drop `AudioSettings` construction and the `PropertyChanged` round-trip; just rely on the `true` default.
-- [SamwiseSettingsView.xaml:35-37](../../src/Samwise.Module/Views/SamwiseSettingsView.xaml#L35-L37) — delete the checkbox.
-- [SamwiseSettingsView.xaml.cs:15](../../src/Samwise.Module/Views/SamwiseSettingsView.xaml.cs#L15) — delete the `AudioSettings? Audio { get; set; }` property; remove the corresponding initializer in the module's view bootstrap.
-- [GandalfSettingsView.xaml:18-20](../../src/Gandalf.Module/Views/GandalfSettingsView.xaml#L18-L20) — delete the checkbox.
+- [AudioSettings.cs](../../../src/Mithril.Shared/Settings/AudioSettings.cs) — delete the `ConcurrentAlarms` property (the whole class is just that one field; either delete the file or leave it as a marker if other audio settings are imminent — current call sites suggest delete).
+- [ShellSettings.cs:23-24](../../../src/Mithril.Shell/ShellSettings.cs#L23-L24) — delete `ConcurrentAlarms` field/property. Persisted JSON in users' `%LocalAppData%/Mithril/shell.json` will silently drop the field on next save.
+- [Program.cs:131-135, 254-262](../../../src/Mithril.Shell/Program.cs#L131-L135) — drop `AudioSettings` construction and the `PropertyChanged` round-trip; just rely on the `true` default.
+- [SamwiseSettingsView.xaml:35-37](../../../src/Samwise.Module/Views/SamwiseSettingsView.xaml#L35-L37) — delete the checkbox.
+- [SamwiseSettingsView.xaml.cs:15](../../../src/Samwise.Module/Views/SamwiseSettingsView.xaml.cs#L15) — delete the `AudioSettings? Audio { get; set; }` property; remove the corresponding initializer in the module's view bootstrap.
+- [GandalfSettingsView.xaml:18-20](../../../src/Gandalf.Module/Views/GandalfSettingsView.xaml#L18-L20) — delete the checkbox.
 - Gandalf's settings-view code-behind — same `Audio` property cleanup (mirror of Samwise).
 
 ### 3. `AlarmChannel` — new type
@@ -72,7 +72,7 @@ public sealed class AlarmChannel : INotifyPropertyChanged
 
 ### 4. `AlarmSettings` / `StageAlarmRule` — add fields + migration normalization
 
-[AlarmSettings.cs](../../src/Samwise.Module/Alarms/AlarmSettings.cs)
+[AlarmSettings.cs](../../../src/Samwise.Module/Alarms/AlarmSettings.cs)
 
 **`StageAlarmRule` additions:**
 
@@ -116,11 +116,11 @@ private static Dictionary<PlotStage, StageAlarmRule> DefaultRules() => new()
 
 Make sure `SamwiseSettings.PostLoadInit` (which may not exist yet — add it if absent) calls `_alarms.PostLoadInit()` after the property handlers are re-attached.
 
-Add `[JsonSerializable(typeof(AlarmChannel))]` and `[JsonSerializable(typeof(List<AlarmChannel>))]` to [SamwiseSettingsJsonContext](../../src/Samwise.Module/Alarms/AlarmSettings.cs#L161-L164).
+Add `[JsonSerializable(typeof(AlarmChannel))]` and `[JsonSerializable(typeof(List<AlarmChannel>))]` to [SamwiseSettingsJsonContext](../../../src/Samwise.Module/Alarms/AlarmSettings.cs#L161-L164).
 
 ### 5. `AlarmService` — channel-scoped playback
 
-[AlarmService.cs](../../src/Samwise.Module/Alarms/AlarmService.cs)
+[AlarmService.cs](../../../src/Samwise.Module/Alarms/AlarmService.cs)
 
 Replace per-alarm playback dictionary with per-channel:
 
@@ -181,7 +181,7 @@ private AlarmChannel ResolveChannel(string id)
 
 ### 6. Settings UI — channels card section + per-stage Channel/Loop rows
 
-[SamwiseSettingsView.xaml](../../src/Samwise.Module/Views/SamwiseSettingsView.xaml)
+[SamwiseSettingsView.xaml](../../../src/Samwise.Module/Views/SamwiseSettingsView.xaml)
 
 **Remove:** the "Allow concurrent alarm sounds" `CheckBox` at lines 35-37.
 
@@ -203,7 +203,7 @@ The "New channel…" affordance in the stage dropdown is optional polish — def
 
 ### 7. Test coverage
 
-New tests under [tests/Samwise.Tests](../../tests/Samwise.Tests) — find the existing `AlarmServiceTests` (or add the file if absent) and cover:
+New tests under [tests/Samwise.Tests](../../../tests/Samwise.Tests) — find the existing `AlarmServiceTests` (or add the file if absent) and cover:
 
 - **Mix channel:** two stages on the same channel both fire → both handles tracked, no audio is stopped (verify via fake `IAudioPlayer` recording stops/plays).
 - **Mix channel + StopOnInteraction:** two stages fire and both layer; the older plot's stage transitions out → only the older plot's handle is stopped, the newer keeps playing.

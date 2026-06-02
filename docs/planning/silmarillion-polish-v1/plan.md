@@ -8,7 +8,7 @@
 
 **Tech Stack:** .NET 10, C# latest, WPF (`net10.0-windows`), CommunityToolkit.Mvvm, xunit + FluentAssertions. Build via `dotnet build Mithril.slnx`; test via `dotnet test`.
 
-**Design spec:** [docs/agent-plans/silmarillion-polish-v1.md](silmarillion-polish-v1.md) — every task references its spec section number.
+**Design spec:** [spec.md](spec.md) — every task references its spec section number.
 
 **Tracked issues:** #229, #231, #234, #239 (bundled).
 
@@ -1323,7 +1323,7 @@ This test depends on a `FakeReferenceData` helper. If `tests/TestSupport/FakeRef
     }
 ```
 
-**Executor note:** Don't reinvent the wheel. Open [tests/Silmarillion.Tests/ViewModels/ItemsTabViewModelTests.cs](../../tests/Silmarillion.Tests/ViewModels/ItemsTabViewModelTests.cs) first to see the fake-data shape that test already uses and copy that pattern.
+**Executor note:** Don't reinvent the wheel. Open [tests/Silmarillion.Tests/ViewModels/ItemsTabViewModelTests.cs](../../../tests/Silmarillion.Tests/ViewModels/ItemsTabViewModelTests.cs) first to see the fake-data shape that test already uses and copy that pattern.
 
 - [ ] **Step 2: Verify the test fails (type doesn't exist)**
 
@@ -2096,7 +2096,7 @@ git push -u origin feat/silmarillion-polish-v1
 gh pr create --title "Silmarillion polish v1 (#229/#231/#234) + DeepLink + Navigator registries (#239)" --body "$(cat <<'EOF'
 ## Summary
 
-Bundles three #207-followup polish issues with two parallel "switch-as-registry" refactors. Spec: [docs/agent-plans/silmarillion-polish-v1.md](docs/agent-plans/silmarillion-polish-v1.md). Plan: [docs/agent-plans/2026-05-13-silmarillion-polish-v1-plan.md](docs/agent-plans/2026-05-13-silmarillion-polish-v1-plan.md).
+Bundles three #207-followup polish issues with two parallel "switch-as-registry" refactors. Spec: [docs/planning/silmarillion-polish-v1/spec.md](docs/planning/silmarillion-polish-v1/spec.md). Plan: [docs/planning/silmarillion-polish-v1/plan.md](docs/planning/silmarillion-polish-v1/plan.md).
 
 - **#229** — `mithril://silmarillion/<kind>/<name>` module-scoped routes alongside legacy `mithril://item/...` / `mithril://recipe/...`.
 - **#231** — Compact two-line row layout in the master-detail left pane (~36px rows vs ~80px cards).

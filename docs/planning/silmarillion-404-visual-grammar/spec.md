@@ -12,7 +12,7 @@
 ## Context
 
 A design critique ([chip-critique](https://api.anthropic.com/v1/design/h/pLUeHE3xm41GCSG3irbBcQ?open_file=explorations%2Fchip-critique.html))
-found the shared `EntityChip` ([Mithril.Shared.Wpf](../../src/Mithril.Shared.Wpf))
+found the shared `EntityChip` ([Mithril.Shared.Wpf](../../../src/Mithril.Shared.Wpf))
 renders navigable references with the same bordered/surface-filled box as the
 header **stat badges** (`Skill N`, `MaxUses`, cooldown), and breaks prose in
 `{prefix} [chip]` rows. Root cause is the **absence of a visual grammar**
@@ -23,7 +23,7 @@ corrections in [#400](https://github.com/moumantai-gg/mithril/pull/400) alone).
 
 This plan is the **presentation axis only**. The *coverage* axis ("what data is
 shown / omitted / why") is a separate, already-tracked concern owned by
-[docs/silmarillion-field-coverage.md](../silmarillion-field-coverage.md) — Recipe
+[docs/silmarillion-field-coverage.md](../../silmarillion-field-coverage.md) — Recipe
 VERIFIED, the other eight an audit baseline. Do not re-open it.
 
 ## Ownership model & decision gates
@@ -61,8 +61,8 @@ Deliverable: a short tier-definition section appended to #404 (definition +
 ## Phase 1 — Pilot on Recipe (depth, not breadth)
 
 Recipe detail is already coverage-VERIFIED and is the freshest surface. Classify
-**every rendered element** in [RecipeDetailView.xaml](../../src/Silmarillion.Module/Views/RecipeDetailView.xaml)
-+ [RecipeDetailViewModel.cs](../../src/Silmarillion.Module/ViewModels/RecipeDetailViewModel.cs)
+**every rendered element** in [RecipeDetailView.xaml](../../../src/Silmarillion.Module/Views/RecipeDetailView.xaml)
++ [RecipeDetailViewModel.cs](../../../src/Silmarillion.Module/ViewModels/RecipeDetailViewModel.cs)
 (title, icon, stat badges, flavor, requirement rows incl. the new
 `RecipeRequirementRow` dual-shape, shared-cooldown row, cost lines, sources,
 ingredient/produced/keyword-slot chips, effects stub, footer) into:
@@ -137,7 +137,7 @@ view per the project's "tests green ≠ shipped" memory.
 Add a cheap conformance check: a test (or analyzer) that fails when a detail
 view introduces a raw bordered/box style for an entity reference instead of the
 shared link primitive — i.e., the next surface *cannot* improvise. Update
-[docs/silmarillion-field-coverage.md](../silmarillion-field-coverage.md)'s
+[docs/silmarillion-field-coverage.md](../../silmarillion-field-coverage.md)'s
 visual-debt note to "resolved" with a pointer to the grammar reference.
 
 ## Anti-goals (violating these reproduces the debt)
@@ -171,5 +171,5 @@ entity reference as a box again without the build telling it no."
   `NullOrEmptyToVis` / `stat`-style chips; Recipe's are the
   `SkillRequirementChip`/`MaxUsesChip`/`CooldownChip` `Border`s).
 - Coverage axis (read, do not modify in audit phases):
-  [docs/silmarillion-field-coverage.md](../silmarillion-field-coverage.md).
+  [docs/silmarillion-field-coverage.md](../../silmarillion-field-coverage.md).
 - Critique + harness: the Mithril design-system bundle the critique link serves.

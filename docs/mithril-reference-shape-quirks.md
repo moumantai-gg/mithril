@@ -439,7 +439,6 @@ Resolution path:
 The tool can also be run locally (`dotnet run --project
 tools/RefreshAndValidate`) any time you want to refresh-and-check before
 bumping `src/Mithril.Shared/Reference/BundledData/`. It does not modify
-the bundled JSON; auto-bundled-data-refresh is a deferred follow-up
-([refresh-and-validate-tool.md "Out of scope"](agent-plans/refresh-and-validate-tool.md#out-of-scope-future-follow-ups-in-priority-order)).
+the bundled JSON; auto-bundled-data-refresh is a deferred follow-up.
 
 ---

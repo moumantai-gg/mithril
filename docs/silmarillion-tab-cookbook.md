@@ -2,7 +2,7 @@
 
 > **Companion doc:** [roadmaps/silmarillion.md](roadmaps/silmarillion.md) — *why* each tab exists. This doc covers *how* to build one.
 
-How to add a new master-detail tab to Silmarillion, after the Items + Recipes v1 shipped (PR #236), the navigator was refactored to a kind-target registry (#239), and the tab-strip moved to MVVM `ItemsSource` binding via [`ModuleTab`](../src/Mithril.Shared.Wpf/ModuleTab.cs) (#272 / #233). Every Bucket B tab follows the same scaffold; this doc is the scaffold. Per-tab handoffs in [`docs/agent-plans/`](agent-plans/) own the entity-specific decisions.
+How to add a new master-detail tab to Silmarillion, after the Items + Recipes v1 shipped (PR #236), the navigator was refactored to a kind-target registry (#239), and the tab-strip moved to MVVM `ItemsSource` binding via [`ModuleTab`](../src/Mithril.Shared.Wpf/ModuleTab.cs) (#272 / #233). Every Bucket B tab follows the same scaffold; this doc is the scaffold. Per-tab handoffs in [`docs/planning/`](planning/) (e.g. `silmarillion-244-effects-tab/`, `silmarillion-249-storagevaults-tab/`) own the entity-specific decisions.
 
 ## What's in scope vs. what your handoff still owns
 

@@ -13,7 +13,7 @@ namespace Silmarillion.ViewModels;
 /// master-detail right pane and the popup <see cref="Silmarillion.Views.TreasureDetailWindow"/>.
 /// <para>
 /// Every region is classed to exactly one ratified tier per
-/// <c>docs/agent-plans/2026-05-18-silmarillion-412-treasure-detail-ratified-spec.md</c>:
+/// <c>docs/planning/silmarillion-412-treasure-detail/spec.md</c>:
 /// the title is the <c>InternalName</c> <b>verbatim</b> (Q1 — no humanize / no
 /// affix-derivation); the affix is illustrative Fact-body only (present parts only);
 /// Skill is a Confirmed Link (Degraded only if the Skills surface is unshipped); Slots

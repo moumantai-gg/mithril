@@ -31,7 +31,7 @@ namespace Silmarillion.ViewModels;
 /// <see cref="IReferenceDataService.AbilitiesByEffectKeyword"/> directly, sectioned by
 /// <see cref="EffectAbilityMatchReason"/>. The set is materialized once, in the index,
 /// retaining provenance — there is no second derivation, so the bug class is dissolved
-/// (see <c>docs/agent-plans/silmarillion-1n-provenance-popups.md</c>).
+/// (see the #318 invariant).
 /// </para>
 /// </summary>
 public sealed class EffectDetailViewModel

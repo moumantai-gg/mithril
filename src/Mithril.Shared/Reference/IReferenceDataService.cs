@@ -516,7 +516,7 @@ public interface IReferenceDataService
     /// recording which of the three unioned fields matched. The set is materialized
     /// exactly once here, retaining provenance, so a reverse-lookup surface renders
     /// membership <i>and</i> reason without a second derivation (see
-    /// <c>docs/agent-plans/silmarillion-1n-provenance-popups.md</c>). An ability
+    /// the #318 invariant). An ability
     /// qualifying via several fields appears <b>once</b> with several reason flags set,
     /// so a distinct-member count equals the displayed "View all N".
     /// </para>
