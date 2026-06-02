@@ -9,7 +9,16 @@ Replace [`AutoCalibrationEngine`](../../../src/Mithril.MapCalibration.Capture/Au
 - **Today:** [`CalibrationConfidenceGate`](../../../src/Mithril.MapCalibration/Detection/CalibrationConfidenceGate.cs) accepts when `inlierCount >= 4 AND residualPixels <= 12.0`.
 - **Proposed:** [`MapCalibrationSolveEngine`](../../../src/Mithril.MapCalibration/Detection/MapCalibrationSolveEngine.cs) gathers RANSAC's top-K candidates; for each, score `J(T) = Σ L_t(T·r)` over the area's references; accept by `J ≥ J_min AND refs_above_0.5 ≥ N_min`. Inlier-count and residual remain informational.
 
-The synthesis-probe diagnostic ran this objective on three real bundles and produced three independent data points (Bundle A=19.02/21, B=−2.76/0, C=13.96/13) that match the architectural-verdict criterion in the diagnostic spec. This spec turns that verdict into a wired-up production change.
+The synthesis-probe diagnostic ran this objective on three real bundles and produced four independent data points, post-rim-mask (PR #993):
+
+| Bundle | Production verdict | J | refs ≥ 0.5 | Synthesis-J would |
+|---|---|---|---|---|
+| A | accepted (10 inliers, 0.79 px) | 19.02 | 21 / 38 | accept (agrees) |
+| C | rejected (3 inliers, NPC starvation) | 13.96 | 13 / 38 | accept (rescues false reject) |
+| B truth (hand-derived) | n/a — production accepted a *different* fit | **15.55** | **16 / 38** | accept |
+| B production-recovered (wrong fit, 117° off truth) | accepted (4 inliers, 4.03 px) | **2.54** | **4 / 38** | reject (catches false accept) |
+
+The two B rows are PR #993's reframing: the earlier "Bundle B is degraded ECC, no solver can rescue" diagnosis was substantially wrong — it was the rim's NCC contribution spilling into nearby interior cells via the windowed integral-image computation. With rim-masking applied (PR #992), Bundle B's truth scores correctly *and* the wrong-recovered fit scores far below the truth. **Synthesis-J + rim mask is a sufficient quality signal on its own; no separate ECC-quality gate prerequisite.** This spec turns that verdict into a wired-up production change.
 
 ## Current state — the inlier-count gate's failure modes
 
@@ -25,9 +34,9 @@ bool Accept(AreaCalibration solve, int inlierCount, out string? rejectReason)
 }
 ```
 
-Inlier-count is the proximate failure shape. The 4-inlier floor is **load-bearing** for sparse zones (we measured that a 3-inlier "clean residual" fit can be a wildly wrong transform — Eltibule frame1 produced a 3-inlier solve at scale=0.45 vs truth=0.76 with mirror flipped). But the floor is also **gameable**: PR #986's Bundle B is a 4-inlier accept at 4.03 px residual whose fit is 117° off truth (scale=0.582, rotation=-2.046 rad, mirror=true). Inlier-count says "✓ four matches, geometrically consistent"; the underlying detection pool was contaminated by a degraded ECC alignment, so RANSAC found four positions consistent with the *noise pattern* rather than four landmarks consistent with each other.
+Inlier-count is the proximate failure shape. The 4-inlier floor is **load-bearing** for sparse zones (we measured that a 3-inlier "clean residual" fit can be a wildly wrong transform — Eltibule frame1 produced a 3-inlier solve at scale=0.45 vs truth=0.76 with mirror flipped). But the floor is also **gameable**: PR #986's Bundle B is a 4-inlier accept at 4.03 px residual whose fit is 117° off truth (scale=0.582, rotation=-2.046 rad, mirror=true). Inlier-count says "✓ four matches, geometrically consistent"; the underlying detection pool was contaminated, so RANSAC found four positions consistent with the noisy field rather than four landmarks consistent with each other.
 
-The objective `J(T) = Σ_{r ∈ refs} L_{type(r)}(T · r)` doesn't have this failure mode by construction: it scores against the **whole 38-ref pool** rather than the small subset RANSAC happened to find consistent. Bundle B's wrong-fit scores `J=0.39` with 2/38 refs above 0.5 — no projected ref lands on a deviation peak, because the fit is wrong relative to the reference layout regardless of whether 4 detections happen to align with each other.
+The objective `J(T) = Σ_{r ∈ refs} L_{type(r)}(T · r)` doesn't have this failure mode by construction: it scores against the **whole 38-ref pool** rather than the small subset RANSAC happened to find consistent. With rim-masking applied, Bundle B's wrong-fit scores `J=2.54` with 4/38 refs above 0.5 (vs the hand-truth's `J=15.55` with 16/38). The hand-truth dominates by a factor of 6 in J — no projected ref of the wrong fit lands on enough deviation peaks because the fit is wrong relative to the reference layout, independent of how clustered the detections were.
 
 The same objective also **rescues Bundle C** (rejected with 3 inliers from NPC-NCC starvation): `J(truth)=13.96` with 13/38 refs above 0.5, because the continuous-evidence sum doesn't need a per-template NCC threshold to clear — weak field correlations from refs whose template missed the floor still contribute positive `J`.
 
@@ -108,7 +117,7 @@ DI singleton, threaded through `AddMithrilMapCalibrationEngine`, runtime-flippab
 
 **Why a three-state enum rather than `bool RerankEnabled` + `bool ShadowMode`.** Two bools can express four states; only three are valid; the enum eliminates the invalid combination by construction. Naming: `Off` (no `L_t` build, zero-cost), `Shadow` (compute J, log telemetry, keep legacy gate), `Enabled` (J is the gate).
 
-**Why `Shadow` is the default.** The threshold defaults (`SynthesisJMin=8.0`, `SynthesisNMin=8`) are anchored to the 3-bundle dataset *before* PR #992's rim-mask change took effect on probe-measured J. Until the shadow-mode telemetry confirms low disagreement-rate on real-world play, the production gate must remain inlier-count. See Q3 for the Shadow → Enabled flip criteria.
+**Why `Shadow` is the default.** The threshold defaults (`SynthesisJMin=8.0`, `SynthesisNMin=8`) are anchored to PR #993's post-rim 4-bundle dataset (Bundle A=19.02/21, B-truth=15.55/16, C=13.96/13 all accept; B-wrong-fit=2.54/4 rejects). That's a comfortable margin on a tiny dataset — three accepts and one reject — but it's still only four data points from one area. Real-world play will introduce zoom + area + ECC-residual variance the dataset doesn't capture. Shadow mode lets that variance reveal itself in telemetry before the legacy gate stops being the source of truth. See Q3 for the Shadow → Enabled flip criteria.
 
 #### Mode semantics
 
@@ -172,28 +181,28 @@ Manual review of telemetry — automation would over-constrain a small dataset. 
 
 **Position: probe-based calibration first, shadow-mode telemetry second, default flip third.**
 
-#### Chronology (load-bearing — get this wrong and the threshold ships systematically off)
+#### Chronology
 
 | Phase | What | Status as of this spec |
 |---|---|---|
 | 0 | `DeviationFloodRimMask` helper shipped + probe applies rim-mask by default | **DONE** in PR #992 |
-| A | Re-run probe over the 3 existing Eltibule bundles (A/B/C) with rim-masking enabled; record post-mask `J` / `refs_above_0.5`. Pick conservative `J_min` / `N_min` defaults consistent with: rejects Bundle B, accepts Bundles A + C with margin. | **Pending** — flagged in PR #992 as a user-owned post-merge task |
+| A | Re-run probe over the 3 existing Eltibule bundles (A/B/C) with rim-masking enabled; record post-mask `J` / `refs_above_0.5`. Pick conservative `J_min` / `N_min` defaults consistent with: rejects Bundle B's wrong fit, accepts Bundles A + B-truth + C with margin. | **DONE** in PR #993 |
 | B | Land synthesis re-rank PR-1 (math moves into `src/`) + PR-2 (`MapCalibrationSolverOptions` + shadow-mode wiring + telemetry). Default ships as `SynthesisRerankMode.Shadow`. | depends on this spec |
 | C | User plays normally; shadow-mode telemetry accumulates. Per-area + per-zoom J distributions become visible via the new meters. Recalibrate thresholds against the real distribution. | depends on Phase B + real play time |
 | D | Once acceptance criteria in Q2 are met (manual review of telemetry), land PR-3 changing default to `SynthesisRerankMode.Enabled`. | depends on Phase C |
 
-**The "0 first" rule.** PR #992 already shipped the rim-mask change to the probe-side `LoadDeviationAsField` default, so probe-measured J is now production-equivalent. Any threshold-calibration prior to that point (including the 3 bundles in PR #986's table) is **slightly understated** vs what production will see. PR #992's expected post-mask numbers are A ≈ 18-20 (unchanged), B remains negative, C ≈ 14.5-17 (biggest gain). Use post-Phase-A numbers, not the PR #986 table, to pin the initial defaults.
+**Why Phase A actually happened up-front (rather than being pending at spec time).** When this spec was being drafted, Phase A was a "pending — user-owned post-merge task" carried by PR #992. PR #993 closed it within the same brainstorming window. The post-rim numbers are what's pinned in the `MapCalibrationSolverOptions` defaults above. Without PR #993's data the initial defaults would have been anchored to pre-rim values, which PR #993's reframing of Bundle B (`J: -2.76 → 15.55`) shows would have been substantially wrong: a `J_min` picked from `B=-2.76` would have been tuned around a deeply incorrect baseline and would have over-accepted low-J wrong fits. Phase-A-before-PR-2-defaults is the load-bearing chronology.
 
 #### Why both Phase A and Phase B (rather than just one)
 
-- **Phase A alone is fast but undersampled.** Three bundles, all Eltibule, all one player's hardware/zoom. A J_min picked from three points won't generalize across areas. But Phase A is fast (no production changes, just re-run the probe) and produces a defensible "safe initial defaults" that beat shipping `J_min=0` (accept everything).
+- **Phase A alone is fast but undersampled.** Four data points, all Eltibule, all one player's hardware/zoom. A J_min picked from four points won't generalize across areas. But Phase A pins defensible "safe initial defaults" that beat shipping `J_min=0` (accept everything). Done in PR #993.
 - **Phase B alone is slow but representative.** Real-world telemetry will surface zoom/area variance Phase A can't see. But Phase B without Phase A means the *initial* `Shadow` mode ships with arbitrary defaults; if the user happens to flip to `Enabled` before Phase B has data, they get a worse production gate than the legacy one. Phase A's conservative defaults make `Shadow` safe to ship by construction.
 
-Sequence: Phase A pins the initial defaults; Phase B re-tunes them via real data.
+Sequence: Phase A pinned the initial defaults; Phase B re-tunes them via real data.
 
 #### Why not skip Phase B and just flip on Phase A's thresholds
 
-Three bundles aren't enough to know what `J_min` should be. The diagnostic spec's table has Bundle C at J=13.96 with refs_above_0.5=13 — a hypothetical Bundle D from a different area might genuinely score J=7 with refs=6 and be correct. Without telemetry from real play, we can't distinguish "J=7 means wrong fit" from "J=7 is normal for low-ref-count areas." Shadow mode produces the disagreement data; without it we're guessing.
+Four bundles aren't enough to know what `J_min` should be. PR #993's reframing of Bundle B (J: -2.76 → 15.55) is the cautionary tale — a confident pre-rim Phase-A conclusion was substantially wrong, and the failure mode (NCC integral-image spillover from rim contamination) wasn't visible from any one bundle alone. A hypothetical Bundle D from a different area might genuinely score J=7 with refs=6 and be correct. Without telemetry from real play, we can't distinguish "J=7 means wrong fit" from "J=7 is normal for low-ref-count areas." Shadow mode produces the disagreement data; without it we're guessing.
 
 ## Risks
 
@@ -202,7 +211,7 @@ Three bundles aren't enough to know what `J_min` should be. The diagnostic spec'
 | Synthesis-J false-rejects a clean accept (Q2 criterion #2 violated) | Conservative initial thresholds; Phase B re-tune | Yes |
 | Synthesis-J over-tolerates wrong fits the inlier gate would have rejected | Threshold floor on `refs_above_0.5` is the backstop | Yes |
 | `L_t` build cost is unacceptable on low-end hardware | Diagnostic spec measured ~30 ms at the live crop size; budget the per-attempt cost in PR-1 testing | Partial — perf cost shows up in `field.build` span timing |
-| Rim mask doesn't help on interior-noise bundles (Bundle B pattern) | Explicitly out of scope per PR #992: "ECC-residual problem `DeviationFlood` can't help with — it only handles edge-connected components." Shadow mode will surface attempts where rim-masking doesn't rescue J. Routes to issue #991 (ECC quality investigation). | Yes — `synth.j_best` low + ECC residual high correlates in telemetry |
+| A future Bundle-D-like attempt fails at the ECC stage in a way rim-masking can't rescue | PR #993 retracted the "Bundle B was such a case" interpretation — Bundle B's interior noise was rim spillover, fixed by rim-masking. A genuinely ECC-degraded capture might still defeat synthesis-J. Shadow mode will surface attempts where `synth.j_best` is low + ECC residual is high (correlation visible in the telemetry tags). Routes to issue #991 (ECC quality investigation). | Yes |
 | `Shadow` mode disagreement-rate stays high indefinitely (never converges to safe-to-flip) | Don't flip. Filing follow-ups on the disagreement causes is preferable to lowering the bar. | N/A — this *is* the bar |
 | Production's in-memory `MapRect` math doesn't match the probe-side bundle math byte-for-byte | The shared `CandidateTransformFromCalibration` helper is the single math path; the conversion-equivalence test pins it. | Pre-deploy (unit test) |
 
@@ -222,7 +231,7 @@ These four sibling follow-ups are referenced as related context but explicitly N
 | [#988](https://github.com/moumantai-gg/mithril/issues/988) | Map calibration: don't replace a good calibration with a worse one | Small surgical fix in `AutoCalibrationEngine`'s accept path. Independent of synthesis-J; both gates benefit from "don't downgrade an existing good calibration." |
 | [#989](https://github.com/moumantai-gg/mithril/issues/989) | Map calibration: per-attempt bundle's 04-maprect.json records the unclamped height | Bundle-writing data-quality fix. Probe already works around it via PR #987's `BundleArgsResolver`. Production wiring doesn't read its own bundles back, so the synthesis re-rank doesn't depend on this. |
 | [#990](https://github.com/moumantai-gg/mithril/issues/990) | Map calibration: investigate why NPC NCC drops below threshold on zoomed-out captures | Detection-side investigation. Synthesis-J **routes around** the NPC-NCC starvation by aggregating weak field correlations without a per-type threshold, but doesn't fix the root cause. If #990 lands a template/threshold improvement, both gates benefit. |
-| [#991](https://github.com/moumantai-gg/mithril/issues/991) | Map calibration: investigate ECC alignment quality at high base-texture downsample ratios | ECC-quality investigation. Synthesis-J is **more robust** to a noisy deviation than RANSAC (Bundle C's J=14 vs RANSAC's reject was the demonstration), but doesn't fix bad ECC. Bundle B's J=−2.76 hand-truth failure is upstream of any solver and would benefit directly from #991. |
+| [#991](https://github.com/moumantai-gg/mithril/issues/991) | Map calibration: investigate ECC alignment quality at high base-texture downsample ratios | ECC-quality investigation. Synthesis-J is **more robust** to a noisy deviation than RANSAC (Bundle C's J=14 vs RANSAC's reject; Bundle B's post-rim J=15.55 vs the contaminated pre-rim J=−2.76). PR #993 partially *retracted* the "Bundle B is an ECC failure" framing — much of what looked like ECC noise was rim spillover via the windowed integral-image NCC, fixed by rim-masking. Remaining ECC concerns cap the J ceiling on aggressive-downsample captures but no longer block synthesis-J adoption. |
 
 This umbrella consumes their work as it lands but does not block on any of them; each is independently shippable.
 
@@ -231,11 +240,12 @@ This umbrella consumes their work as it lands but does not block on any of them;
 | PR | Scope | Depends on |
 |---|---|---|
 | **PR-1** | Move `IconLikelihoodField` / `JEvaluator` / `CandidateTransform` / `LocalRefine` from `tools/MapCalibrationFromScreenshot/SynthesisProbe/` into `src/Mithril.MapCalibration/Detection/`. Add `CandidateTransformFromCalibration` (in-memory `AreaCalibration` + `MapRect` → `CandidateTransform`). Tool's `Bundle/MapRectConversion.cs` calls the shared math via a thin adapter. Top-K plumbing in `TypeAwareRansacSolver`. **No production behaviour change.** | This spec |
-| **PR-2** | `MapCalibrationSolverOptions` POCO + `SynthesisRerankMode` enum. Wire `MapCalibrationSolveEngine` to build `L_t` from top-K candidates per orientation when mode ≠ `Off`; cross-orientation selector chooses higher J. Telemetry contract (new span + meters). Default `SynthesisRerankMode.Shadow` with `J_min`/`N_min` pinned to Phase A values. **No accept-path behaviour change** (Shadow keeps the legacy gate as the source of truth). | PR-1 + user-confirmed Phase A J/N numbers |
+| **PR-2** | `MapCalibrationSolverOptions` POCO + `SynthesisRerankMode` enum. Wire `MapCalibrationSolveEngine` to build `L_t` from top-K candidates per orientation when mode ≠ `Off`; cross-orientation selector chooses higher J. Telemetry contract (new span + meters). Default `SynthesisRerankMode.Shadow` with `J_min`/`N_min` pinned to PR #993's post-rim values. **No accept-path behaviour change** (Shadow keeps the legacy gate as the source of truth). | PR-1 |
 | **PR-3** | Once Q2 acceptance criteria met via real-world telemetry: flip default to `SynthesisRerankMode.Enabled`. Re-tune `J_min`/`N_min` per Phase C data. Document the criteria-met record. | PR-2 + ≥ 50 telemetry attempts across ≥ 3 areas |
 
 ## Verification owed
 
-- **Phase A J/N recalibration** of the 3 existing Eltibule bundles against the post-PR-#992 rim-masked probe. The values in this spec (`J_min=8.0`, `N_min=8`) are anchored to the *pre-rim-mask* numbers and are placeholders to be confirmed in Phase A.
 - **Conversion-equivalence unit test** between the production `CandidateTransformFromCalibration(AreaCalibration, MapRect)` and the existing tool-side `MapRectConversion.FromRecoveredCalibration(RecoveredCalibrationJson, MapRect)` — feed the same data through both paths, assert byte-equivalent `CandidateTransform` (modulo the `RecoveredCalibrationJson` → `AreaCalibration` round-trip).
 - **Production-vs-probe `L_t` equality test:** feed an aligned crop + aligned texture into both the live production path and the probe's `LoadDeviationAsField`; assert the resulting `L_t` fields are byte-equivalent. Closes the door on "the two surfaces drifted apart silently."
+
+*(Phase A recalibration was owed at draft time but completed in PR #993; defaults are pinned to those numbers.)*
