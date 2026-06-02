@@ -6,7 +6,12 @@ This spec is the architectural counterpart to [the synthesis-J re-rank spec](202
 
 ## Goal
 
-Replace the discrete NCC scale-ladder + parabolic refinement + ECC sub-pixel refinement at the locate stage with a single ORB-feature + RANSAC partial-affine fit. The current ladder is structurally fragile in the presence of partial occlusion (fog of war), high-contrast overlays (map pins), and any non-coastline-anchored map (caves, indoor, areas with little distinctive shoreline). The Kur Mountains live capture in PR #1008 made this concrete: the ladder's best score (0.473) sat below the production gate (0.50) at the **wrong** rect, while the ground-truth rect scored 0.674 — within ladder reach, but the locator never tried it. ORB + RANSAC recovers the ground-truth rect to sub-pixel accuracy on that same bundle (158.8, 82.4, 971.2 × 971.2 vs ground truth 159, 82, 971, 973) at 97.9% inlier ratio.
+Replace the discrete NCC scale-ladder + parabolic refinement + ECC sub-pixel refinement at the locate stage with a single ORB-feature + RANSAC partial-affine fit, delivering **two co-equal user-visible wins**:
+
+1. **Correctness on previously-broken zones.** The current ladder is structurally fragile in the presence of partial occlusion (fog of war), high-contrast overlays (map pins), and any non-coastline-anchored map (caves, indoor, areas with little distinctive shoreline). The Kur Mountains live capture in PR #1008 made this concrete: the ladder's best score (0.473) sat below the production gate (0.50) at the **wrong** rect, while the ground-truth rect scored 0.674 — within ladder reach, but the locator never tried it. ORB + RANSAC recovers the ground-truth rect to sub-pixel accuracy on that same bundle (158.8, 82.4, 971.2 × 971.2 vs ground truth 159, 82, 971, 973) at 97.9% inlier ratio.
+2. **Time-to-feedback.** The same Kur attempt's session log timestamps the *failure path* at **~3.68 s** of NCC ladder work before the rejection message renders (see "Speed and time-to-feedback" below). The user pays nearly four seconds to be told "couldn't locate the map" — concrete UX pain. The prototype's ~200–300 ms per locate is a **~15× speedup**, and it's the same pass that fixes correctness. We are not trading one for the other; both fall out of the same change.
+
+The 4-second-to-fail experience is the user-pain side of the same bug: today's locator is slow *and* wrong on Kur, and lowering the gate or tuning the ladder would only make it "fast at being wrong." The cutover wins on both axes at once.
 
 ## The criterion that rules approaches in/out
 
@@ -48,7 +53,28 @@ The prototype is `tests/Mithril.MapCalibration.Capture.Tests/FeatureMatchingProt
 2. The rotation column is the noise floor. Native PG map UI rotation is 0° (axis-aligned). Anything > ~0.5° in production means "no fit" much more strongly than the current ladder's "low NCC" — wrong-fit RANSAC results don't recover a near-zero rotation.
 3. Scales span 0.41–0.48 across the four bundles. The current ladder hard-coded a discrete factor list (1.0, 1.1, 1.2, 1.35, 1.5, … per [`MapRectLocator.BuildCandidateScales`](../../../src/Mithril.MapCalibration/Detection/MapRectLocator.cs)) that would have required parabolic interpolation between rungs to express the Eltibule 0.414. RANSAC's scale is continuous by construction.
 
-**Speed.** Prototype reports ~200–300 ms total per locate (ORB on capture ~50–100 ms, ORB on texture ~100–200 ms, KNN match ~30 ms, RANSAC < 1 ms). The current NCC ladder is ~3–5 s. The texture-side ORB cost is amortizable (cache descriptors per asset version — see *Descriptor caching* below); steady-state locate is then ~80–150 ms.
+### Speed and time-to-feedback
+
+The current locator's wall-clock cost is not a perf footnote — it's directly user-facing latency on a hotkey-triggered action. The same Kur live bundle that motivated this work has the timing in its session log:
+
+```
+19:20:55.999  Auto-calibration KurMountains: locating the map within the captured frame (texture registration)…
+19:20:59.677  Auto-calibration KurMountains: locate rejected — best coarse NCC = 0.473…
+```
+
+**3.68 seconds** between "started locating" and "gave up." That's the user-visible delay between pressing the hotkey on a fogged Kur map and being told nothing useful happened. The worst combination of failure modes: slow path **and** wrong answer.
+
+| Locator | Wall-clock on Kur live | Outcome | Source |
+|---|---|---|---|
+| Current (NCC ladder + ECC) | **3.68 s** | rejected (wrong rect) | live session log timestamps above |
+| ORB+RANSAC prototype | ~200–300 ms total | accepted (sub-pixel correct) | prototype stdout, [`FeatureMatchingPrototype.cs`](../../../tests/Mithril.MapCalibration.Capture.Tests/FeatureMatchingPrototype.cs) |
+| ORB+RANSAC with descriptor cache hit | ~80–150 ms steady-state | accepted | prototype minus the ~100–200 ms texture-side ORB cost; see *Descriptor caching* |
+
+A **~15× speedup** on the failure path, **~25× on cache-hit steady state**. The prototype's breakdown: ORB on capture ~50–100 ms, ORB on texture ~100–200 ms (amortized to ~0 on cache hit), KNN match ~30 ms, RANSAC <1 ms.
+
+**Where the 3.68 s actually goes.** 18 candidate scale rungs ([`MapRectLocator.BuildCandidateScales`](../../../src/Mithril.MapCalibration/Detection/MapRectLocator.cs)) × hand-rolled sliding-window NCC at a 384 px working resolution ([`NccTemplateMatch.FindBest`](../../../src/Mithril.MapCalibration/Detection/NccTemplateMatch.cs)). The bottleneck is the **hand-rolled** NCC, not NCC-the-algorithm — `Cv2.MatchTemplate` is SIMD-optimized and would close most of the gap on its own. But we're throwing out the ladder anyway, so this cost evaporates with the cutover; there's no point optimizing the NCC implementation as a separate step. (`NccTemplateMatch` itself stays — the solve step's icon detection still uses it, but at template sizes 16–24 px where the hand-rolled cost is negligible.)
+
+**No perf gate on the new path.** PR-2 measures cold-vs-warm cache timing on the Kur live replay and records the numbers in the commit log. There's no CI assertion on absolute ms — the prototype's headroom is large enough that a noise factor of 2–3× would still ship faster than the ladder it replaces.
 
 ## Architecture
 
