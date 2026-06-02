@@ -222,7 +222,7 @@ internal sealed record CliArgs(
         // bundle in extract-map; landmarks/npcs in the full pipeline).
         // extract-icons (sharedassets0-wide) and self-test (synthetic area)
         // don't need it.
-        if (area is null && phase is not (Phase.ExtractIcons or Phase.SelfTest or Phase.EmitTemplates))
+        if (area is null && phase is not (Phase.ExtractIcons or Phase.SelfTest or Phase.EmitTemplates or Phase.SynthesisProbe))
         {
             Console.Error.WriteLine("--area required (e.g. --area AreaSerbule)");
             return null;
