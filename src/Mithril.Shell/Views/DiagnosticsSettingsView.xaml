@@ -50,26 +50,21 @@
                        FontSize="{DynamicResource AppFontSizeHint}" Margin="0,8,0,4"
                        Text="Bind a hotkey to 'Toggle perf-trace recording' under Hotkeys settings to start/stop a session on demand. The status bar shows a red REC dot while a session is active."/>
 
-            <!-- Map-calibration capture diagnostics (#966 Task 3) -->
+            <!-- Map-calibration diagnostic bundles (#984) -->
             <Border Margin="0,24,0,0" Padding="0,16,0,0" BorderThickness="0,1,0,0" BorderBrush="#22FFFFFF">
                 <StackPanel>
-                    <TextBlock Text="Map-calibration capture frames" Foreground="#88FFFFFF" Margin="0,0,0,4" FontWeight="SemiBold"/>
+                    <TextBlock Text="Map-calibration diagnostics" Foreground="#88FFFFFF" Margin="0,0,0,4" FontWeight="SemiBold"/>
                     <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,8"
-                               Text="Dumps each successfully captured map frame to a PNG so you can inspect the exact pixels the auto-calibration solve was handed. A debug aid for investigating a slow or stalled solve — leave off otherwise."/>
+                               Text="Writes a per-attempt diagnostic bundle (screenshot, ECC crop, deviation map, detections, recovered calibration) for each calibration attempt. A debug aid for investigating solve failures — leave off otherwise."/>
 
-                    <CheckBox Content="Dump calibration capture frames (PNG)"
-                              IsChecked="{Binding Settings.DumpCalibrationCaptureFrames, Mode=TwoWay}"
-                              Foreground="#FFE8E8E8" Margin="0,0,0,8"/>
-
-                    <CheckBox Content="…also dump the derived grayscale frame"
-                              IsChecked="{Binding Settings.DumpCalibrationGrayFrames, Mode=TwoWay}"
-                              IsEnabled="{Binding Settings.DumpCalibrationCaptureFrames}"
+                    <CheckBox Content="Save calibration diagnostics on each attempt"
+                              IsChecked="{Binding Settings.DumpCalibrationBundles, Mode=TwoWay}"
                               Foreground="#FFE8E8E8" Margin="0,0,0,16"/>
 
                     <TextBlock TextWrapping="Wrap" Foreground="#66FFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"
-                               Text="Frames land in:"/>
+                               Text="Bundles land in:"/>
                     <TextBlock TextWrapping="Wrap" Foreground="#AAFFFFFF"
                                FontSize="{DynamicResource AppFontSizeHint}"
                                FontFamily="Consolas, Cascadia Mono"
