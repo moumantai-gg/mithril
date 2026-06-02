@@ -265,25 +265,30 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             refineResult = _refiner.Refine(gray, baseTexture, RefineMinScore);
             refineAct?.SetTag("map.located", refineResult.AcceptedRect is not null);
         }
-        // Surface the coarse best-rung rect on EITHER branch — the diagnostic bundle
-        // reads this so a future rejected-map-not-located is self-triaging. The
-        // score/factor that used to ride on this rect are gone post-Task-13; Task 15
-        // re-surfaces equivalent info via LocatorMetrics.
-#pragma warning disable CS0618 // BestCoarseRect: alias removed in PR-3
-        attempt.LocatorBestRect = refineResult.BestCoarseRect;
+        // Surface the raw fit rect + metrics on EITHER branch — the diagnostic bundle
+        // reads these so a future rejected-map-not-located is self-triaging. Metrics
+        // is null under the in-tree NCC refiner (TextureRegistrationRefiner doesn't
+        // produce LocateMetrics); PR-4 swaps in the FM refiner which DOES populate it.
+        attempt.LocatorRawFit = refineResult.RawFitRect;
+        attempt.LocatorMetrics = refineResult.Metrics;
         var mapRect = refineResult.AcceptedRect;
         if (mapRect is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedMapNotLocated;
-            if (refineResult.BestCoarseRect is { } best)
+            if (refineResult.Metrics is { } m)
             {
                 _logger?.LogInformation(
-                    "Auto-calibration {Area}: locate rejected — best coarse rect at origin = ({X}, {Y}), size = {W}x{H}.",
+                    "Auto-calibration {Area}: locate rejected — inliers={Inliers}/{Cand} ratio={Ratio:0.000}, scale={Scale:0.000}, rotation={Rot:0.000}°.",
+                    area, m.InlierCount, m.CandidateCount, m.InlierRatio, m.Scale, m.RotationDegrees);
+            }
+            else if (refineResult.RawFitRect is { } best)
+            {
+                _logger?.LogInformation(
+                    "Auto-calibration {Area}: locate rejected — raw fit rect at origin = ({X}, {Y}), size = {W}x{H}.",
                     area, best.OriginX, best.OriginY, best.Width, best.Height);
             }
             return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map");
         }
-#pragma warning restore CS0618
         attempt.MapRect = mapRect;
         _logger?.LogInformation(
             "Auto-calibration {Area}: map sub-rect located ({MapRect}) in {ElapsedMs:0} ms.",

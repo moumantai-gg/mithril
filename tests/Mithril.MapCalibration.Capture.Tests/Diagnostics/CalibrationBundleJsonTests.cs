@@ -11,7 +11,7 @@ public sealed class CalibrationBundleJsonTests
     public void AttemptJson_round_trips_through_source_gen_context()
     {
         var sut = new AttemptJson(
-            SchemaVersion: 1,
+            SchemaVersion: 2,
             Area: "AreaEltibule",
             AttemptStartedUtc: "2026-06-01T12:30:12.696Z",
             AttemptFinalizedUtc: "2026-06-01T12:30:14.812Z",
@@ -42,6 +42,29 @@ public sealed class CalibrationBundleJsonTests
         var sut = new MapRectJson(1, 12, 18, 1192, 1020, 4096, 4096);
         var json = JsonSerializer.Serialize(sut, CalibrationBundleJsonContext.Default.MapRectJson);
         var round = JsonSerializer.Deserialize(json, CalibrationBundleJsonContext.Default.MapRectJson);
+        round.Should().BeEquivalentTo(sut);
+    }
+
+    [Fact]
+    public void LocatorBestJson_round_trips()
+    {
+        var sut = new LocatorBestJson(
+            SchemaVersion: 1,
+            OriginX: 192, OriginY: 100,
+            Width: 909, Height: 909,
+            TextureWidth: 2048, TextureHeight: 2048,
+            InlierCount: 624,
+            CandidateCount: 731,
+            InlierRatio: 0.853,
+            Scale: 1.0007,
+            RotationDegrees: 0.12,
+            Tx: 191.4,
+            Ty: 99.8,
+            ResidualPixels: 0.41,
+            GateAccepted: true,
+            GateRejectReason: null);
+        var json = JsonSerializer.Serialize(sut, CalibrationBundleJsonContext.Default.LocatorBestJson);
+        var round = JsonSerializer.Deserialize(json, CalibrationBundleJsonContext.Default.LocatorBestJson);
         round.Should().BeEquivalentTo(sut);
     }
 
