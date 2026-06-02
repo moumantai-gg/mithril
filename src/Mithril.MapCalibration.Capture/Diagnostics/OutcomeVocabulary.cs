@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Frozen;
-using System.Collections.Generic;
 
 namespace Mithril.MapCalibration.Capture.Diagnostics;
 
@@ -24,10 +23,9 @@ public static class OutcomeVocabulary
     public const string RejectedSolveResidual = "rejected-solve-residual";
     public const string Error = "error";
 
-    private static readonly FrozenSet<string> NoBundleOutcomes = new HashSet<string>(StringComparer.Ordinal)
-    {
-        RejectedNoArea, RejectedPgNotForeground, RejectedNoBbox,
-    }.ToFrozenSet(StringComparer.Ordinal);
+    private static readonly FrozenSet<string> NoBundleOutcomes = FrozenSet.Create(
+        StringComparer.Ordinal,
+        RejectedNoArea, RejectedPgNotForeground, RejectedNoBbox);
 
     /// <summary>True when the bundle should be written; false for the pre-capture rejects.</summary>
     public static bool ShouldWriteBundle(string outcome) => !NoBundleOutcomes.Contains(outcome);
@@ -39,9 +37,9 @@ public static class OutcomeVocabulary
     public static string RejectSolveSubcategory(string? rejectReason)
     {
         if (string.IsNullOrWhiteSpace(rejectReason)) return RejectedSolve;
-        var s = rejectReason!.AsSpan();
+        var s = rejectReason.AsSpan();
         if (s.Contains("no detections", StringComparison.OrdinalIgnoreCase)) return RejectedSolveNoDetections;
-        if (s.Contains("insufficient inliers", StringComparison.OrdinalIgnoreCase)) return RejectedSolveInsufficientInliers;
+        if (s.Contains("inliers", StringComparison.OrdinalIgnoreCase)) return RejectedSolveInsufficientInliers;
         if (s.Contains("residual", StringComparison.OrdinalIgnoreCase)) return RejectedSolveResidual;
         return RejectedSolve;
     }

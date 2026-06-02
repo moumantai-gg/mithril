@@ -11,8 +11,8 @@ public sealed class OutcomeVocabularyTests
     [InlineData("", "rejected-solve")]
     [InlineData("no geometrically-consistent fit", "rejected-solve")]
     [InlineData("no detections cleared the threshold", "rejected-solve-no-detections")]
-    [InlineData("insufficient inliers (3 < 4 required)", "rejected-solve-insufficient-inliers")]
-    [InlineData("residual 14.2 px exceeds 12 px gate", "rejected-solve-residual")]
+    [InlineData("only 3 inliers (need >= 4)", "rejected-solve-insufficient-inliers")]
+    [InlineData("residual 14.20 px exceeds threshold 12.00 px", "rejected-solve-residual")]
     public void RejectSolveSubcategory_maps_reject_reasons(string? reason, string expected)
     {
         OutcomeVocabulary.RejectSolveSubcategory(reason).Should().Be(expected);
