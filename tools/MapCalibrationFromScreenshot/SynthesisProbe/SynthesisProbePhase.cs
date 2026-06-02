@@ -58,7 +58,7 @@ internal static class SynthesisProbePhase
                 Console.Error.WriteLine("[err] --hand-truth-cal requires --maprect-json (directly or via --bundle-dir).");
                 return 2;
             }
-            var mapRect = LoadMapRectJson(mapRectJsonPath);
+            var mapRectForHandCal = LoadMapRectJson(mapRectJsonPath);
             var handCalJson = new RecoveredCalibrationJson(
                 SchemaVersion: 1,
                 Scale: htc.Scale, RotationRadians: htc.Rot,
@@ -69,18 +69,18 @@ internal static class SynthesisProbePhase
                 ReferenceCount: 0,
                 Source: "HandSupplied",
                 Inliers: System.Array.Empty<InlierJson>());
-            truth = MapRectConversion.FromRecoveredCalibration(handCalJson, mapRect, out var handAnisoPct);
+            truth = MapRectConversion.FromRecoveredCalibration(handCalJson, mapRectForHandCal, out var handAnisoPct);
             if (handAnisoPct > 1.0)
                 Console.Error.WriteLine($"[warn] MapRect resize is anisotropic by {handAnisoPct:0.00}%; using geometric mean.");
             Console.Error.WriteLine("[truth] using --hand-truth-cal (texture-pixel space → crop-pixel via MapRect).");
         }
         else if (mapRectJsonPath is not null && recoveredCalJsonPath is not null)
         {
-            var mapRect = LoadMapRectJson(mapRectJsonPath);
+            var mapRectForRecoveredCal = LoadMapRectJson(mapRectJsonPath);
             var recoveredCalJson = JsonSerializer.Deserialize(
                 File.ReadAllText(recoveredCalJsonPath),
                 BundleJsonContext.Default.RecoveredCalibrationJson)!;
-            truth = MapRectConversion.FromRecoveredCalibration(recoveredCalJson, mapRect, out var anisoPct);
+            truth = MapRectConversion.FromRecoveredCalibration(recoveredCalJson, mapRectForRecoveredCal, out var anisoPct);
             if (anisoPct > 1.0)
                 Console.Error.WriteLine($"[warn] MapRect resize is anisotropic by {anisoPct:0.00}%; using geometric mean.");
             Console.Error.WriteLine(
@@ -97,59 +97,93 @@ internal static class SynthesisProbePhase
         // Non-nullable local for use throughout the rest of Run.
         var truthNn = truth.Value;
 
-        // Prereq guards (unchanged).
-        if (string.IsNullOrEmpty(args.ScreenshotPath))
+        // Auto-fill --area / --screenshot / --map-rect from the bundle when the
+        // caller has not supplied them explicitly.  Explicit flags always win.
+        string area = args.Area;
+        string? screenshotPath = string.IsNullOrEmpty(args.ScreenshotPath) ? null : args.ScreenshotPath;
+        (int X, int Y, int W, int H)? mapRect = args.MapRect;
+
+        if (loadedBundle is not null)
         {
-            Console.Error.WriteLine("--screenshot required for --phase synthesis-probe");
+            (area, screenshotPath, mapRect) = BundleArgsResolver.Resolve(
+                loadedBundle, args.BundleDir!,
+                mapRectJsonPath,
+                alignedDeviationPath,
+                explicitArea: area,
+                explicitScreenshotPath: screenshotPath,
+                explicitMapRect: mapRect);
+        }
+
+        // Prereq guards (relaxed: --screenshot is not required when --aligned-deviation
+        // or --bundle-dir already supplies the field source directly).
+        if (string.IsNullOrEmpty(screenshotPath) && alignedDeviationPath is null)
+        {
+            Console.Error.WriteLine("--screenshot required for --phase synthesis-probe (unless --aligned-deviation or --bundle-dir is given)");
             return 2;
         }
-        if (args.MapRect is null)
+        if (mapRect is null)
         {
             Console.Error.WriteLine("--map-rect required for --phase synthesis-probe (auto-detect is not reliable enough for the diagnostic)");
+            return 2;
+        }
+        if (string.IsNullOrEmpty(area))
+        {
+            Console.Error.WriteLine("--area required for --phase synthesis-probe (unless --bundle-dir is given)");
             return 2;
         }
 
         using var tracer = SynthesisProbeTracer.Configure(args.TraceConsole, args.OtlpEndpoint);
         using var rootSpan = SynthesisProbeTracer.Source.StartActivity("probe.attempt");
-        rootSpan?.SetTag("area", args.Area);
-        rootSpan?.SetTag("screenshot", args.ScreenshotPath);
+        rootSpan?.SetTag("area", area);
+        if (screenshotPath is not null) rootSpan?.SetTag("screenshot", screenshotPath);
         rootSpan?.SetTag("truth.scale", truthNn.Scale);
         rootSpan?.SetTag("truth.rot", truthNn.RotRadians);
         rootSpan?.SetTag("truth.mirror", truthNn.Mirror);
 
-        // Load screenshot + crop to map rect.
-        var screenshot = ImageIo.LoadGray(args.ScreenshotPath);
-        var (mx, my, mw, mh) = args.MapRect.Value;
-        var screenshotCrop = ImageOps.Crop(screenshot, mx, my, mw, mh);
+        // Hoist mapRect destructure before the conditional screenshot+base loads
+        // since mw/mh are needed by both branches (field build and E5 grid search).
+        var (mx, my, mw, mh) = mapRect.Value;
         rootSpan?.SetTag("crop.w", mw);
         rootSpan?.SetTag("crop.h", mh);
 
-        // Locate + load the aligned base texture, resampled to the crop dimensions.
+        // pgInstall and tpkPath are needed for both the screenshot+base branch
+        // (when alignedDeviationPath is null) and for icon template extraction.
         var pgInstall = SteamInstall.FindPgInstall();
         var tpkPath = args.TpkPath ?? RepoPaths.DefaultTpkPath();
-        GrayImage alignedBase;
-        if (!string.IsNullOrEmpty(args.AlignedBasePath))
+
+        // Load screenshot + crop to map rect (only needed when building the field
+        // from scratch; skipped when --aligned-deviation already provides the layer).
+        GrayImage? screenshotCrop = null;
+        GrayImage? alignedBase = null;
+        if (alignedDeviationPath is null)
         {
-            if (!File.Exists(args.AlignedBasePath))
+            var screenshot = ImageIo.LoadGray(screenshotPath!);
+            screenshotCrop = ImageOps.Crop(screenshot, mx, my, mw, mh);
+
+            // Locate + load the aligned base texture, resampled to the crop dimensions.
+            if (!string.IsNullOrEmpty(args.AlignedBasePath))
             {
-                Console.Error.WriteLine($"--aligned-base file not found: {args.AlignedBasePath}");
-                return 2;
+                if (!File.Exists(args.AlignedBasePath))
+                {
+                    Console.Error.WriteLine($"--aligned-base file not found: {args.AlignedBasePath}");
+                    return 2;
+                }
+                alignedBase = ImageIo.LoadGray(args.AlignedBasePath);
+                if (alignedBase.Width != mw || alignedBase.Height != mh)
+                {
+                    Console.Error.WriteLine(
+                        $"--aligned-base dimensions {alignedBase.Width}x{alignedBase.Height} " +
+                        $"don't match --map-rect crop dims {mw}x{mh}");
+                    return 2;
+                }
             }
-            alignedBase = ImageIo.LoadGray(args.AlignedBasePath);
-            if (alignedBase.Width != mw || alignedBase.Height != mh)
+            else
             {
-                Console.Error.WriteLine(
-                    $"--aligned-base dimensions {alignedBase.Width}x{alignedBase.Height} " +
-                    $"don't match --map-rect crop dims {mw}x{mh}");
-                return 2;
+                var mapDir = args.MapDir ?? RepoPaths.DefaultMapsCacheDir();
+                var mapPng = MapTextureExtractor.EnsureExtracted(pgInstall, mapDir, area);
+                var baseTexture = ImageIo.LoadGray(mapPng);
+                alignedBase = ImageOps.Resize(baseTexture, mw, mh);
             }
-        }
-        else
-        {
-            var mapDir = args.MapDir ?? RepoPaths.DefaultMapsCacheDir();
-            var mapPng = MapTextureExtractor.EnsureExtracted(pgInstall, mapDir, args.Area);
-            var baseTexture = ImageIo.LoadGray(mapPng);
-            alignedBase = ImageOps.Resize(baseTexture, mw, mh);
         }
 
         // Load icon templates from the extracted icons cache, scaled to the
@@ -220,7 +254,7 @@ internal static class SynthesisProbePhase
                 fieldSpan?.SetTag("template.size_px", Math.Max(template.Gray.Width, template.Gray.Height));
                 fieldSpan?.SetTag("source", "screenshot-minus-base");
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                fieldsByType[template.LandmarkType] = IconLikelihoodField.Build(screenshotCrop, alignedBase, template);
+                fieldsByType[template.LandmarkType] = IconLikelihoodField.Build(screenshotCrop!, alignedBase!, template);
                 fieldSpan?.SetTag("duration_ms", sw.ElapsedMilliseconds);
             }
         }
@@ -229,10 +263,10 @@ internal static class SynthesisProbePhase
         var refs = ProbeReferences.Load(
             args.LandmarksPath ?? ProbeReferences.DefaultLandmarksPath(),
             args.NpcsPath ?? ProbeReferences.DefaultNpcsPath(),
-            args.Area);
+            area);
 
         // Output directory + writer.
-        var outDir = Path.Combine(RepoPaths.RepoRoot(), "study", "synthesis-probe", args.Area);
+        var outDir = Path.Combine(RepoPaths.RepoRoot(), "study", "synthesis-probe", area);
         using var writer = new SynthesisProbeWriter(outDir);
 
         // Dump field PNGs — one per landmark type.

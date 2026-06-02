@@ -209,23 +209,27 @@ Artifacts are written to `study/synthesis-probe/<area>/`.
 
 ### Bundle-driven workflow (after PR #985)
 
-The synthesis probe consumes the per-attempt diagnostic bundles Mithril's live engine writes (`%LocalAppData%/Mithril/diagnostics/calibration/<Area>-<timestamp>-<outcome>/`). For a single attempt:
+The synthesis probe consumes the per-attempt diagnostic bundles Mithril's live engine writes (`%LocalAppData%/Mithril/diagnostics/calibration/<Area>-<timestamp>-<outcome>/`). The minimal invocation is:
 
 ```powershell
 dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- `
   --phase synthesis-probe `
-  --area AreaEltibule `
   --bundle-dir "C:/Users/<you>/AppData/Local/Mithril/diagnostics/calibration/AreaEltibule-20260602-1230-accepted"
 ```
 
-`--bundle-dir` resolves the rest from the bundle's `01-attempt.json` manifest:
+`--bundle-dir` auto-fills `--area`, `--screenshot`, and `--map-rect` from the bundle's `01-attempt.json` manifest in addition to resolving the four file-path flags:
 
-| Bundle file | Probe flag (auto-resolved) |
+| Bundle file / manifest field | Auto-fills CLI flag |
 |---|---|
+| `area` field in `01-attempt.json` | `--area` |
+| `grayScreenshot` (or `rawScreenshot`) in `01-attempt.json` | `--screenshot` (gray preferred) |
+| `04-maprect.json` origin + deviation PNG dimensions | `--map-rect` |
 | `04-maprect.json` | `--maprect-json` |
 | `07-deviation.png` | `--aligned-deviation` |
 | `11-recovered-cal.json` | `--recovered-cal-json` |
 | `10-detections.json` | `--detections-json` (not consumed in v1) |
+
+**Why the deviation PNG, not the JSON, drives the map-rect size:** `04-maprect.json`'s `height` field is recorded before the engine clamps the rect to fit the screenshot. For example Bundle B 031130-122 records `height=999` but the engine actually ran at `height=986` (the screenshot is 1047 px tall). The deviation PNG's actual W×H is the authoritative post-clamp truth.
 
 When both `--maprect-json` and `--recovered-cal-json` are present, the probe derives truth-cal automatically — no manual `--truth-cal` needed.
 
