@@ -1,7 +1,9 @@
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
 using Mithril.MapCalibration;
+using Mithril.MapCalibration.Capture.Diagnostics;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
 using Mithril.MapCalibration.Detection;
 using Mithril.Shared.Game;
@@ -178,7 +180,146 @@ public sealed class AutoCalibrationEngineTests
         await act.Should().NotThrowAsync();
     }
 
+    // ── Bundle-sink (#984 Block D) ───────────────────────────────────────────
+
+    [Fact]
+    public async Task TryCalibrate_passes_populated_context_to_sink_on_accept()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var capturingSink = new CapturingSink(captured);
+        var selector = MakeSinkSelector(capturingSink);
+        var h = new EngineHarness
+        {
+            Solve = Accepted(residual: 0.65, inliers: 5),
+            SinkSelector = selector,
+        };
+
+        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        var ctx = captured[0];
+        ctx.Outcome.Should().Be(OutcomeVocabulary.Accepted);
+        ctx.RawCapture.Should().NotBeNull();
+        ctx.GrayCapture.Should().NotBeNull();
+        ctx.MapRect.Should().NotBeNull();
+        ctx.AlignedCrop.Should().NotBeNull();
+        ctx.AlignedTexture.Should().NotBeNull();
+        ctx.References.Should().NotBeNull();
+        ctx.Result.Should().NotBeNull();
+        ctx.Result!.Calibration.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task TryCalibrate_sink_receives_no_area_outcome()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        var h = new EngineHarness { CurrentArea = null, SinkSelector = selector };
+
+        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedNoArea);
+    }
+
+    [Fact]
+    public async Task TryCalibrate_sink_receives_no_bbox_outcome()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        var h = new EngineHarness { Bbox = null, SinkSelector = selector };
+
+        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedNoBbox);
+    }
+
+    [Fact]
+    public async Task TryCalibrate_sink_receives_pg_not_foreground_outcome()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        var h = new EngineHarness { GameWindow = null, SinkSelector = selector };
+
+        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedPgNotForeground);
+    }
+
+    [Fact]
+    public async Task TryCalibrate_sink_receives_capture_failed_outcome()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        // SpyCapture(null) → gray == null → capture-failed path
+        var h = new EngineHarness { SinkSelector = selector };
+        // Arrange: override capture to return null gray
+        var captureSpy = new SpyCapture(null);
+        var solver = new SpySolver(Accepted(0.5, 4));
+        var engine = new AutoCalibrationEngine(
+            new FakeAreaState(Area),
+            new FakeWindowLocator(h.GameWindow),
+            new FakeRegionProvider(h.Bbox),
+            captureSpy,
+            new FakeRefiner(new MapRect(0, 0, 64, 64, 64, 64)),
+            new FakeBaseTextureProvider(h.BaseTexture),
+            new FakeAreaRefs(new[] { new LandmarkReference("landmark_npc", "x", new WorldCoord(1, 0, 1)) }),
+            solver,
+            h.IconProvider,
+            h.Service,
+            logger: null,
+            sinkSelector: selector);
+
+        await engine.TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedCaptureFailed);
+    }
+
+    [Fact]
+    public async Task TryCalibrate_sink_receives_no_base_texture_outcome()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        var h = new EngineHarness { BaseTexture = null, SinkSelector = selector };
+
+        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedNoBaseTexture);
+    }
+
+    [Fact]
+    public async Task TryCalibrate_sink_receives_solve_rejection_outcome()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        var h = new EngineHarness
+        {
+            Solve = Rejected("insufficient inliers (2 < 4 required)"),
+            SinkSelector = selector,
+        };
+
+        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedSolveInsufficientInliers);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
+
+    private static CalibrationAttemptBundleSinkSelector MakeSinkSelector(ICalibrationAttemptBundleSink sink) =>
+        new(new CaptureDiagnosticsOptions { DumpCalibrationBundles = true }, sink, sink);
+
+    /// <summary>Test-double sink: records every Write call.</summary>
+    private sealed class CapturingSink : ICalibrationAttemptBundleSink
+    {
+        private readonly List<CalibrationAttemptContext> _captured;
+        public CapturingSink(List<CalibrationAttemptContext> captured) => _captured = captured;
+        public void Write(CalibrationAttemptContext context) => _captured.Add(context);
+    }
 
     private static IconTemplateSet OneTemplate() => new(new[]
     {
@@ -217,6 +358,9 @@ public sealed class AutoCalibrationEngineTests
         public GameConfig? GameConfig { get; init; }
         public string? AssetCacheDir { get; init; }
 
+        // Optional sink selector for bundle-sink tests. Null → engine default (null sink).
+        public CalibrationAttemptBundleSinkSelector? SinkSelector { get; init; }
+
         public SpyCapture Capture { get; } = new(new GrayImage(64, 64, new byte[64 * 64]));
         public SpySolver Solver { get; private set; } = null!;
 
@@ -235,6 +379,7 @@ public sealed class AutoCalibrationEngineTests
                 IconProvider,
                 Service,
                 logger: null,
+                sinkSelector: SinkSelector,
                 assetExtractor: Extractor,
                 gameConfig: GameConfig,
                 assetCacheDir: AssetCacheDir);

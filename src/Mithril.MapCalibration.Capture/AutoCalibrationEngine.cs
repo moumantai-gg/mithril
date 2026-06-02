@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Arda.World.Player;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Capture.Diagnostics;
 using Mithril.MapCalibration.Detection;
 using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Game;
@@ -40,6 +41,13 @@ namespace Mithril.MapCalibration.Capture;
 /// is demand-triggered once to populate the cache, then the set is re-resolved — so
 /// first-session calibration succeeds on a fresh icon cache without a restart. A
 /// still-empty set fails soft: no typed detections → the gate rejects.</para>
+///
+/// <para><b>Diagnostic bundle (#984).</b> Each public attempt is wrapped in a
+/// <c>try { … } finally { sink.Write(attempt); }</c> so the sink receives the
+/// partial context on every exit path — success, gate-reject, exception, or
+/// cancellation. The active sink is resolved per attempt from
+/// <see cref="CalibrationAttemptBundleSinkSelector"/> so the toggle in Settings
+/// takes effect without an app restart.</para>
 /// </summary>
 public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 {
@@ -62,6 +70,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private readonly IMapCalibrationSolver _solver;
     private readonly IIconTemplateProvider _iconTemplates;
     private readonly IMapCalibrationService _calibrationService;
+    private readonly CalibrationAttemptBundleSinkSelector _sinkSelector;
     private readonly ILogger? _logger;
 
     // Optional Task-21 sidecar policy (null in unit branch tests + when no
@@ -84,6 +93,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         IIconTemplateProvider iconTemplates,
         IMapCalibrationService calibrationService,
         ILogger? logger,
+        CalibrationAttemptBundleSinkSelector? sinkSelector = null,
         IAssetExtractor? assetExtractor = null,
         GameConfig? gameConfig = null,
         string? assetCacheDir = null,
@@ -99,6 +109,9 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         _solver = solver;
         _iconTemplates = iconTemplates;
         _calibrationService = calibrationService;
+        _sinkSelector = sinkSelector ?? new CalibrationAttemptBundleSinkSelector(
+            new CaptureDiagnosticsOptions(), NullCalibrationAttemptBundleSink.Instance,
+            NullCalibrationAttemptBundleSink.Instance);
         _logger = logger;
         _assetExtractor = assetExtractor;
         _gameConfig = gameConfig;
@@ -119,7 +132,48 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         return File.Exists(tpk) ? tpk : null;
     }
 
+    /// <summary>
+    /// Thin public entry point. Wraps <see cref="RunAttemptCoreAsync"/> in a
+    /// <c>try/finally</c> so <see cref="ICalibrationAttemptBundleSink.Write"/> is
+    /// called on every exit path: success, gate-reject, exception, or cancellation.
+    /// The sink is resolved per attempt so a live Settings toggle takes effect
+    /// without an app restart.
+    /// </summary>
     public async Task<AutoCalibrationOutcome> TryCalibrateCurrentAreaAsync(CancellationToken ct)
+    {
+        var area = _areaState.CurrentArea ?? string.Empty;
+        var attempt = new CalibrationAttemptContext(area, DateTimeOffset.UtcNow);
+        var sink = _sinkSelector.Resolve();
+        try
+        {
+            return await RunAttemptCoreAsync(attempt, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            attempt.Outcome = OutcomeVocabulary.Error;
+            attempt.ExceptionInfo = "cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            attempt.Outcome = OutcomeVocabulary.Error;
+            attempt.ExceptionInfo = $"{ex.GetType().Name}: {ex.Message}";
+            throw;
+        }
+        finally
+        {
+            sink.Write(attempt); // fail-soft inside Write — never throws into the engine
+        }
+    }
+
+    /// <summary>
+    /// The full pipeline body. Property assignments feed the
+    /// <see cref="CalibrationAttemptContext"/> passed in from
+    /// <see cref="TryCalibrateCurrentAreaAsync"/> so the finally-block sink receives
+    /// whatever was accumulated before the return/throw.
+    /// </summary>
+    private async Task<AutoCalibrationOutcome> RunAttemptCoreAsync(
+        CalibrationAttemptContext attempt, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
 
@@ -128,11 +182,12 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // capture/refine/solve spans nest under it → a Seq waterfall showing which
         // step is slow (the brute-force refine, until #966). Per-candidate refine
         // spans live deeper (MapRectLocator, in the Shared-free core) — deferred to #966.
-        using var attempt = MithrilActivitySources.MapCalibration.StartActivity("calibration.attempt");
+        using var actSpan = MithrilActivitySources.MapCalibration.StartActivity("calibration.attempt");
 
-        var area = _areaState.CurrentArea;
+        var area = attempt.Area;
         if (string.IsNullOrWhiteSpace(area))
         {
+            attempt.Outcome = OutcomeVocabulary.RejectedNoArea;
             return Fail("", "not in-world — open Project Gorgon and enter an area first");
         }
 
@@ -141,31 +196,41 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // path both re-check here so neither can capture the wrong window.)
         if (_windowLocator.Locate() is null)
         {
+            attempt.Outcome = OutcomeVocabulary.RejectedPgNotForeground;
             return Fail(area, "Project Gorgon is not the foreground window");
         }
 
         var bbox = _region.Current;
         if (bbox is null)
         {
+            attempt.Outcome = OutcomeVocabulary.RejectedNoBbox;
             return Fail(area, "no map bbox set — use the draw-map-bbox hotkey first");
         }
 
-        attempt?.SetTag("map.area", area);
+        actSpan?.SetTag("map.area", area);
         _logger?.LogInformation(
             "Auto-calibration {Area}: capturing map region {Width}x{Height} at ({X},{Y})…",
             area, bbox.Value.Width, bbox.Value.Height, bbox.Value.X, bbox.Value.Y);
-        GrayImage? gray;
+
+        CaptureMapResult captureResult;
         using (var captureAct = MithrilActivitySources.MapCalibration.StartActivity("calibration.capture"))
         {
             captureAct?.SetTag("bbox.width", bbox.Value.Width);
             captureAct?.SetTag("bbox.height", bbox.Value.Height);
-            gray = await _capture.CaptureMapAsync(bbox.Value, ct).ConfigureAwait(false);
-            captureAct?.SetTag("capture.ok", gray is not null);
+            captureResult = await _capture.CaptureMapAsync(bbox.Value, ct).ConfigureAwait(false);
+            captureAct?.SetTag("capture.ok", captureResult.Gray is not null);
         }
-        if (gray is null)
+
+        attempt.RawCapture = captureResult.Color;
+        attempt.GrayCapture = captureResult.Gray;
+
+        if (captureResult.Gray is null)
         {
+            attempt.Outcome = OutcomeVocabulary.RejectedCaptureFailed;
             return Fail(area, "map capture failed or was rejected (black / wrong-size frame)");
         }
+
+        var gray = captureResult.Gray;
 
         _logger?.LogInformation(
             "Auto-calibration {Area}: captured {Width}x{Height} frame; resolving base texture…",
@@ -173,6 +238,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         var baseTexture = await ResolveBaseTextureAsync(area, ct).ConfigureAwait(false);
         if (baseTexture is null)
         {
+            attempt.Outcome = OutcomeVocabulary.RejectedNoBaseTexture;
             return Fail(area, "preparing map assets… (base texture unavailable — no detections possible)");
         }
 
@@ -191,13 +257,16 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         }
         if (mapRect is null)
         {
+            attempt.Outcome = OutcomeVocabulary.RejectedMapNotLocated;
             return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map");
         }
+        attempt.MapRect = mapRect;
         _logger?.LogInformation(
             "Auto-calibration {Area}: map sub-rect located ({MapRect}) in {ElapsedMs:0} ms.",
             area, mapRect, Stopwatch.GetElapsedTime(refineStart).TotalMilliseconds);
 
         var references = _references.ForArea(area);
+        attempt.References = references;
         _logger?.LogInformation(
             "Auto-calibration {Area}: {ReferenceCount} landmark reference(s) for this area.", area, references.Count);
 
@@ -222,12 +291,17 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         var clamped = ClampToFrame(mapRect, gray.Width, gray.Height);
         if (clamped is null)
         {
+            attempt.Outcome = OutcomeVocabulary.RejectedClampDegenerate;
             return Fail(area, "the located map rect fell outside the captured frame — redraw the capture box tightly around the in-game map");
         }
 
         var crop = ImageOps.Crop(gray, clamped.OriginX, clamped.OriginY, clamped.Width, clamped.Height);
         var alignedTexture = ImageOps.Resize(baseTexture, clamped.Width, clamped.Height);
         var alignedRect = new MapRect(0, 0, clamped.Width, clamped.Height, clamped.TextureWidth, clamped.TextureHeight);
+
+        attempt.AlignedCrop = crop;
+        attempt.AlignedTexture = alignedTexture;
+        attempt.BaseTextureResampled = alignedTexture; // same data, distinct semantic slot per spec
 
         var request = new DetectionRequest(
             Screenshot: crop,
@@ -262,15 +336,20 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         _logger?.LogInformation(
             "Auto-calibration {Area}: solve finished in {ElapsedMs:0} ms (calibration {HasCalibration}, {Inliers} inlier(s)).",
             area, Stopwatch.GetElapsedTime(solveStart).TotalMilliseconds, result.Calibration is not null, result.InlierCount);
+
+        attempt.Result = result;
+
         if (result.Calibration is null)
         {
             var reason = result.RejectReason ?? "no geometrically-consistent fit";
+            attempt.Outcome = OutcomeVocabulary.RejectSolveSubcategory(result.RejectReason);
             _logger?.LogInformation("Auto-calibration rejected for {Area}: {Reason}. Prior calibration kept.", area, reason);
             return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason);
         }
 
         // Gate-accept: persist through the user store stamped AutoCapture, which
         // inherits user-store precedence by construction (Task 20).
+        attempt.Outcome = OutcomeVocabulary.Accepted;
         var stamped = result.Calibration with { Source = CalibrationSource.AutoCapture };
         _calibrationService.SaveUserRefinement(area, stamped);
         _logger?.LogInformation(
