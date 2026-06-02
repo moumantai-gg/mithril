@@ -292,6 +292,44 @@ public sealed class AutoCalibrationEngineTests
     }
 
     [Fact]
+    public async Task TryCalibrate_sink_receives_map_not_located_outcome()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        // Refiner returns null → map-not-located reject (everything upstream succeeds).
+        var h = new EngineHarness
+        {
+            Refiner = new FakeRefiner(null),
+            SinkSelector = selector,
+        };
+
+        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedMapNotLocated);
+    }
+
+    [Fact]
+    public async Task TryCalibrate_sink_receives_clamp_degenerate_outcome()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        // Refiner returns a rect whose origin sits at/past the frame's far edge so
+        // ClampToFrame degrades to empty (width/height ≤ 0) and the engine bails
+        // with the clamp-degenerate outcome. Frame is 64x64 (the default capture).
+        var h = new EngineHarness
+        {
+            Refiner = new FakeRefiner(new MapRect(64, 64, 64, 64, 64, 64)),
+            SinkSelector = selector,
+        };
+
+        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedClampDegenerate);
+    }
+
+    [Fact]
     public async Task TryCalibrate_sink_receives_solve_rejection_outcome()
     {
         var captured = new List<CalibrationAttemptContext>();
@@ -364,6 +402,12 @@ public sealed class AutoCalibrationEngineTests
         public SpyCapture Capture { get; } = new(new GrayImage(64, 64, new byte[64 * 64]));
         public SpySolver Solver { get; private set; } = null!;
 
+        // Refiner stub: defaults to the happy-path rect. Tests can override to:
+        //   - new FakeRefiner(null) → drives the engine into the map-not-located path
+        //   - a rect with origin >= frame dims → drives the engine into clamp-degenerate
+        public IMapRegionRefiner Refiner { get; init; }
+            = new FakeRefiner(new MapRect(0, 0, 64, 64, 64, 64));
+
         public AutoCalibrationEngine Engine()
         {
             Solver = new SpySolver(Solve);
@@ -372,7 +416,7 @@ public sealed class AutoCalibrationEngineTests
                 new FakeWindowLocator(GameWindow),
                 new FakeRegionProvider(Bbox),
                 Capture,
-                new FakeRefiner(new MapRect(0, 0, 64, 64, 64, 64)),
+                Refiner,
                 new FakeBaseTextureProvider(BaseTexture),
                 new FakeAreaRefs(new[] { new LandmarkReference("landmark_npc", "x", new WorldCoord(1, 0, 1)) }),
                 Solver,

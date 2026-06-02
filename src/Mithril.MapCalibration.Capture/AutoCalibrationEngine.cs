@@ -337,6 +337,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             "Auto-calibration {Area}: solve finished in {ElapsedMs:0} ms (calibration {HasCalibration}, {Inliers} inlier(s)).",
             area, Stopwatch.GetElapsedTime(solveStart).TotalMilliseconds, result.Calibration is not null, result.InlierCount);
 
+        attempt.Detections = result.Detections;
         attempt.Result = result;
 
         if (result.Calibration is null)
