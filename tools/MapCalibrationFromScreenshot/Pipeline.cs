@@ -19,6 +19,11 @@ internal static class Pipeline
             return SelfTest.Run();
         }
 
+        if (args.Phase == Phase.SynthesisProbe)
+        {
+            return SynthesisProbe.SynthesisProbePhase.Run(args);
+        }
+
         var pgInstall = SteamInstall.FindPgInstall();
         Console.WriteLine($"[steam] PG install: {pgInstall}");
 
