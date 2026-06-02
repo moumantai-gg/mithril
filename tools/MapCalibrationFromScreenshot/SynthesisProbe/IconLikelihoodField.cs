@@ -34,6 +34,17 @@ internal static class IconLikelihoodField
     }
 
     /// <summary>
+    /// Build a field from a pre-computed deviation map. Skips the screenshot-minus-
+    /// aligned-base subtraction step that <see cref="Build"/> performs; equivalent
+    /// to calling <see cref="ScoreAll"/> directly with a deviation supplied by the
+    /// caller. Used by the bundle-consumption path where the live engine has
+    /// already produced a post-ECC deviation via #978's ECC refiner.
+    /// </summary>
+    /// <returns>Same row-major [H, W] layout as <see cref="ScoreAll"/>.</returns>
+    public static double[,] LoadDeviationAsField(GrayImage deviation, IconTemplate template)
+        => ScoreAll(deviation, template);
+
+    /// <summary>
     /// Bicubic interpolation of <paramref name="field"/> at sub-pixel position
     /// (<paramref name="x"/>, <paramref name="y"/>).
     /// </summary>

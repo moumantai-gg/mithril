@@ -40,7 +40,13 @@ internal sealed record CliArgs(
     string? RansacSeedsCsvPath,
     bool TraceConsole,
     string? OtlpEndpoint,
-    string? AlignedBasePath)
+    string? AlignedBasePath,
+    string? BundleDir,
+    string? MapRectJsonPath,
+    string? RecoveredCalJsonPath,
+    string? AlignedDeviationPath,
+    string? DetectionsJsonPath,
+    (double Scale, double Rot, double Ox, double Oy, bool Mirror)? HandTruthCal)
 {
     public static CliArgs? Parse(string[] argv)
     {
@@ -78,6 +84,12 @@ internal sealed record CliArgs(
         bool traceConsole = false;
         string? otlpEndpoint = null;
         string? alignedBasePath = null;
+        string? bundleDir = null;
+        string? mapRectJsonPath = null;
+        string? recoveredCalJsonPath = null;
+        string? alignedDeviationPath = null;
+        string? detectionsJsonPath = null;
+        (double, double, double, double, bool)? handTruthCal = null;
 
         for (int i = 0; i < argv.Length; i++)
         {
@@ -162,6 +174,24 @@ internal sealed record CliArgs(
                 case "--aligned-base":
                     alignedBasePath = Next(argv, ref i);
                     break;
+                case "--bundle-dir":
+                    bundleDir = Next(argv, ref i);
+                    break;
+                case "--maprect-json":
+                    mapRectJsonPath = Next(argv, ref i);
+                    break;
+                case "--recovered-cal-json":
+                    recoveredCalJsonPath = Next(argv, ref i);
+                    break;
+                case "--aligned-deviation":
+                    alignedDeviationPath = Next(argv, ref i);
+                    break;
+                case "--detections-json":
+                    detectionsJsonPath = Next(argv, ref i);
+                    break;
+                case "--hand-truth-cal":
+                    handTruthCal = ParseTruthCal(Next(argv, ref i));  // reuses the scale,rot,ox,oy,mirror parser
+                    break;
                 case "-h" or "--help":
                     return null;
                 default:
@@ -241,7 +271,13 @@ internal sealed record CliArgs(
             RansacSeedsCsvPath: ransacSeedsCsv,
             TraceConsole: traceConsole,
             OtlpEndpoint: otlpEndpoint,
-            AlignedBasePath: alignedBasePath);
+            AlignedBasePath: alignedBasePath,
+            BundleDir: bundleDir,
+            MapRectJsonPath: mapRectJsonPath,
+            RecoveredCalJsonPath: recoveredCalJsonPath,
+            AlignedDeviationPath: alignedDeviationPath,
+            DetectionsJsonPath: detectionsJsonPath,
+            HandTruthCal: handTruthCal);
     }
 
     private static (double, double, double, double, bool) ParseSeed(string s)
@@ -453,6 +489,26 @@ internal sealed record CliArgs(
                                                      crop dimensions. Overrides the auto-load+resize path; use when
                                                      a fixture pre-pair was prepared by the live capture pipeline
                                                      (e.g. study fixtures with matching foo-crop.png + foo-texture-resampled.png).
+              --bundle-dir <dir>                    a per-attempt diagnostic bundle directory written by Mithril's
+                                                     AutoCalibrationEngine. Auto-resolves --maprect-json /
+                                                     --recovered-cal-json / --aligned-deviation / --detections-json
+                                                     from the bundle's 01-attempt.json manifest if those flags aren't
+                                                     given explicitly.
+              --maprect-json <path>                 the bundle's 04-maprect.json (texture↔aligned-pair transform).
+              --recovered-cal-json <path>           the bundle's 11-recovered-cal.json (production-recovered
+                                                     AreaCalibration). When given with --maprect-json, the
+                                                     synthesis-probe derives --truth-cal automatically.
+              --aligned-deviation <path>            the bundle's 07-deviation.png (post-ECC, post-subtraction
+                                                     deviation). Bypasses IconLikelihoodField.Build's subtraction.
+              --detections-json <path>              the bundle's 10-detections.json (production's NCC detection set).
+                                                     Optional; not consumed in v1.
+              --hand-truth-cal <scale,rot,ox,oy,mirror>
+                                                     user-supplied texture-pixel-space truth cal (mirror = true|false).
+                                                     Converted to crop-pixel via --maprect-json before use. Takes
+                                                     precedence over --recovered-cal-json (use when production's
+                                                     recovered cal is known-wrong, e.g. the 2026-06-02 4-inlier
+                                                     residual-4-px solves; supply the hand-verified entry from
+                                                     src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json).
             """);
     }
 }
