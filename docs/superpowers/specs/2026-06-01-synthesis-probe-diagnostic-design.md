@@ -266,3 +266,56 @@ Cold synthesis (Proposal A) is not warranted by this evidence. The spec's E5 des
 3. **Investigate rejected-908 (Bundle C) NPC NCC starvation.** The pre-flight investigation found 0/17 NPCs detected because the more-zoomed-out 688×683 view (vs Bundle A's 905×898) put NPC icons below the 0.90 same-type NCC threshold. That detection-side issue is real and would benefit from either (i) a zoom-aware NCC threshold, (ii) a smaller NPC template that survives the resize, or (iii) the synthesis re-rank above — which makes the NPC-NCC starvation moot because synthesis aggregates *weak* field correlations rather than requiring a per-template threshold. The synthesis re-rank in follow-up #2 (above) is the simplest dominant fix; the detection-side tweaks become optional.
 
 4. **Cold-grid spacing-vs-peak-width.** Bundle A's E5 misses by 542 px not because the peak isn't there but because at 16 px grid stride no sample lands within 5 px of truth, and the LM refine basin is narrower than the half-stride. If we ever wanted to revisit Proposal A, the cold grid would need either (i) a finer stride (proportional to template size, not equal to it) or (ii) a more aggressive multi-restart refine that explores beyond the nearest local max. Not worth it now given the seed-and-rerank path is cleaner.
+
+---
+
+## 2026-06-02 (later) — rim-masked re-run
+
+After PR #992 landed (`DeviationFloodRimMask` extracted to `src/Mithril.MapCalibration/Detection/` and applied to the bundle-consumed deviation in [IconLikelihoodField.LoadDeviationAsField](tools/MapCalibrationFromScreenshot/SynthesisProbe/IconLikelihoodField.cs)), the three Eltibule bundles were re-run with the minimal CLI form `--bundle-dir <path> [--hand-truth-cal …]` enabled by PR #987's auto-fill. The new numbers are the **production-truth reference distribution** for future threshold-calibration work — they correspond to what the synthesis-J re-rank will see when wired into `AutoCalibrationEngine`, since production's RANSAC already applies the same `DeviationFloodRimMask` to its detection pool.
+
+### Numbers (rim-masked alongside the earlier unmasked run)
+
+| Bundle | Production verdict | E1 J(truth) pre-rim → post-rim | E1 refs ≥ 0.5 pre-rim → post-rim | E3 J_best post-rim | E5 truth in top-8? |
+|---|---|---|---|---|---|
+| A (031105-069 accepted) | clean accept | 19.02 → **19.02** | 21 → **21** | 19.02 (sharp at truth) | no — 542 px off |
+| B (031130-122 wrong-fit accept) — hand-truth | wrong cal | −2.76 → **15.55** | 0 → **16** | 15.55 (sharp at truth) | no — 362 px off |
+| B (031130-122) — production-recovered | wrong cal | +0.39 → **2.54** | 2 → **4** | 2.64 | no — 86 px off |
+| C (031004-908 rejected) — hand-truth | rejected | 13.96 → **13.96** | 13 → **13** | 13.96 (sharp at truth) | no — 290 px off |
+
+E5 cold-grid still misses truth on every bundle, identically to before — the rim is irrelevant to E5's miss, which is the 16-px grid stride vs the ~6 px refine basin. Proposal A is still off the table for the same reason.
+
+### What changed in interpretation
+
+**Bundle A and C are stable.** The rim mask cleaned a small amount of E5-side contamination on A (J_best_refined 5.10 → 4.93) and was a no-op on C's interior topographic ghosting (which is genuine ECC residual from the steeper 0.34× downsample, not rim-NCC bleed). Verdicts unchanged.
+
+**Bundle B is the headline finding, and it reframes the architectural story.** With the rim masked, hand-truth's J climbs from −2.76 to **+15.55** with 16 refs above 0.5 — squarely in the same regime as Bundle A and C "accepts." The earlier interpretation ("Bundle B is a degraded-ECC case where no solver can rescue, failure is upstream") was substantially wrong: the contamination I attributed to interior ECC residue was largely the rim's NCC contribution spilling into nearby interior cells through the windowed integral image — when the rim is zeroed before the NCC sweep, the interior is clean enough to score truth correctly.
+
+This changes Bundle B's role in the decision table:
+
+- **Old story:** B is a no-solver-can-rescue degraded-ECC case; out of scope for both Proposal A and B; needs an upstream ECC quality gate.
+- **New story:** B is a case where production's RANSAC nominated a wrong-fit and the inlier-count gate accepted it (residual 4.03 px, 4 inliers at the floor). With synthesis-J as the accept gate, the wrong-fit scores J=2.54 / refs=4 (rejected on any reasonable threshold), while hand-truth scores J=15.55 / refs=16. The synthesis-J gate would have caught the wrong-fit cleanly.
+
+The follow-up question is whether production's RANSAC at the time would have also nominated a near-truth candidate among its top-K. If yes, synthesis-J picks it and B becomes a clean accept. If no, synthesis-J rejects all candidates and B becomes a clean *rejection* — still strictly better than production's wrong-fit accept, because a rejected attempt doesn't clobber Bundle A's existing good calibration via UserRefinements.json. Either outcome is an improvement.
+
+### Updated decision-margin table
+
+The accept-vs-reject classification for a `J ≥ 5 AND refs ≥ 6` threshold (illustrative; calibration of `J_min` / `N_min` is in the synthesis-rerank umbrella):
+
+| | J(truth) | refs ≥ 0.5 | Synthesis-J gate |
+|---|---|---|---|
+| A (accept) | 19.02 | 21 | ✓ ACCEPT (production agrees) |
+| C (rejected by production) | 13.96 | 13 | ✓ ACCEPT (rescues a false reject) |
+| B truth (what truth would score) | 15.55 | 16 | ✓ ACCEPT |
+| B production-recovered (wrong fit) | 2.54 | 4 | ✗ REJECT (catches a false accept) |
+
+Headroom looks healthy across the gate boundary. The synthesis-J gate matches production on A, rescues C (production false-reject), and catches B (production false-accept) — three different decisions, all better.
+
+### Architectural verdict (final): Proposal B, no caveats
+
+The original verdict was Proposal B *conditional on an ECC quality gate as prerequisite*. With the rim-masked data, that prerequisite is no longer a separate condition — synthesis-J + rim mask is itself a sufficient quality signal, because the synthesis objective at a wrong fit scores low (Bundle B production-recovered J=2.54), at a non-fit scores very low (Bundle B unmasked hand-truth J=−2.76), and at truth scores high (Bundle A 19, B 15.5, C 14). The gate threshold separates "fit-aligned-with-evidence" from "fit-not-aligned-with-evidence" without needing a separate ECC-quality probe.
+
+The remaining ECC concerns (Bundle C's interior ghosting at the steep downsample) are still real and worth investigating (separate follow-up issue), but they're not a *blocker* for shipping synthesis-J — they just cap the J ceiling. Bundle C's J=14 is high enough to clear any reasonable accept threshold.
+
+### CLI sanity check
+
+The minimal `--phase synthesis-probe --bundle-dir <path>` invocation (with no other flags except `--hand-truth-cal` where applicable) worked on all three bundles end-to-end. PR #987's auto-fill correctly derives `--area`, `--screenshot`, and `--map-rect`-from-deviation-actual-dims, including Bundle B's height-clamp case (#989) without the scratch-MapRect override that the first round needed.
