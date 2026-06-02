@@ -200,14 +200,17 @@ internal static class SynthesisProbePhase
         if (alignedDeviationPath is not null)
         {
             var deviation = ImageIo.LoadGray(alignedDeviationPath);
+            bool applyRimMask = !args.SkipRimMask;
             foreach (var template in templates)
             {
                 using var fieldSpan = SynthesisProbeTracer.Source.StartActivity("field.build");
                 fieldSpan?.SetTag("template.type", template.LandmarkType);
                 fieldSpan?.SetTag("template.size_px", Math.Max(template.Gray.Width, template.Gray.Height));
                 fieldSpan?.SetTag("source", "aligned-deviation");
+                fieldSpan?.SetTag("rim_masked", applyRimMask);
                 var sw = System.Diagnostics.Stopwatch.StartNew();
-                fieldsByType[template.LandmarkType] = IconLikelihoodField.LoadDeviationAsField(deviation, template);
+                fieldsByType[template.LandmarkType] = IconLikelihoodField.LoadDeviationAsField(
+                    deviation, template, applyRimMask, IconLikelihoodField.DefaultDevThr);
                 fieldSpan?.SetTag("duration_ms", sw.ElapsedMilliseconds);
             }
         }

@@ -34,15 +34,49 @@ internal static class IconLikelihoodField
     }
 
     /// <summary>
+    /// Default deviation threshold used by <see cref="LoadDeviationAsField(GrayImage, IconTemplate, bool, double)"/>'s
+    /// rim-mask path. Matches the CLI's <c>--detection-threshold</c> default; production's
+    /// <c>DeviationBlobDetector</c> derives <c>devThr = 1 - lowNcc</c> with the same 0.5 baseline.
+    /// </summary>
+    public const double DefaultDevThr = 0.5;
+
+    /// <summary>
     /// Build a field from a pre-computed deviation map. Skips the screenshot-minus-
     /// aligned-base subtraction step that <see cref="Build"/> performs; equivalent
     /// to calling <see cref="ScoreAll"/> directly with a deviation supplied by the
     /// caller. Used by the bundle-consumption path where the live engine has
     /// already produced a post-ECC deviation via #978's ECC refiner.
+    ///
+    /// <para>This default overload applies <see cref="DeviationFloodRimMask"/> so the
+    /// probe's J numbers reflect what production's RANSAC pool sees (rim-masked
+    /// deviation, mithril#897 gate-study balance). Pass the 4-arg overload with
+    /// <c>applyRimMask: false</c> to disable for diagnostic comparisons.</para>
     /// </summary>
     /// <returns>Same row-major [H, W] layout as <see cref="ScoreAll"/>.</returns>
     public static double[,] LoadDeviationAsField(GrayImage deviation, IconTemplate template)
-        => ScoreAll(deviation, template);
+        => LoadDeviationAsField(deviation, template, applyRimMask: true, devThr: DefaultDevThr);
+
+    /// <summary>
+    /// Overload with explicit rim-mask control. Set <paramref name="applyRimMask"/>
+    /// to false to score the raw deviation (used by tests and diagnostic CLI runs).
+    /// </summary>
+    public static double[,] LoadDeviationAsField(
+        GrayImage deviation, IconTemplate template, bool applyRimMask, double devThr)
+    {
+        if (!applyRimMask) return ScoreAll(deviation, template);
+
+        int n = deviation.Width * deviation.Height;
+        var dev = new float[n];
+        for (int i = 0; i < n; i++) dev[i] = deviation.Pixels[i] / 255f;
+
+        var rim = DeviationFloodRimMask.Build(dev, deviation.Width, deviation.Height, devThr);
+
+        var maskedPixels = new byte[n];
+        for (int i = 0; i < n; i++) maskedPixels[i] = rim[i] ? (byte)0 : deviation.Pixels[i];
+
+        var masked = new GrayImage(deviation.Width, deviation.Height, maskedPixels);
+        return ScoreAll(masked, template);
+    }
 
     /// <summary>
     /// Bicubic interpolation of <paramref name="field"/> at sub-pixel position
