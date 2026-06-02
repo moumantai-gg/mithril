@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Mithril.Tools.MapCalibration.Common;
 using Mithril.Tools.MapCalibrationFromScreenshot;
 using Xunit;
 
@@ -76,5 +77,18 @@ public class CliArgsBundleFlagsTests
         args.HandTruthCal.Value.Ox.Should().BeApproximately(2146.21, 1e-9);
         args.HandTruthCal.Value.Oy.Should().BeApproximately(-202.47, 1e-9);
         args.HandTruthCal.Value.Mirror.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Malformed_hand_truth_cal_error_message_names_the_correct_flag()
+    {
+        var act = () => CliArgs.Parse(new[]
+        {
+            "--phase", "synthesis-probe", "--area", "AreaEltibule",
+            "--hand-truth-cal", "0.5,0.0,0.0",  // only 3 components, want 5
+        });
+        act.Should().Throw<UserFacingException>()
+            .WithMessage("*--hand-truth-cal*")
+            .Which.Message.Should().NotContain("--truth-cal wants");
     }
 }

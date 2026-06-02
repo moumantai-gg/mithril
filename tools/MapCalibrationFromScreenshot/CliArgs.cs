@@ -190,8 +190,16 @@ internal sealed record CliArgs(
                     detectionsJsonPath = Next(argv, ref i);
                     break;
                 case "--hand-truth-cal":
-                    handTruthCal = ParseTruthCal(Next(argv, ref i));  // reuses the scale,rot,ox,oy,mirror parser
+                {
+                    var raw = Next(argv, ref i);
+                    try { handTruthCal = ParseTruthCal(raw); }
+                    catch (UserFacingException)
+                    {
+                        throw new UserFacingException(
+                            $"--hand-truth-cal wants 'scale,rot,ox,oy,mirror' (got '{raw}')");
+                    }
                     break;
+                }
                 case "-h" or "--help":
                     return null;
                 default:
