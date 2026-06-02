@@ -28,6 +28,11 @@ public static class TypeAwareRansacSolver
         double PixelY,
         double MatchScore);
 
+    /// <summary>One top-K candidate: solved calibration + the inlier set used.</summary>
+    public sealed record TopKCandidate(
+        AreaCalibration Calibration,
+        IReadOnlyList<AssignedReference> Inliers);
+
     // Inlier threshold for RANSAC: a detection is an inlier of a candidate
     // calibration if its pivot-corrected pixel is within this many texture
     // pixels of where the calibration projects a same-type ref.
@@ -39,25 +44,64 @@ public static class TypeAwareRansacSolver
     private const int RansacIterations = 800;
 
     /// <summary>
-    /// Solve for the area calibration from typed detections. Returns the solved
-    /// <see cref="AreaCalibration"/> (or null when no geometrically-consistent
-    /// fit clears the guards) plus the inlier correspondences used.
+    /// Top-K variant of <see cref="Solve"/>. Returns up to <paramref name="k"/>
+    /// geometrically-consistent fits ordered by inlier count desc, refit-residual
+    /// asc, after the same iterative refinement step. Synthesis-J re-rank consumes
+    /// this so the re-ranker has alternatives to score. With <paramref name="k"/>=1
+    /// the result is equivalent to <see cref="Solve"/>.
+    /// </summary>
+    public static IReadOnlyList<TopKCandidate> SolveTopK(
+        IReadOnlyDictionary<string, List<TypedDetection>> detectionsByType,
+        IReadOnlyList<LandmarkReference> allRefs,
+        MapRect mapRect,
+        int k)
+    {
+        if (k < 1) throw new ArgumentOutOfRangeException(nameof(k), k, "k must be >= 1");
+
+        var rawCandidates = RansacAssignAll(detectionsByType, allRefs, mapRect);
+        if (rawCandidates.Count == 0) return [];
+
+        // Order by inlier count desc, then refit residual asc.
+        rawCandidates.Sort((a, b) =>
+        {
+            int ic = b.Inliers.Count.CompareTo(a.Inliers.Count);
+            return ic != 0 ? ic : a.Residual.CompareTo(b.Residual);
+        });
+
+        var refined = new List<TopKCandidate>(Math.Min(k, rawCandidates.Count));
+        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var raw in rawCandidates)
+        {
+            if (refined.Count >= k) break;
+            var (cal, refinedInliers) = IterativeRefine(raw.Inliers);
+            if (cal is null) continue;
+
+            // De-dup: two raw candidates can refine into the same fit. Key by a
+            // coarse round of (scale, rot, originX, originY) — same key → drop.
+            var key = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"{cal.Scale:F3}|{cal.RotationRadians:F3}|{cal.OriginX:F1}|{cal.OriginY:F1}|{cal.MirrorNorth}");
+            if (!seenKeys.Add(key)) continue;
+
+            refined.Add(new TopKCandidate(cal, refinedInliers));
+        }
+        return refined;
+    }
+
+    /// <summary>
+    /// Existing single-best entry point — preserved for callers that don't need
+    /// alternatives. Now a thin wrapper over <see cref="SolveTopK"/>.
     /// </summary>
     public static (AreaCalibration? Calibration, IReadOnlyList<AssignedReference> Inliers) Solve(
         IReadOnlyDictionary<string, List<TypedDetection>> detectionsByType,
         IReadOnlyList<LandmarkReference> allRefs,
         MapRect mapRect)
     {
-        var assigned = RansacAssign(detectionsByType, allRefs, mapRect).ToList();
-        if (assigned.Count < 2)
-        {
-            return (null, assigned);
-        }
-        var (cal, refined) = IterativeRefine(assigned);
-        return (cal, refined);
+        var top = SolveTopK(detectionsByType, allRefs, mapRect, k: 1);
+        if (top.Count == 0) return (null, []);
+        return (top[0].Calibration, top[0].Inliers);
     }
 
-    private static IReadOnlyList<AssignedReference> RansacAssign(
+    private static List<(IReadOnlyList<AssignedReference> Inliers, double Residual)> RansacAssignAll(
         IReadOnlyDictionary<string, List<TypedDetection>> detectionsByType,
         IReadOnlyList<LandmarkReference> allRefs,
         MapRect mapRect)
@@ -79,9 +123,7 @@ public static class TypeAwareRansacSolver
         if (pool.Count < 2) return [];
 
         var rng = new Random(852);  // deterministic seed for reproducible runs
-        int bestInlierCount = 0;
-        double bestResidual = double.PositiveInfinity;
-        List<AssignedReference> bestAssigned = [];
+        var all = new List<(IReadOnlyList<AssignedReference> Inliers, double Residual)>();
 
         for (int iter = 0; iter < RansacIterations; iter++)
         {
@@ -171,17 +213,10 @@ public static class TypeAwareRansacSolver
             var refit = LandmarkCalibrationSolver.Solve(refitRefs);
             if (refit is null) continue;
 
-            bool wins = inliers.Count > bestInlierCount
-                     || (inliers.Count == bestInlierCount && refit.ResidualPixels < bestResidual);
-            if (wins)
-            {
-                bestInlierCount = inliers.Count;
-                bestResidual = refit.ResidualPixels;
-                bestAssigned = inliers;
-            }
+            all.Add((inliers, refit.ResidualPixels));
         }
 
-        return bestAssigned;
+        return all;
     }
 
     private static (AreaCalibration? Cal, List<AssignedReference> Refined) IterativeRefine(

@@ -89,6 +89,53 @@ public sealed class TypeAwareRansacSolverTests
         a.RotationRadians.Should().Be(b.RotationRadians);
     }
 
+    [Fact]
+    public void SolveTopK_returns_candidates_ordered_by_inliers_then_residual()
+    {
+        var detections = BuildDetections();
+        var refs = BuildRefs();
+
+        var topK = TypeAwareRansacSolver.SolveTopK(detections, refs, Rect, k: 4);
+
+        topK.Should().NotBeEmpty();
+        topK.Count.Should().BeLessOrEqualTo(4);
+        topK[0].Calibration.Should().NotBeNull();
+
+        // Non-increasing inlier count, ties broken by non-decreasing residual.
+        for (int i = 1; i < topK.Count; i++)
+        {
+            var prev = topK[i - 1];
+            var cur = topK[i];
+            var prevBetter =
+                prev.Inliers.Count > cur.Inliers.Count
+                || (prev.Inliers.Count == cur.Inliers.Count
+                    && prev.Calibration!.ResidualPixels <= cur.Calibration!.ResidualPixels);
+            prevBetter.Should().BeTrue(
+                $"candidate {i - 1} ({prev.Inliers.Count} inliers, "
+                + $"{prev.Calibration!.ResidualPixels:0.00} px) must rank >= candidate {i} "
+                + $"({cur.Inliers.Count} inliers, {cur.Calibration!.ResidualPixels:0.00} px)");
+        }
+    }
+
+    [Fact]
+    public void SolveTopK_with_k1_is_equivalent_to_Solve()
+    {
+        var detections = BuildDetections();
+        var refs = BuildRefs();
+
+        var (legacyCal, legacyInliers) = TypeAwareRansacSolver.Solve(detections, refs, Rect);
+        var topK = TypeAwareRansacSolver.SolveTopK(detections, refs, Rect, k: 1);
+
+        if (legacyCal is null)
+        {
+            topK.Should().BeEmpty();
+            return;
+        }
+        topK.Should().HaveCount(1);
+        topK[0].Calibration!.Should().BeEquivalentTo(legacyCal);
+        topK[0].Inliers.Should().HaveCount(legacyInliers.Count);
+    }
+
     private static double NormaliseAngle(double radians)
     {
         var twoPi = 2 * Math.PI;
