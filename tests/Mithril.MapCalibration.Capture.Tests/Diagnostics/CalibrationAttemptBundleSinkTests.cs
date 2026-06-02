@@ -84,6 +84,21 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
             "10-detections.json",
             "11-recovered-cal.json",
         });
+
+        var attemptJsonPath = Path.Combine(dir, "01-attempt.json");
+        using var fs = File.OpenRead(attemptJsonPath);
+        var attempt = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
+        attempt.Should().NotBeNull();
+        attempt!.Files.RawScreenshot.Should().Be("02-screenshot-raw.png");
+        attempt.Files.GrayScreenshot.Should().Be("03-screenshot-gray.png");
+        attempt.Files.MapRect.Should().Be("04-maprect.json");
+        attempt.Files.BaseTextureResampled.Should().Be("05-base-texture-resampled.png");
+        attempt.Files.AlignedScreenshot.Should().Be("06-aligned-screenshot.png");
+        attempt.Files.Deviation.Should().Be("07-deviation.png");
+        attempt.Files.DetectionsImage.Should().Be("08-detections.png");
+        attempt.Files.ProjectionOverlay.Should().Be("09-projection-overlay.png");
+        attempt.Files.Detections.Should().Be("10-detections.json");
+        attempt.Files.RecoveredCalibration.Should().Be("11-recovered-cal.json");
     }
 
     [Fact]
@@ -117,6 +132,13 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         files.Should().NotContain("09-projection-overlay.png");
         files.Should().NotContain("11-recovered-cal.json");
         files.Should().Contain("10-detections.json"); // detections list was present
+
+        var attemptJsonPath = Path.Combine(dir, "01-attempt.json");
+        using var fs = File.OpenRead(attemptJsonPath);
+        var attempt = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
+        attempt!.Files.ProjectionOverlay.Should().BeNull();      // calibration was null
+        attempt.Files.RecoveredCalibration.Should().BeNull();    // calibration was null
+        attempt.Files.Detections.Should().Be("10-detections.json");  // detections list was present
     }
 
     [Theory]

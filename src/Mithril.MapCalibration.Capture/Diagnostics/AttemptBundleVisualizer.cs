@@ -68,7 +68,7 @@ public sealed class AttemptBundleVisualizer : IAttemptBundleVisualizer
                 dc.DrawLine(red, new System.Windows.Point(det.AnchorX, det.AnchorY - 2), new System.Windows.Point(det.AnchorX, det.AnchorY + 2));
 
                 var text = new FormattedText(
-                    det.Score.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+                    string.Format(System.Globalization.CultureInfo.InvariantCulture, "Score:{0:0.00}", det.Score),
                     System.Globalization.CultureInfo.InvariantCulture,
                     System.Windows.FlowDirection.LeftToRight, typeface, 9, labelBrush, 96);
                 dc.DrawText(text, new System.Windows.Point(rect.Right + 1, rect.Top - 1));
