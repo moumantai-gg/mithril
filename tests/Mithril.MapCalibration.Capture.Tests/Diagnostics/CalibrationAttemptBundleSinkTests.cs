@@ -141,6 +141,38 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         attempt.Files.Detections.Should().Be("10-detections.json");  // detections list was present
     }
 
+    /// <summary>
+    /// Observability: on a <c>rejected-map-not-located</c> outcome the bundle's
+    /// <c>01-attempt.json</c> must carry the coarse locator's best score+factor+origin
+    /// (under <c>LocatorBest</c>), so triaging close-miss vs catastrophic-mismatch is
+    /// just <c>jq .locatorBest.autoDetectScore</c> on the captured bundle.
+    /// </summary>
+    [Fact]
+    public void Writes_locatorBest_on_map_not_located_reject()
+    {
+        var ctx = new CalibrationAttemptContext("AreaKurMountains",
+            new DateTimeOffset(2026, 6, 2, 17, 15, 30, 866, TimeSpan.Zero));
+        ctx.RawCapture = new CapturedFrame(4, 4, new byte[4 * 4 * 4]);
+        ctx.GrayCapture = new GrayImage(4, 4, new byte[16]);
+        // The locator found a best rung below threshold — preserved on the context.
+        ctx.LocatorBestRect = new MapRect(192, 100, 909, 909, 2048, 2048,
+            AutoDetectScore: 0.4729, SourceScaleFactor: 1.47);
+        ctx.Outcome = OutcomeVocabulary.RejectedMapNotLocated;
+
+        NewSink().Write(ctx);
+
+        var dir = Directory.GetDirectories(_root).Single();
+        var attemptJsonPath = Path.Combine(dir, "01-attempt.json");
+        using var fs = File.OpenRead(attemptJsonPath);
+        var attempt = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
+        attempt.Should().NotBeNull();
+        attempt!.LocatorBest.Should().NotBeNull();
+        attempt.LocatorBest!.AutoDetectScore.Should().Be(0.4729);
+        attempt.LocatorBest.SourceScaleFactor.Should().Be(1.47);
+        attempt.LocatorBest.OriginX.Should().Be(192);
+        attempt.LocatorBest.OriginY.Should().Be(100);
+    }
+
     [Theory]
     [InlineData("rejected-no-area")]
     [InlineData("rejected-pg-not-foreground")]

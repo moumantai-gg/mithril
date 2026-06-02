@@ -234,11 +234,21 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 Outcome: ctx.Outcome,
                 RejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo,
                 EngineVersion: AssemblyVersion,
-                Files: files);
+                Files: files,
+                LocatorBest: ToMapRectJson(ctx.LocatorBestRect));
             WriteJson(dir, "01-attempt.json", dto, CalibrationBundleJsonContext.Default.AttemptJson);
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "01-attempt.json header write failed for {Outcome}", ctx.Outcome); }
     }
+
+    private static MapRectJson? ToMapRectJson(MapRect? rect) =>
+        rect is null
+            ? null
+            : new MapRectJson(1,
+                rect.OriginX, rect.OriginY,
+                rect.Width, rect.Height,
+                rect.TextureWidth, rect.TextureHeight,
+                rect.AutoDetectScore, rect.SourceScaleFactor);
 
     private static string WritePng(string dir, string name, BitmapSource src)
     {

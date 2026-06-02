@@ -69,9 +69,11 @@ internal sealed class SpyCapture : ICaptureService
 
 internal sealed class FakeRefiner : IMapRegionRefiner
 {
-    private readonly MapRect? _rect;
-    public FakeRefiner(MapRect? rect) => _rect = rect;
-    public MapRect? Refine(GrayImage capturedGray, GrayImage baseTexture, double minScore) => _rect;
+    private readonly MapRegionRefineResult _result;
+    public FakeRefiner(MapRect? rect)
+        => _result = new MapRegionRefineResult(AcceptedRect: rect, BestCoarseRect: rect);
+    public FakeRefiner(MapRegionRefineResult result) => _result = result;
+    public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture, double minScore) => _result;
 }
 
 internal sealed class FakeBaseTextureProvider : IBaseTextureProvider

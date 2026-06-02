@@ -11,7 +11,12 @@ public sealed record AttemptJson(
     string Outcome,
     string? RejectReason,
     string EngineVersion,
-    AttemptFilesJson Files);
+    AttemptFilesJson Files,
+    // Coarse locator's best-rung rect (score, factor, origin, size). Populated on both
+    // accept and rejected-map-not-located so the bundle is self-triaging for future
+    // close-miss-vs-catastrophic-mismatch rejections. Null when the locator never ran
+    // (early pre-locate rejects) or the captured frame had no viable rung.
+    MapRectJson? LocatorBest = null);
 
 public sealed record AttemptFilesJson(
     string? RawScreenshot,

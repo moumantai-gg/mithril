@@ -355,7 +355,7 @@ public sealed class AutoCalibrationEngineTests
         // Refiner returns null → map-not-located reject (everything upstream succeeds).
         var h = new EngineHarness
         {
-            Refiner = new FakeRefiner(null),
+            Refiner = new FakeRefiner(MapRegionRefineResult.None),
             SinkSelector = selector,
         };
 
@@ -363,6 +363,39 @@ public sealed class AutoCalibrationEngineTests
 
         captured.Should().HaveCount(1);
         captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedMapNotLocated);
+    }
+
+    /// <summary>
+    /// Observability: a sub-threshold locate must still surface what the locator
+    /// found (score, factor, origin) via <see cref="CalibrationAttemptContext.LocatorBestRect"/>
+    /// so the diagnostic bundle records it and a future close-miss vs catastrophic
+    /// rejection is self-triaging.
+    /// </summary>
+    [Fact]
+    public async Task TryCalibrate_map_not_located_surfaces_LocatorBestRect_to_attempt()
+    {
+        var captured = new List<CalibrationAttemptContext>();
+        var selector = MakeSinkSelector(new CapturingSink(captured));
+        // Below-threshold coarse seed: AcceptedRect=null, BestCoarseRect carries the
+        // score (≈0.42, the kind of close-miss the live Kur Mountains attempt hit).
+        var coarseBest = new MapRect(192, 100, 909, 909, 2048, 2048,
+            AutoDetectScore: 0.4729, SourceScaleFactor: 1.47);
+        var h = new EngineHarness
+        {
+            Refiner = new FakeRefiner(new MapRegionRefineResult(AcceptedRect: null, BestCoarseRect: coarseBest)),
+            SinkSelector = selector,
+        };
+
+        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        captured.Should().HaveCount(1);
+        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedMapNotLocated);
+        captured[0].LocatorBestRect.Should().NotBeNull();
+        var best = captured[0].LocatorBestRect!;
+        best.AutoDetectScore.Should().Be(0.4729);
+        best.SourceScaleFactor.Should().Be(1.47);
+        best.OriginX.Should().Be(192);
+        best.OriginY.Should().Be(100);
     }
 
     [Fact]
