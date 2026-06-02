@@ -88,4 +88,27 @@ public class BundleJsonDtosTests
         parsed.Files.Deviation.Should().Be("07-deviation.png");
         parsed.Files.RecoveredCalibration.Should().Be("11-recovered-cal.json");
     }
+
+    [Fact]
+    public void DetectionsJson_round_trips()
+    {
+        const string json = """
+            { "schemaVersion": 1,
+              "renderSizePx": 32,
+              "detections": [
+                { "landmarkType": "Portal", "iconName": "landmark_portal",
+                  "anchorX": 123.45, "anchorY": 678.9, "score": 0.873 }
+              ] }
+            """;
+
+        var parsed = JsonSerializer.Deserialize(json, BundleJsonContext.Default.DetectionsJson)!;
+
+        parsed.SchemaVersion.Should().Be(1);
+        parsed.RenderSizePx.Should().Be(32);
+        parsed.Detections.Should().HaveCount(1);
+        parsed.Detections[0].LandmarkType.Should().Be("Portal");
+        parsed.Detections[0].IconName.Should().Be("landmark_portal");
+        parsed.Detections[0].AnchorX.Should().BeApproximately(123.45, 1e-9);
+        parsed.Detections[0].Score.Should().BeApproximately(0.873, 1e-9);
+    }
 }

@@ -13,9 +13,10 @@ public class BundleLoaderTests
         var dir = NewBundleDir();
         try
         {
-            WriteAttemptJson(dir, outcome: "accepted", includeRecoveredCal: true);
+            WriteAttemptJson(dir, outcome: "accepted", includeRecoveredCal: true, includeDetections: true);
             WriteMapRectJson(dir);
             WriteRecoveredCalJson(dir);
+            WriteDetectionsJson(dir);
             File.WriteAllBytes(Path.Combine(dir, "07-deviation.png"), new byte[1]); // placeholder
 
             var bundle = BundleLoader.Open(dir);
@@ -24,6 +25,8 @@ public class BundleLoaderTests
             bundle.Attempt.Area.Should().Be("AreaEltibule");
             bundle.MapRect.Should().NotBeNull();
             bundle.RecoveredCal.Should().NotBeNull();
+            bundle.Detections.Should().NotBeNull();
+            bundle.Detections!.Detections.Should().HaveCount(1);
             bundle.DeviationPath.Should().EndWith("07-deviation.png");
         }
         finally { Directory.Delete(dir, recursive: true); }
@@ -35,7 +38,7 @@ public class BundleLoaderTests
         var dir = NewBundleDir();
         try
         {
-            WriteAttemptJson(dir, outcome: "rejected-3inliers", includeRecoveredCal: false);
+            WriteAttemptJson(dir, outcome: "rejected-3inliers", includeRecoveredCal: false, includeDetections: false);
             WriteMapRectJson(dir);
             File.WriteAllBytes(Path.Combine(dir, "07-deviation.png"), new byte[1]);
 
@@ -68,9 +71,10 @@ public class BundleLoaderTests
         return dir;
     }
 
-    private static void WriteAttemptJson(string dir, string outcome, bool includeRecoveredCal)
+    private static void WriteAttemptJson(string dir, string outcome, bool includeRecoveredCal, bool includeDetections)
     {
         var recoveredField = includeRecoveredCal ? "\"11-recovered-cal.json\"" : "null";
+        var detectionsField = includeDetections ? "\"10-detections.json\"" : "null";
         File.WriteAllText(Path.Combine(dir, "01-attempt.json"), $$"""
             { "schemaVersion": 1,
               "area": "AreaEltibule",
@@ -88,7 +92,7 @@ public class BundleLoaderTests
                 "deviation": "07-deviation.png",
                 "detectionsImage": null,
                 "projectionOverlay": null,
-                "detections": null,
+                "detections": {{detectionsField}},
                 "recoveredCalibration": {{recoveredField}}
               } }
             """);
@@ -111,6 +115,17 @@ public class BundleLoaderTests
               "originX": 1039.45, "originY": -36.38, "mirrorNorth": false,
               "calibrationZoom": 1.0, "residualPixels": 0.34,
               "referenceCount": 4, "source": "UserRefinement", "inliers": [] }
+            """);
+    }
+
+    private static void WriteDetectionsJson(string dir)
+    {
+        File.WriteAllText(Path.Combine(dir, "10-detections.json"), """
+            { "schemaVersion": 1, "renderSizePx": 32,
+              "detections": [
+                { "landmarkType": "Portal", "iconName": "landmark_portal",
+                  "anchorX": 123.45, "anchorY": 678.9, "score": 0.873 }
+              ] }
             """);
     }
 }

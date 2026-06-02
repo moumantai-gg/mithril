@@ -23,7 +23,10 @@ internal static class MapRectConversion
     /// CandidateTransform is isotropic-scale-only; if the X and Y resize ratios
     /// differ, the geometric mean is used and the difference is surfaced via
     /// <paramref name="anisotropyPercent"/>. Callers should warn if it exceeds
-    /// roughly 1%.
+    /// roughly 1%. The geometric mean is used as the denominator because it
+    /// equals the adopted Scale factor, making the percentage directly
+    /// interpretable as how much the X vs Y pixel-space error diverges from
+    /// the isotropic approximation.
     /// </summary>
     public static CandidateTransform FromRecoveredCalibration(
         RecoveredCalibrationJson cal,
