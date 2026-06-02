@@ -47,16 +47,17 @@ public sealed class MapCalibrationSolveEngine
             var detections = _detector.Detect(req);
             LogDetectSummary(rotate180, detections, references);
             var (cal, inliers) = TypeAwareRansacSolver.Solve(ToMutable(detections), references, request.MapRect);
+            var flatDetections = FlattenDetections(detections);
 
             if (cal is null)
             {
-                bestRejected ??= new CalibrationSolveResult(null, inliers.Count, "no geometrically-consistent fit", inliers);
+                bestRejected ??= new CalibrationSolveResult(null, inliers.Count, "no geometrically-consistent fit", inliers) { Detections = flatDetections };
                 continue;
             }
 
             if (_gate.Accept(cal, inliers.Count, out var reason))
             {
-                var accepted = new CalibrationSolveResult(cal, inliers.Count, null, inliers);
+                var accepted = new CalibrationSolveResult(cal, inliers.Count, null, inliers) { Detections = flatDetections };
                 // Prefer the lower-residual accepted orientation.
                 if (bestAccepted is null || cal.ResidualPixels < bestAccepted.Calibration!.ResidualPixels)
                 {
@@ -68,7 +69,7 @@ public sealed class MapCalibrationSolveEngine
                 // Track the closest rejection for a useful reason if nothing passes.
                 if (bestRejected is null || cal.ResidualPixels < (bestRejected.Calibration?.ResidualPixels ?? double.PositiveInfinity))
                 {
-                    bestRejected = new CalibrationSolveResult(null, inliers.Count, reason, inliers);
+                    bestRejected = new CalibrationSolveResult(null, inliers.Count, reason, inliers) { Detections = flatDetections };
                 }
             }
         }
@@ -170,6 +171,14 @@ public sealed class MapCalibrationSolveEngine
         foreach (var kv in byType) result[kv.Key] = new List<TypedDetection>(kv.Value);
         return result;
     }
+
+    private static IReadOnlyList<TypedDetection> FlattenDetections(
+        IReadOnlyDictionary<string, IReadOnlyList<TypedDetection>> byType)
+    {
+        var flat = new List<TypedDetection>();
+        foreach (var kv in byType) flat.AddRange(kv.Value);
+        return flat;
+    }
 }
 
 /// <summary>
@@ -183,4 +192,7 @@ public sealed record CalibrationSolveResult(
     AreaCalibration? Calibration,
     int InlierCount,
     string? RejectReason,
-    IReadOnlyList<TypeAwareRansacSolver.AssignedReference>? Inliers = null);
+    IReadOnlyList<TypeAwareRansacSolver.AssignedReference>? Inliers = null)
+{
+    public IReadOnlyList<TypedDetection>? Detections { get; init; }
+}

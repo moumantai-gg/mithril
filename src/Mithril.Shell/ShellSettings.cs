@@ -11,17 +11,25 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     /// <summary>Current persisted schema version. ShellSettings became versioned in
     /// #957 (#208 hygiene — every persisted JSON root should carry a version). Bump
     /// this and add upgrade logic in <see cref="Migrate"/> when a field is
-    /// renamed/retyped/removed; a purely additive field needs no bump.</summary>
-    public const int Version = 1;
+    /// renamed/retyped/removed; a purely additive field needs no bump.
+    /// v1 → v2: <c>DumpCalibrationCaptureFrames</c> renamed to <c>DumpCalibrationBundles</c>;
+    /// <c>DumpCalibrationGrayFrames</c> removed (#984).</summary>
+    public const int Version = 2;
 
     /// <inheritdoc cref="IVersionedState{T}.CurrentVersion"/>
     public static int CurrentVersion => Version;
 
-    /// <summary>Identity migrate — no breaking shape change yet. The one-time
-    /// cross-file carry-over of the retired <c>LegolasSettings.MapOverlay</c> →
-    /// <see cref="MapCaptureBbox"/> lives in <see cref="MapCaptureRectCarryOver"/>
-    /// (it needs a DPI scale a per-file migrate can't supply), not here.</summary>
-    public static ShellSettings Migrate(ShellSettings loaded) => loaded;
+    /// <summary>Migrate a loaded instance to the current shape.
+    /// v1 → v2: <c>dumpCalibrationCaptureFrames</c> (old JSON key) is lifted into
+    /// <see cref="DumpCalibrationBundles"/> by the obsolete shim setter that STJ
+    /// calls during deserialization; <c>dumpCalibrationGrayFrames</c> is silently
+    /// dropped.  The schema version is stamped to current so the store persists the
+    /// new shape on the next save.</summary>
+    public static ShellSettings Migrate(ShellSettings loaded)
+    {
+        loaded.SchemaVersion = Version;
+        return loaded;
+    }
 
     /// <summary>Persisted schema version of this instance (see <see cref="Version"/>).</summary>
     public int SchemaVersion { get; set; } = Version;
@@ -92,24 +100,42 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private bool _autoStartPerfTrace;
     public bool AutoStartPerfTrace { get => _autoStartPerfTrace; set => Set(ref _autoStartPerfTrace, value); }
 
-    /// <summary>When true, the map-calibration capture seam dumps each successfully
-    /// validated <b>color</b> capture frame to a PNG under
-    /// <c>%LocalAppData%/Mithril/diagnostics/calibration/</c> (mirrors
-    /// <c>CaptureDiagnosticsOptions.DumpCaptureFrames</c>, #966 Task 3). Off by
-    /// default — a debug aid for investigating a slow/stalled refine, leaving the
-    /// exact pixels the solve engine was handed on disk to inspect. Purely additive
-    /// field → no schema bump (missing key → false on load).</summary>
-    private bool _dumpCalibrationCaptureFrames;
-    public bool DumpCalibrationCaptureFrames { get => _dumpCalibrationCaptureFrames; set => Set(ref _dumpCalibrationCaptureFrames, value); }
+    /// <summary>When true, <c>AutoCalibrationEngine</c> writes a per-attempt
+    /// diagnostic bundle to <c>%LocalAppData%/Mithril/diagnostics/calibration/</c>
+    /// (mirrors <c>CaptureDiagnosticsOptions.DumpCalibrationBundles</c>, #984). Off
+    /// by default — a debug aid for investigating solve failures, capturing the full
+    /// intermediate-artifact set (screenshot, ECC crop, deviation map, detections,
+    /// recovered calibration). Renamed from <c>DumpCalibrationCaptureFrames</c> in
+    /// schema v2.</summary>
+    private bool _dumpCalibrationBundles;
+    public bool DumpCalibrationBundles { get => _dumpCalibrationBundles; set => Set(ref _dumpCalibrationBundles, value); }
 
-    /// <summary>When true (and <see cref="DumpCalibrationCaptureFrames"/> is on),
-    /// also dump the derived <b>grayscale</b> frame alongside the color one to
-    /// <c>%LocalAppData%/Mithril/diagnostics/calibration/</c> (mirrors
-    /// <c>CaptureDiagnosticsOptions.DumpGrayFrames</c>) — catches a <c>ToGray</c>
-    /// bug a color-only dump would hide. Off by default; purely additive field →
-    /// no schema bump (missing key → false on load).</summary>
-    private bool _dumpCalibrationGrayFrames;
-    public bool DumpCalibrationGrayFrames { get => _dumpCalibrationGrayFrames; set => Set(ref _dumpCalibrationGrayFrames, value); }
+    /// <summary>
+    /// Migration shim: the old JSON key <c>dumpCalibrationCaptureFrames</c> (v1
+    /// shape) is deserialized here by STJ, which invokes the setter and lifts the
+    /// value into <see cref="DumpCalibrationBundles"/>. Dropped from the persisted
+    /// schema in v2 — this property is write-only for migration purposes only.
+    /// </summary>
+    [Obsolete("Renamed to DumpCalibrationBundles in schema v2. Write-only shim for migration of old persisted state.")]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public bool DumpCalibrationCaptureFrames
+    {
+        // No getter needed — the JSON context emits DumpCalibrationBundles, not this.
+        // The setter is the only path invoked: by STJ when deserializing old JSON.
+        set => DumpCalibrationBundles = value;
+    }
+
+    /// <summary>
+    /// Migration shim: the old JSON key <c>dumpCalibrationGrayFrames</c> (v1 shape)
+    /// is silently dropped in v2. This setter absorbs the deserialized value and
+    /// discards it (the gray frame is now written unconditionally inside the bundle).
+    /// </summary>
+    [Obsolete("Removed in schema v2 — gray frame is always included in the bundle when DumpCalibrationBundles is on. Write-only shim for migration of old persisted state.")]
+    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
+    public bool DumpCalibrationGrayFrames
+    {
+        set { /* silently drop */ }
+    }
 
     private string _uiFontFamily = "Segoe UI";
     public string UiFontFamily { get => _uiFontFamily; set => Set(ref _uiFontFamily, value); }

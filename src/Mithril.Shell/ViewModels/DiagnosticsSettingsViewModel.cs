@@ -4,7 +4,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using Mithril.MapCalibration.Capture;
+using Mithril.MapCalibration.Capture.Diagnostics;
 using Mithril.Shared.Wpf.Dialogs;
 
 namespace Mithril.Shell.ViewModels;
@@ -65,11 +65,12 @@ public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
     /// "Open log directory" command.</summary>
     public string LogDirectoryHint => LogDirectory;
 
-    /// <summary>The folder where map-calibration capture-frame dumps land when the
-    /// dump toggle (#966 Task 3) is on. Surfaced read-only by delegating to
-    /// <see cref="CaptureFrameDumper.DumpDirectory"/> — the single source of truth for
-    /// the path — so the displayed hint can never drift from where dumps are written.</summary>
-    public string CalibrationDumpDirectoryHint => CaptureFrameDumper.DumpDirectory;
+    /// <summary>The folder where per-attempt calibration diagnostic bundles land
+    /// when the dump toggle (#984) is on. Surfaced read-only by delegating to
+    /// <see cref="CalibrationBundleDirectories.DefaultRoot"/> — the single source of
+    /// truth for the path — so the displayed hint can never drift from where bundles
+    /// are written.</summary>
+    public string CalibrationDumpDirectoryHint => CalibrationBundleDirectories.DefaultRoot;
 
     private static string ShellDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -128,6 +129,27 @@ public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
             new LogDirectoryCleaner.CleanTarget(PerfDirectory, "*"),
         });
         ReportClean("all logs", result);
+    }
+
+    /// <summary>Opens the calibration diagnostics-bundle directory in the OS file browser.</summary>
+    [RelayCommand]
+    private void OpenCalibrationDumpDirectory()
+    {
+        try
+        {
+            Directory.CreateDirectory(CalibrationBundleDirectories.DefaultRoot);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = CalibrationBundleDirectories.DefaultRoot,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to open calibration dump directory {Dir}",
+                CalibrationBundleDirectories.DefaultRoot);
+            MaintenanceStatus = $"Could not open {CalibrationBundleDirectories.DefaultRoot}: {ex.Message}";
+        }
     }
 
     /// <summary>Opens the unified log directory in the OS file browser. No confirmation.</summary>

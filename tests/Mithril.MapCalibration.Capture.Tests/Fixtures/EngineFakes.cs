@@ -55,10 +55,15 @@ internal sealed class SpyCapture : ICaptureService
     private readonly GrayImage? _result;
     public SpyCapture(GrayImage? result = null) => _result = result;
     public bool Called { get; private set; }
-    public Task<GrayImage?> CaptureMapAsync(CaptureRect bbox, CancellationToken ct)
+    public Task<CaptureMapResult> CaptureMapAsync(CaptureRect bbox, CancellationToken ct)
     {
         Called = true;
-        return Task.FromResult(_result);
+        // Produce a minimal CapturedFrame so the engine can assign RawCapture.
+        // The color pixels don't need to be meaningful for unit tests.
+        CapturedFrame? color = _result is not null
+            ? new CapturedFrame(_result.Width, _result.Height, new byte[_result.Width * _result.Height * 4])
+            : null;
+        return Task.FromResult(new CaptureMapResult(color, _result));
     }
 }
 

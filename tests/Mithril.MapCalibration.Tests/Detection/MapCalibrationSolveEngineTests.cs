@@ -92,6 +92,17 @@ public sealed class MapCalibrationSolveEngineTests
         result.RejectReason.Should().NotBeNullOrEmpty();
     }
 
+    [Fact]
+    public void Solve_populates_Detections_on_accepted_result()
+    {
+        var (shot, tex, refs) = Build();
+        var result = Engine().Solve(Request(shot, tex), refs);
+
+        result.Calibration.Should().NotBeNull();
+        result.Detections.Should().NotBeNull();
+        result.Detections!.Should().NotBeEmpty();
+    }
+
     private static double NormaliseAngle(double radians)
     {
         var twoPi = 2 * Math.PI;
