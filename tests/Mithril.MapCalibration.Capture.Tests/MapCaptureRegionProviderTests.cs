@@ -70,15 +70,7 @@ public sealed class MapCaptureRegionProviderTests
     [Fact]
     public void BeginDraw_with_a_confirmed_snip_persists_physical_to_the_store() => RunOnSta(() =>
     {
-        var window = new Window
-        {
-            WindowStyle = WindowStyle.None,
-            ShowInTaskbar = false,
-            Left = 0,
-            Top = 0,
-            Width = 10,
-            Height = 10,
-        };
+        var window = CreateOffscreenBorderlessWindow();
         try
         {
             window.Show();
@@ -109,15 +101,7 @@ public sealed class MapCaptureRegionProviderTests
     [Fact]
     public void BeginDraw_persists_scaled_physical_rect_distinct_from_diu_mirror() => RunOnSta(() =>
     {
-        var window = new Window
-        {
-            WindowStyle = WindowStyle.None,
-            ShowInTaskbar = false,
-            Left = 0,
-            Top = 0,
-            Width = 10,
-            Height = 10,
-        };
+        var window = CreateOffscreenBorderlessWindow();
         try
         {
             window.Show();
@@ -145,15 +129,7 @@ public sealed class MapCaptureRegionProviderTests
     [Fact]
     public void BeginDraw_with_a_cancelled_snip_does_not_touch_the_store() => RunOnSta(() =>
     {
-        var window = new Window
-        {
-            WindowStyle = WindowStyle.None,
-            ShowInTaskbar = false,
-            Left = 33,
-            Top = 44,
-            Width = 55,
-            Height = 66,
-        };
+        var window = CreateOffscreenBorderlessWindow();
         try
         {
             window.Show();
@@ -167,7 +143,7 @@ public sealed class MapCaptureRegionProviderTests
             DrainDispatcher();
 
             store.Value.Should().BeNull("a cancelled snip persists nothing");
-            window.Left.Should().Be(33);
+            window.Left.Should().Be(OffScreenLeft, "a cancelled snip leaves the window's initial Left untouched");
         }
         finally { window.Close(); }
     });
@@ -175,15 +151,7 @@ public sealed class MapCaptureRegionProviderTests
     [Fact]
     public void BeginDraw_with_no_physical_rect_does_not_persist_but_still_mirrors() => RunOnSta(() =>
     {
-        var window = new Window
-        {
-            WindowStyle = WindowStyle.None,
-            ShowInTaskbar = false,
-            Left = 0,
-            Top = 0,
-            Width = 10,
-            Height = 10,
-        };
+        var window = CreateOffscreenBorderlessWindow();
         try
         {
             window.Show();
@@ -241,6 +209,23 @@ public sealed class MapCaptureRegionProviderTests
         window.Left.Should().Be(5);
         window.Width.Should().Be(7);
     });
+
+    // mithril#996: Tests that call Show() on a real Window flash briefly in the top-left
+    // of the primary monitor when the suite runs in the background. Parking the window
+    // at large negative coordinates keeps it off every realistic monitor while still
+    // realizing the HWND, the dispatcher, and the layout pass that the SUT exercises.
+    private const double OffScreenLeft = -10000;
+    private const double OffScreenTop = -10000;
+
+    private static Window CreateOffscreenBorderlessWindow() => new()
+    {
+        WindowStyle = WindowStyle.None,
+        ShowInTaskbar = false,
+        Left = OffScreenLeft,
+        Top = OffScreenTop,
+        Width = 10,
+        Height = 10,
+    };
 
     private static void DrainDispatcher() =>
         System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
