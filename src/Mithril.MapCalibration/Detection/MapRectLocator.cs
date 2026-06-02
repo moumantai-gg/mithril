@@ -56,6 +56,28 @@ public static class MapRectLocator
     /// </summary>
     public static MapRect? AutoDetect(GrayImage screenshot, GrayImage texture, double minScore)
     {
+        var best = AutoDetectBest(screenshot, texture);
+        if (best is null || best.AutoDetectScore is null || best.AutoDetectScore < minScore) return null;
+        return best;
+    }
+
+    /// <summary>
+    /// Threshold-free sibling of <see cref="AutoDetect(GrayImage, GrayImage, double)"/>:
+    /// runs the same scale ladder and returns the best-rung rect with
+    /// <see cref="MapRect.AutoDetectScore"/> + <see cref="MapRect.SourceScaleFactor"/>
+    /// populated, regardless of how low the score is. Returns null only when the ladder
+    /// itself has no valid rung (every candidate fails the size filter — a degenerate
+    /// input).
+    ///
+    /// <para><b>Why a separate method.</b> The thresholded overload discards the score
+    /// on rejection, so the caller can't tell a close miss (score 0.47) from a
+    /// catastrophic mismatch (score 0.05) — both look like <c>null</c>. The auto-
+    /// calibration engine and its diagnostic bundle want the score in both branches
+    /// (accept logs it; reject logs it AND writes it to <c>01-attempt.json</c>) so a
+    /// future "map-not-located" outcome is self-triaging.</para>
+    /// </summary>
+    public static MapRect? AutoDetectBest(GrayImage screenshot, GrayImage texture)
+    {
         // Candidate downsample factors for the texture — each gives a different
         // "rendered map size" hypothesis. The match's score peak picks the
         // closest hypothesis. Fractional factors are essential when the user
@@ -99,7 +121,7 @@ public static class MapRectLocator
             }
         }
 
-        if (bestRect is null || bestScore < minScore) return null;
+        if (bestRect is null) return null;
 
         // Task 2 (#966): the discrete ladder quantises SourceScaleFactor to ±2.5–5%.
         // Fit a parabola through the best rung and its two ladder neighbours on the
@@ -127,12 +149,27 @@ public static class MapRectLocator
     public static MapRect? AutoDetect(
         GrayImage screenshot, GrayImage texture, double minScore, int workingLongEdgePx)
     {
+        var best = AutoDetectBest(screenshot, texture, workingLongEdgePx);
+        if (best is null || best.AutoDetectScore is null || best.AutoDetectScore < minScore) return null;
+        return best;
+    }
+
+    /// <summary>
+    /// Threshold-free downsampling overload — pairs with
+    /// <see cref="AutoDetectBest(GrayImage, GrayImage)"/> the way the four-arg
+    /// <see cref="AutoDetect(GrayImage, GrayImage, double, int)"/> pairs with the
+    /// native three-arg form. Live callers use this so the auto-calibration engine
+    /// can always observe the score, even when it's below the production threshold.
+    /// </summary>
+    public static MapRect? AutoDetectBest(
+        GrayImage screenshot, GrayImage texture, int workingLongEdgePx)
+    {
         if (workingLongEdgePx <= 0) throw new ArgumentOutOfRangeException(nameof(workingLongEdgePx));
 
         var (workScreenshot, captureRatio) = DownsampleToLongEdge(screenshot, workingLongEdgePx);
         var (workTexture, _) = DownsampleToLongEdge(texture, workingLongEdgePx);
 
-        var rect = AutoDetect(workScreenshot, workTexture, minScore);
+        var rect = AutoDetectBest(workScreenshot, workTexture);
         if (rect is null) return null;
 
         // Unscale origin/size from working-capture pixels back to full-capture

@@ -25,6 +25,14 @@ public sealed class CalibrationAttemptContext
     public GrayImage? GrayCapture { get; set; }
     public GrayImage? BaseTextureResampled { get; set; }
     public MapRect? MapRect { get; set; }
+    /// <summary>
+    /// The locator's coarse best-rung rect (with <see cref="MapRect.AutoDetectScore"/>
+    /// + <see cref="MapRect.SourceScaleFactor"/> populated) regardless of whether
+    /// it cleared the engine's accept threshold. Set on both accept and
+    /// <c>rejected-map-not-located</c> outcomes so the bundle/log makes future
+    /// close-miss vs catastrophic-mismatch self-triaging.
+    /// </summary>
+    public MapRect? LocatorBestRect { get; set; }
     public GrayImage? AlignedCrop { get; set; }
     public GrayImage? AlignedTexture { get; set; }
     public IReadOnlyList<LandmarkReference>? References { get; set; }

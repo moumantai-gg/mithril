@@ -20,10 +20,33 @@ public sealed class TextureRegistrationRefinerTests
     {
         var tex = SyntheticMap.NoisyTexture(seed: 3, w: 64, h: 64);
         var frame = SyntheticMap.PasteInto(tex, canvasW: 160, canvasH: 120, atX: 40, atY: 30);
-        var rect = new TextureRegistrationRefiner().Refine(frame, tex, minScore: 0.5);
-        rect.Should().NotBeNull();
-        rect!.OriginX.Should().BeCloseTo(40, 3);
-        rect.OriginY.Should().BeCloseTo(30, 3);
+        var result = new TextureRegistrationRefiner().Refine(frame, tex, minScore: 0.5);
+        result.AcceptedRect.Should().NotBeNull();
+        result.AcceptedRect!.OriginX.Should().BeCloseTo(40, 3);
+        result.AcceptedRect.OriginY.Should().BeCloseTo(30, 3);
+    }
+
+    /// <summary>
+    /// Observability seam: when the coarse score falls below the engine's threshold,
+    /// the refiner must still surface what the locator found — the bundle/log
+    /// downstream wants the score and origin even on a "couldn't locate" outcome,
+    /// so future close-miss vs catastrophic-miss is self-triaging.
+    /// </summary>
+    [Fact]
+    public void Refine_surfaces_BestCoarseRect_when_below_minScore()
+    {
+        var tex = SyntheticMap.NoisyTexture(seed: 3, w: 64, h: 64);
+        var frame = SyntheticMap.PasteInto(tex, canvasW: 160, canvasH: 120, atX: 40, atY: 30);
+        // minScore > 1.0 forces rejection without engineering a deliberately-poor
+        // input; the embedded texture's match still scores ~1.0.
+        var result = new TextureRegistrationRefiner().Refine(frame, tex, minScore: 1.5);
+
+        result.AcceptedRect.Should().BeNull("score is below the impossible threshold");
+        result.BestCoarseRect.Should().NotBeNull("the locator did find a best rung — surface it");
+        result.BestCoarseRect!.AutoDetectScore.Should().NotBeNull();
+        result.BestCoarseRect.AutoDetectScore!.Value.Should().BeGreaterThan(0.5);
+        result.BestCoarseRect.OriginX.Should().BeCloseTo(40, 3);
+        result.BestCoarseRect.OriginY.Should().BeCloseTo(30, 3);
     }
 
     /// <summary>
@@ -59,7 +82,7 @@ public sealed class TextureRegistrationRefinerTests
         var capture = new GrayImage(captureW, captureH, shot);
 
         var sw = Stopwatch.StartNew();
-        var rect = new TextureRegistrationRefiner().Refine(capture, texture, minScore: 0.3);
+        var result = new TextureRegistrationRefiner().Refine(capture, texture, minScore: 0.3);
         sw.Stop();
 
         _output.WriteLine($"seam Refine at live resolution: {sw.ElapsedMilliseconds} ms");
@@ -69,8 +92,9 @@ public sealed class TextureRegistrationRefinerTests
         // NOT the 384px working size), and the texture dims are the FULL texture — never
         // the working-resolution copy. The ~4× capture box-average leaves ≲ one working
         // pixel (≈4 full px) of origin quantisation plus the discrete-rung scale slop.
-        rect.Should().NotBeNull("the embedded texture must be locatable through the seam");
-        rect!.OriginX.Should().BeCloseTo(padX, 35);
+        result.AcceptedRect.Should().NotBeNull("the embedded texture must be locatable through the seam");
+        var rect = result.AcceptedRect!;
+        rect.OriginX.Should().BeCloseTo(padX, 35);
         rect.OriginY.Should().BeCloseTo(padY, 35);
         rect.Width.Should().BeGreaterThan(MapRectLocator.DefaultWorkingLongEdgePx,
             "the rect must be unscaled back to full-capture pixels, not left at working resolution");

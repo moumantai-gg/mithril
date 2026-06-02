@@ -259,15 +259,29 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         _logger?.LogInformation(
             "Auto-calibration {Area}: locating the map within the captured frame (texture registration)…", area);
         var refineStart = Stopwatch.GetTimestamp();
-        MapRect? mapRect;
+        MapRegionRefineResult refineResult;
         using (var refineAct = MithrilActivitySources.MapCalibration.StartActivity("calibration.refine"))
         {
-            mapRect = _refiner.Refine(gray, baseTexture, RefineMinScore);
-            refineAct?.SetTag("map.located", mapRect is not null);
+            refineResult = _refiner.Refine(gray, baseTexture, RefineMinScore);
+            refineAct?.SetTag("map.located", refineResult.AcceptedRect is not null);
+            if (refineResult.BestCoarseRect?.AutoDetectScore is { } coarseScore)
+            {
+                refineAct?.SetTag("locator.best_score", coarseScore);
+            }
         }
+        // Surface the coarse best-rung rect on EITHER branch — the diagnostic bundle
+        // reads this so a future rejected-map-not-located is self-triaging.
+        attempt.LocatorBestRect = refineResult.BestCoarseRect;
+        var mapRect = refineResult.AcceptedRect;
         if (mapRect is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedMapNotLocated;
+            if (refineResult.BestCoarseRect is { AutoDetectScore: { } bestScore } best)
+            {
+                _logger?.LogInformation(
+                    "Auto-calibration {Area}: locate rejected — best coarse NCC = {Score:F3} (need >= {MinScore:F2}), factor = {Factor:F3}, origin = ({X}, {Y}).",
+                    area, bestScore, RefineMinScore, best.SourceScaleFactor ?? double.NaN, best.OriginX, best.OriginY);
+            }
             return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map");
         }
         attempt.MapRect = mapRect;

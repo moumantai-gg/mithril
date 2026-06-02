@@ -41,13 +41,24 @@ public sealed class TextureRegistrationRefiner : IMapRegionRefiner
     private const double Epsilon = 1e-6;
     private const int GaussFiltSize = 5;
 
-    public MapRect? Refine(GrayImage capturedGray, GrayImage baseTexture, double minScore)
+    public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture, double minScore)
     {
-        var seed = MapRectLocator.AutoDetect(
-            capturedGray, baseTexture, minScore, MapRectLocator.DefaultWorkingLongEdgePx);
+        // Always run the threshold-free locator so the coarse score is preserved on
+        // both accept and reject; the threshold gate is applied here, NOT in the
+        // locator. Without this seam the rejection branch loses the score and the
+        // engine can't tell a close miss from a catastrophic mismatch.
+        var seed = MapRectLocator.AutoDetectBest(
+            capturedGray, baseTexture, MapRectLocator.DefaultWorkingLongEdgePx);
         if (seed is null)
         {
-            return null; // coarse locate failed → nothing to refine
+            return MapRegionRefineResult.None; // no viable rung — degenerate input
+        }
+
+        // Below threshold → don't pay the ECC refine, but still report what the
+        // locator found so the engine/bundle can record the score+factor+origin.
+        if (seed.AutoDetectScore is null || seed.AutoDetectScore < minScore)
+        {
+            return new MapRegionRefineResult(AcceptedRect: null, BestCoarseRect: seed);
         }
 
         int sw = seed.Width, sh = seed.Height;
@@ -71,19 +82,25 @@ public sealed class TextureRegistrationRefiner : IMapRegionRefiner
             double scaleX = Math.Sqrt((double)a * a + (double)c * c);
             double scaleY = Math.Sqrt((double)b * b + (double)d * d);
 
-            return new MapRect(
+            // Carry the coarse seed's AutoDetectScore + SourceScaleFactor through the
+            // ECC-refined rect so the accept log + bundle both see the score (today
+            // they print empty because the new MapRect drops both fields).
+            var refined = new MapRect(
                 OriginX: (int)Math.Round(tx),
                 OriginY: (int)Math.Round(ty),
                 Width: (int)Math.Round(sw * scaleX),
                 Height: (int)Math.Round(sh * scaleY),
                 TextureWidth: baseTexture.Width,
-                TextureHeight: baseTexture.Height);
+                TextureHeight: baseTexture.Height,
+                AutoDetectScore: seed.AutoDetectScore,
+                SourceScaleFactor: seed.SourceScaleFactor);
+            return new MapRegionRefineResult(AcceptedRect: refined, BestCoarseRect: seed);
         }
         catch (OpenCVException)
         {
             // Non-convergence (and any other OpenCV-internal failure): fall back to
             // the coarse seed so the engine sees no worse than the pre-#978 behaviour.
-            return seed;
+            return new MapRegionRefineResult(AcceptedRect: seed, BestCoarseRect: seed);
         }
     }
 
