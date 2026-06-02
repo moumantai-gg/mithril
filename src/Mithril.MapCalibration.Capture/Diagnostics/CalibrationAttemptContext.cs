@@ -28,6 +28,7 @@ public sealed class CalibrationAttemptContext
     public GrayImage? AlignedCrop { get; set; }
     public GrayImage? AlignedTexture { get; set; }
     public IReadOnlyList<LandmarkReference>? References { get; set; }
+    public IReadOnlyList<TypedDetection>? Detections { get; set; }
     public CalibrationSolveResult? Result { get; set; }
 
     // Outcome is set explicitly by the engine — either at each Fail() site, at
