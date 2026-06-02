@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Diagnostics;
 
 namespace Mithril.MapCalibration.Detection;
 
@@ -156,12 +157,113 @@ public sealed class MapCalibrationSolveEngine
         return finalResult;
     }
 
-    /// <summary>Placeholder — wired in Task 16.</summary>
     private void EmitSynthesisRerankTelemetry(
         SynthesisRerankMode mode, SynthesisOrientationWinner? winner, CalibrationSolveResult finalResult)
     {
-        // Implemented in Task 16.
+        // Off mode: no L_t was built, no telemetry to emit. (StartActivity returns
+        // null when no listener is attached, so the cost when listeners ARE
+        // attached but mode is Off is one bool branch.)
+        if (mode == SynthesisRerankMode.Off) return;
+
+        using var span = MapCalibrationDiagnostics.ActivitySource.StartActivity("calibration.synthesis_rerank");
+        if (span is null && !HasAnyMeterListener()) return;
+
+        // The legacy gate's verdict, derived from finalResult when mode==Shadow
+        // (legacy is source-of-truth, accept iff Calibration is not null) — or, when
+        // mode==Enabled, computed against the *winner's* AreaCalibration + inlier
+        // count so we can still report disagreement between the gates even though
+        // synthesis-J is doing the final accept.
+        bool legacyAccept;
+        int legacyInlierCount;
+        double? legacyResidualPx;
+        if (mode == SynthesisRerankMode.Shadow)
+        {
+            legacyAccept = finalResult.Calibration is not null;
+            legacyInlierCount = finalResult.InlierCount;
+            legacyResidualPx = finalResult.Calibration?.ResidualPixels;
+        }
+        else
+        {
+            // Enabled: re-run the legacy gate on the synthesis winner's fit so the
+            // disagreement counter remains meaningful.
+            if (winner is not null
+                && _gate.Accept(winner.Calibration, winner.Inliers.Count, out _))
+            {
+                legacyAccept = true;
+                legacyInlierCount = winner.Inliers.Count;
+                legacyResidualPx = winner.Calibration.ResidualPixels;
+            }
+            else if (winner is not null)
+            {
+                legacyAccept = false;
+                legacyInlierCount = winner.Inliers.Count;
+                legacyResidualPx = winner.Calibration.ResidualPixels;
+            }
+            else
+            {
+                legacyAccept = false;
+                legacyInlierCount = 0;
+                legacyResidualPx = null;
+            }
+        }
+
+        bool synthesisAccept = mode == SynthesisRerankMode.Enabled
+            ? finalResult.Calibration is not null
+            : winner is not null
+              && winner.J >= _options.SynthesisJMin
+              && winner.RefsAboveHalf >= _options.SynthesisNMin;
+
+        var synthVerdict = synthesisAccept ? "accept" : "reject";
+        var gateVerdict = legacyAccept ? "accept" : "reject";
+        var disagree = synthesisAccept != legacyAccept;
+        var change = disagree
+            ? (synthesisAccept ? "reject_to_accept" : "accept_to_reject")
+            : "none";
+
+        if (span is not null)
+        {
+            span.SetTag("synth.mode", mode.ToString().ToLowerInvariant());
+            if (winner is not null)
+            {
+                span.SetTag("synth.j_best", winner.J);
+                span.SetTag("synth.refs_above_0.5", winner.RefsAboveHalf);
+                span.SetTag("synth.refs_total", winner.RefsTotal);
+                span.SetTag("synth.refs_off_crop", winner.RefsOffCrop);
+            }
+            span.SetTag("synth.j_min", _options.SynthesisJMin);
+            span.SetTag("synth.n_min", _options.SynthesisNMin);
+            span.SetTag("synth.verdict", synthVerdict);
+            span.SetTag("gate.verdict", gateVerdict);
+            span.SetTag("gate.inliers", legacyInlierCount);
+            if (legacyResidualPx is not null) span.SetTag("gate.residual_px", legacyResidualPx.Value);
+            span.SetTag("disagree", disagree);
+            span.SetTag("disagree.would_change", change);
+        }
+
+        if (winner is not null)
+        {
+            var verdictTag = new KeyValuePair<string, object?>("verdict", synthVerdict);
+            MapCalibrationDiagnostics.Meters.SynthesisJ.Record(winner.J, verdictTag);
+            MapCalibrationDiagnostics.Meters.SynthesisRefsAboveThreshold.Record(winner.RefsAboveHalf, verdictTag);
+        }
+        if (disagree)
+        {
+            MapCalibrationDiagnostics.Meters.SynthesisDisagree.Add(1,
+                new KeyValuePair<string, object?>("change", change));
+        }
     }
+
+    /// <summary>
+    /// True if any consumer is currently listening to the synthesis meters. Used
+    /// to short-circuit the emit body when no span listener AND no meter listener
+    /// — the unconditional-producer convention (CLAUDE.md) means producers emit
+    /// without `if (active)`, but this helper avoids the per-emit prep work when
+    /// the activity didn't start and nobody is listening to the meters either.
+    /// </summary>
+    private static bool HasAnyMeterListener() =>
+        MapCalibrationDiagnostics.Meters.SynthesisJ.Enabled
+        || MapCalibrationDiagnostics.Meters.SynthesisRefsAboveThreshold.Enabled
+        || MapCalibrationDiagnostics.Meters.SynthesisDisagree.Enabled;
 
     /// <summary>
     /// Per-orientation detect summary: typed detection total + per-type breakdown
