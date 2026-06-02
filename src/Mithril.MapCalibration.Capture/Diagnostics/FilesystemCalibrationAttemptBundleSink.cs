@@ -223,17 +223,21 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
 
     private void WriteAttemptJson(string dir, CalibrationAttemptContext ctx, AttemptFilesJson files)
     {
-        var finalized = DateTimeOffset.UtcNow;
-        var dto = new AttemptJson(
-            SchemaVersion: 1,
-            Area: ctx.Area,
-            AttemptStartedUtc: ctx.StartedUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
-            AttemptFinalizedUtc: finalized.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
-            Outcome: ctx.Outcome,
-            RejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo,
-            EngineVersion: AssemblyVersion,
-            Files: files);
-        WriteJson(dir, "01-attempt.json", dto, CalibrationBundleJsonContext.Default.AttemptJson);
+        try
+        {
+            var finalized = DateTimeOffset.UtcNow;
+            var dto = new AttemptJson(
+                SchemaVersion: 1,
+                Area: ctx.Area,
+                AttemptStartedUtc: ctx.StartedUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
+                AttemptFinalizedUtc: finalized.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
+                Outcome: ctx.Outcome,
+                RejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo,
+                EngineVersion: AssemblyVersion,
+                Files: files);
+            WriteJson(dir, "01-attempt.json", dto, CalibrationBundleJsonContext.Default.AttemptJson);
+        }
+        catch (Exception ex) { _logger?.LogWarning(ex, "01-attempt.json header write failed for {Outcome}", ctx.Outcome); }
     }
 
     private static string WritePng(string dir, string name, BitmapSource src)

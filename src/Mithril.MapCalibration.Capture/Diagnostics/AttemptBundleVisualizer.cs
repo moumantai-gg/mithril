@@ -64,8 +64,8 @@ public sealed class AttemptBundleVisualizer : IAttemptBundleVisualizer
             {
                 var rect = new System.Windows.Rect(det.AnchorX - half, det.AnchorY - half, renderSizePx, renderSizePx);
                 dc.DrawRectangle(brush: null, cyan, rect);
-                dc.DrawLine(red, new System.Windows.Point(det.AnchorX - 2, det.AnchorY), new System.Windows.Point(det.AnchorX + 2, det.AnchorY));
-                dc.DrawLine(red, new System.Windows.Point(det.AnchorX, det.AnchorY - 2), new System.Windows.Point(det.AnchorX, det.AnchorY + 2));
+                dc.DrawLine(red, new System.Windows.Point(det.AnchorX - 4, det.AnchorY), new System.Windows.Point(det.AnchorX + 4, det.AnchorY));
+                dc.DrawLine(red, new System.Windows.Point(det.AnchorX, det.AnchorY - 4), new System.Windows.Point(det.AnchorX, det.AnchorY + 4));
 
                 var text = new FormattedText(
                     string.Format(System.Globalization.CultureInfo.InvariantCulture, "Score:{0:0.00}", det.Score),
@@ -107,8 +107,8 @@ public sealed class AttemptBundleVisualizer : IAttemptBundleVisualizer
             {
                 var px = calibration.WorldToWindow(r.World, currentZoom: 1.0);
                 var (sx, sy) = mapRect.TextureToScreenshot(px.X, px.Y);
-                dc.DrawLine(yellow, new System.Windows.Point(sx - 3, sy), new System.Windows.Point(sx + 3, sy));
-                dc.DrawLine(yellow, new System.Windows.Point(sx, sy - 3), new System.Windows.Point(sx, sy + 3));
+                dc.DrawLine(yellow, new System.Windows.Point(sx - 5, sy), new System.Windows.Point(sx + 5, sy));
+                dc.DrawLine(yellow, new System.Windows.Point(sx, sy - 5), new System.Windows.Point(sx, sy + 5));
             }
 
             // Green outline rect for each inlier (inlier pixels are texture coords).

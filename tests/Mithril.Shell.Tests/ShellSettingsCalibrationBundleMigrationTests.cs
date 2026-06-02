@@ -68,4 +68,25 @@ public sealed class ShellSettingsCalibrationBundleMigrationTests
         settings.DumpCalibrationBundles.Should().BeFalse(
             "absent key → false (additive bool default)");
     }
+
+    [Fact]
+    public void V1_gray_only_enabled_migrates_to_bundles_false()
+    {
+        // Gray-only-enabled users lose the diagnostic dump on migration — intentional; see spec design rationale.
+        var oldJson = """
+        {
+            "schemaVersion": 1,
+            "dumpCalibrationGrayFrames": true,
+            "dumpCalibrationCaptureFrames": false
+        }
+        """;
+
+        var settings = JsonSerializer.Deserialize<ShellSettings>(
+            oldJson, ShellSettingsJsonContext.Default.ShellSettings)!;
+        settings = ShellSettings.Migrate(settings);
+
+        settings.DumpCalibrationBundles.Should().BeFalse(
+            "the bundle toggle is driven only by the capture-frames flag; the gray flag is silently dropped");
+        settings.SchemaVersion.Should().Be(ShellSettings.Version);
+    }
 }
