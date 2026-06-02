@@ -1,3 +1,5 @@
+using Mithril.MapCalibration.Detection;
+
 namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Experiments;
 
 internal sealed record E5Report(double BestDistanceToTruthPx, double JBestAfterRefine, IReadOnlyList<(CandidateTransform T, double J, double DistanceToTruth)> Top8AfterRefine);
@@ -16,7 +18,7 @@ internal static class E5_ColdGrid
 
     public static E5Report Run(
         IReadOnlyDictionary<string, double[,]> fields,
-        IReadOnlyList<ReferencePoint> refs,
+        IReadOnlyList<LandmarkReference> refs,
         CandidateTransform truth,
         (double Min, double Max) scaleBracket,
         int scaleSamples,

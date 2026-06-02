@@ -1,5 +1,7 @@
 // JEvaluatorTests.cs
 using FluentAssertions;
+using Mithril.MapCalibration;
+using Mithril.MapCalibration.Detection;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 using Xunit;
 
@@ -22,8 +24,8 @@ public class JEvaluatorTests
         // Two refs in world coords that land at the peaks under identity-ish transform.
         var refs = new[]
         {
-            new ReferencePoint("p1", "Portal", WorldX: 0, WorldZ: 0),
-            new ReferencePoint("n1", "Npc", WorldX: 30, WorldZ: -20),
+            new LandmarkReference("Portal", "p1", new WorldCoord(0, 0, 0)),
+            new LandmarkReference("Npc", "n1", new WorldCoord(30, 0, -20)),
         };
 
         // Transform: identity-ish, picking origin so world (0,0) lands at (20,20)

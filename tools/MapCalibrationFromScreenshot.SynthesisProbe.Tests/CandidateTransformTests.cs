@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Mithril.MapCalibration;
+using Mithril.MapCalibration.Detection;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 using Xunit;
 

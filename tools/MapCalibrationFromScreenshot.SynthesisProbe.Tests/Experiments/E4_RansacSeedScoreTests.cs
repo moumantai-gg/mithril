@@ -1,4 +1,6 @@
 using FluentAssertions;
+using Mithril.MapCalibration;
+using Mithril.MapCalibration.Detection;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Experiments;
 using Xunit;
@@ -13,7 +15,7 @@ public class E4_RansacSeedScoreTests
         var portal = new double[64, 64];
         portal[20, 20] = 0.9;
         var fields = new Dictionary<string, double[,]> { ["Portal"] = portal };
-        var refs = new[] { new ReferencePoint("p1", "Portal", 0, 0) };
+        var refs = new[] { new LandmarkReference("Portal", "p1", new WorldCoord(0, 0, 0)) };
         var truth = new CandidateTransform(1.0, 0.0, false, 20, 20);
 
         var dir = Path.Combine(Path.GetTempPath(), "synth-probe-e4-" + Guid.NewGuid().ToString("N"));

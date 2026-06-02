@@ -14,7 +14,7 @@ public class ProbeReferencesTests
         var refs = ProbeReferences.Load(landmarks, npcs, area: "AreaEltibule");
 
         refs.Should().NotBeEmpty();
-        refs.Select(r => r.LandmarkType).Distinct().Should().BeSubsetOf(new[]
+        refs.Select(r => r.Type).Distinct().Should().BeSubsetOf(new[]
         {
             "Portal", "MeditationPillar", "TeleportationPlatform", "Npc",
         });

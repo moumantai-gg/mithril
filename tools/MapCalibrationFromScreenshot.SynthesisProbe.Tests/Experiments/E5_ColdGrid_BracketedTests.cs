@@ -1,4 +1,6 @@
 using FluentAssertions;
+using Mithril.MapCalibration;
+using Mithril.MapCalibration.Detection;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Experiments;
 using Xunit;
@@ -13,7 +15,7 @@ public class E5_ColdGrid_BracketedTests
         var portal = new double[64, 64];
         portal[20, 20] = 0.9;
         var fields = new System.Collections.Generic.Dictionary<string, double[,]> { ["Portal"] = portal };
-        var refs = new[] { new ReferencePoint("p1", "Portal", 0, 0) };
+        var refs = new[] { new LandmarkReference("Portal", "p1", new WorldCoord(0, 0, 0)) };
         var truth = new CandidateTransform(0.5, 0.0, false, 20, 20);
 
         var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "synth-probe-e5-bracket-" + System.Guid.NewGuid().ToString("N"));
