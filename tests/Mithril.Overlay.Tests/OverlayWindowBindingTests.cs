@@ -51,8 +51,15 @@ public sealed class OverlayWindowBindingTests
             // Realize the visual tree. Show() + Hide() is the minimum that
             // forces template expansion + binding resolution; Measure/Arrange
             // alone leave a Window in a partially-realized state.
+            //
+            // mithril#996: WindowStyle.None + AllowsTransparency bypass DWM,
+            // so WindowState.Minimized isn't fully reliable at Show() time —
+            // park the window off-screen too so a brief flash before the
+            // minimize state takes effect can't reach the visible desktop.
             window.WindowState = WindowState.Minimized;
             window.ShowInTaskbar = false;
+            window.Left = -10000;
+            window.Top = -10000;
             window.Show();
             try
             {
