@@ -42,11 +42,16 @@ public sealed class TextureRegistrationRefinerTests
         var result = new TextureRegistrationRefiner().Refine(frame, tex, minScore: 1.5);
 
         result.AcceptedRect.Should().BeNull("score is below the impossible threshold");
+        // PR-1 transitional: BestCoarseRect is the [Obsolete] alias for RawFitRect under
+        // the feature-matching-locate rename. The refiner under test still populates it
+        // via the 2-arg ctor; PR-3 rewrites these assertions onto RawFitRect.
+#pragma warning disable CS0618 // BestCoarseRect: alias removed in PR-3
         result.BestCoarseRect.Should().NotBeNull("the locator did find a best rung — surface it");
         result.BestCoarseRect!.AutoDetectScore.Should().NotBeNull();
         result.BestCoarseRect.AutoDetectScore!.Value.Should().BeGreaterThan(0.5);
         result.BestCoarseRect.OriginX.Should().BeCloseTo(40, 3);
         result.BestCoarseRect.OriginY.Should().BeCloseTo(30, 3);
+#pragma warning restore CS0618
     }
 
     /// <summary>

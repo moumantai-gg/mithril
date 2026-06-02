@@ -3,23 +3,41 @@ using Mithril.MapCalibration.Detection;
 namespace Mithril.MapCalibration.Capture;
 
 /// <summary>
-/// Outcome of <see cref="IMapRegionRefiner.Refine"/>. Always populated when the
-/// locator ran — the score is preserved on rejection so the engine can log it
-/// and the diagnostic bundle can record it. Lets a future "map-not-located"
-/// outcome self-triage close-miss (score 0.47, threshold tweak) vs catastrophic
-/// (score 0.05, structural mismatch).
+/// Outcome of <see cref="IMapRegionRefiner.Refine"/>.
+/// <para>
+/// <see cref="AcceptedRect"/> is non-null iff the refiner's gate accepted.
+/// <see cref="RawFitRect"/> is non-null whenever the refiner produced a fit
+/// (gate-pass-or-not) — diagnostics + the bundle's <c>LocatorBest</c> read
+/// from this on the rejection branch so a future "map-not-located" outcome
+/// is self-triaging.
+/// <see cref="Metrics"/> mirrors <see cref="RawFitRect"/>: non-null exactly
+/// when a fit exists, carrying the inlier count/ratio + recovered transform
+/// parameters for both the gate and the bundle log.
+/// </para>
 /// </summary>
-/// <param name="AcceptedRect">The ECC-refined rect when the coarse locator's
-/// score met the caller's threshold; <see langword="null"/> when the score was
-/// below threshold OR no rung was viable.</param>
-/// <param name="BestCoarseRect">The best-rung rect from the coarse NCC scale
-/// ladder, with <see cref="MapRect.AutoDetectScore"/> and
-/// <see cref="MapRect.SourceScaleFactor"/> populated. Available whether or not
-/// the score met threshold; <see langword="null"/> only when the ladder had no
-/// viable rung (degenerate input — capture smaller than every candidate
-/// template).</param>
-public sealed record MapRegionRefineResult(MapRect? AcceptedRect, MapRect? BestCoarseRect)
+public sealed record MapRegionRefineResult(
+    MapRect? AcceptedRect,
+    MapRect? RawFitRect,
+    LocateMetrics? Metrics)
 {
-    /// <summary>Degenerate result — the locator had no viable rung.</summary>
-    public static MapRegionRefineResult None { get; } = new(null, null);
+    /// <summary>Degenerate result — the refiner had no usable fit.</summary>
+    public static MapRegionRefineResult None { get; } = new(null, null, null);
+
+    /// <summary>
+    /// PR-1 transitional alias for <see cref="RawFitRect"/> so the in-tree
+    /// <see cref="TextureRegistrationRefiner"/> keeps populating the
+    /// rejection-branch rect under its existing name. PR-3 deletes this
+    /// alongside the rest of the NCC-vocabulary cleanup.
+    /// </summary>
+    [Obsolete("Renamed to RawFitRect. Removed in PR-3.")]
+    public MapRect? BestCoarseRect => RawFitRect;
+
+    /// <summary>
+    /// PR-1 transitional ctor — preserves the existing positional shape
+    /// <c>new MapRegionRefineResult(accepted, bestCoarseRect)</c> so the
+    /// existing <see cref="TextureRegistrationRefiner"/> compiles untouched
+    /// in PR-1. PR-3 rewrites every call site.
+    /// </summary>
+    public MapRegionRefineResult(MapRect? AcceptedRect, MapRect? BestCoarseRect)
+        : this(AcceptedRect, BestCoarseRect, null) { }
 }
