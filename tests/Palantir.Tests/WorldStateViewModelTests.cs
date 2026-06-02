@@ -133,14 +133,14 @@ public sealed class WorldStateViewModelTests
         var pins = new FakeMapPinState();
         using var vm = NewVm(out var bus, pins: pins);
 
-        pins.Set([new MapPinEntry(123.4, -567.8, "Camp", 2, 3)]);
         bus.Fire(new MapPinAdded(123.4, -567.8, "Camp", 2, 3, Meta()));
 
         vm.HasPins.Should().BeTrue();
         vm.PinCount.Should().Be(1);
         var row = vm.Pins.Single();
         row.Label.Should().Be("Camp");
-        row.Coords.Should().Be("X 123.40   Z -567.80");
+        row.X.Should().BeApproximately(123.4, 0.001);
+        row.Z.Should().BeApproximately(-567.8, 0.001);
         vm.PinsObservedAtText.Should().Be("2026-05-18 10:45:47Z");
     }
 
@@ -151,7 +151,6 @@ public sealed class WorldStateViewModelTests
         var pins = new FakeMapPinState([new MapPinEntry(1, 1, "A", 0, 0), b]);
         using var vm = NewVm(out var bus, pins: pins);
 
-        pins.Set([b]);
         bus.Fire(new MapPinRemoved(1, 1, "A", Meta()));
 
         vm.Pins.Select(r => r.Label).Should().ContainSingle().Which.Should().Be("B");
@@ -163,12 +162,14 @@ public sealed class WorldStateViewModelTests
         var pins = new FakeMapPinState();
         using var vm = NewVm(out var bus, pins: pins);
 
-        pins.Set([new MapPinEntry(-3.14, 0, "", 0, 0)]);
         bus.Fire(new MapPinAdded(-3.14, 0, "", 0, 0, Meta()));
 
         var row = vm.Pins.Single();
-        row.Label.Should().Be("Unnamed pin");
-        row.Coords.Should().Be("X -3.14   Z 0.00");
+        // The "Unnamed pin" display fallback lives in the XAML DataTemplate
+        // (FallbackValue/TargetNullValue); the MapPinEntry stores the raw label.
+        row.Label.Should().Be("");
+        row.X.Should().BeApproximately(-3.14, 0.001);
+        row.Z.Should().BeApproximately(0, 0.001);
     }
 
     [Fact]
@@ -178,10 +179,14 @@ public sealed class WorldStateViewModelTests
         using var vm = NewVm(out var bus, pins: pins);
         vm.Dispose();
 
-        pins.Set([new MapPinEntry(9, 9, "Late", 0, 0)]);
         bus.Fire(new MapPinAdded(9, 9, "Late", 0, 0, Meta()));
 
-        vm.HasPins.Should().BeFalse("the disposed VM must unsubscribe from pins");
+        // After dispose, the VM's own pin-timestamp subscription must be silent.
+        // (The presenter is a separate singleton in production — not co-disposed
+        // with the VM — so vm.Pins / HasPins reflect the presenter's state; the
+        // VM's own observable, PinsObservedAtText, must stay at its default.)
+        vm.PinsObservedAtText.Should().Be("—",
+            "the disposed VM must unsubscribe its own OnPinAdded handler");
     }
 
     // --- Moon phase ---------------------------------------------------------
@@ -285,53 +290,56 @@ public sealed class WorldStateViewModelTests
 
     private static WorldStateViewModel NewVm(
         out FakeBus bus,
-        FakePositionState? position = null,
-        FakeAreaState? area = null,
-        FakeMapPinState? pins = null,
-        FakeCelestialState? celestial = null,
-        FakeWeatherState? weather = null,
+        IPositionState? position = null,
+        IAreaState? area = null,
+        IMapPinState? pins = null,
+        ICelestialState? celestial = null,
+        IWeatherState? weather = null,
         IReferenceDataService? refData = null)
     {
         bus = new FakeBus();
+        var pinState = pins ?? new FakeMapPinState();
+        var subscriber = new Arda.Wpf.SyncUiEventSubscriber(bus);
+        var presenter = new Arda.Wpf.WpfMapPinPresenter(pinState, subscriber);
+
         return new WorldStateViewModel(
             position ?? new FakePositionState(),
             area ?? new FakeAreaState(),
-            pins ?? new FakeMapPinState(),
+            pinState,
             celestial ?? new FakeCelestialState(),
             weather ?? new FakeWeatherState(),
-            bus,
-            refData,
-            dispatch: a => a());
+            subscriber,
+            presenter,
+            refData);
     }
 
     // --- Fakes --------------------------------------------------------------
 
-    internal sealed class FakeBus : IDomainEventSubscriber
+    internal sealed class FakeBus : IDomainEventPublisher, IDomainEventSubscriber
     {
         private readonly Dictionary<Type, List<Delegate>> _handlers = new();
 
+        public void Publish<T>(T evt) where T : struct
+        {
+            if (!_handlers.TryGetValue(typeof(T), out var list)) return;
+            foreach (var d in list.ToArray()) ((Action<T>)d).Invoke(evt);
+        }
+
         public IDisposable Subscribe<T>(Action<T> handler) where T : struct
         {
-            var type = typeof(T);
-            if (!_handlers.TryGetValue(type, out var list))
-            {
-                list = [];
-                _handlers[type] = list;
-            }
+            if (!_handlers.TryGetValue(typeof(T), out var list))
+                _handlers[typeof(T)] = list = new();
             list.Add(handler);
             return new Sub(() => list.Remove(handler));
         }
 
-        public void Fire<T>(T evt) where T : struct
-        {
-            if (_handlers.TryGetValue(typeof(T), out var list))
-                foreach (var h in list.ToArray())
-                    ((Action<T>)h)(evt);
-        }
+        /// <summary>Fire an event synchronously — test helper alias for Publish.</summary>
+        public void Fire<T>(T evt) where T : struct => Publish(evt);
 
         private sealed class Sub(Action onDispose) : IDisposable
         {
-            public void Dispose() => onDispose();
+            private Action? _onDispose = onDispose;
+            public void Dispose() { _onDispose?.Invoke(); _onDispose = null; }
         }
     }
 

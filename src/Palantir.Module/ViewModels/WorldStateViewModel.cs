@@ -1,8 +1,8 @@
-using System.Collections.ObjectModel;
 using System.Globalization;
 using Arda.Contracts;
 using Arda.World.Player;
 using Arda.World.Player.Events;
+using Arda.Wpf;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Reference;
@@ -14,10 +14,13 @@ namespace Palantir.ViewModels;
 /// celestial (moon phase), and weather. State is read from Arda state
 /// interfaces (<see cref="IPositionState"/>, <see cref="IAreaState"/>, etc.)
 /// and kept current via domain event subscriptions through
-/// <see cref="IDomainEventSubscriber"/>.
+/// <see cref="IUiEventSubscriber"/> — every handler runs on the WPF
+/// Dispatcher thread inside a SafeInvoke try/catch, so a misbehaving
+/// handler cannot crash the process via an unobserved-task finalizer
+/// rethrow.
 ///
-/// <para>All event handlers fire on the Arda dispatch thread, so every handler
-/// marshals through <see cref="_dispatch"/> before touching bound state.</para>
+/// <para>Pin rendering is delegated to <see cref="WpfMapPinPresenter"/>;
+/// the VM only carries the count + observed-at timestamp for display.</para>
 /// </summary>
 public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
 {
@@ -27,7 +30,7 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     private readonly ICelestialState _celestial;
     private readonly IWeatherState _weather;
     private readonly IReferenceDataService? _refData;
-    private readonly Action<Action> _dispatch;
+    private readonly WpfMapPinPresenter _pinPresenter;
 
     private IDisposable? _positionSub;
     private IDisposable? _areaSub;
@@ -35,6 +38,7 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     private IDisposable? _pinRemovedSub;
     private IDisposable? _celestialSub;
     private IDisposable? _weatherSub;
+    private readonly System.Collections.Specialized.NotifyCollectionChangedEventHandler _pinsChangedHandler;
 
     [ObservableProperty] private string _areaKey = "(unknown)";
     [ObservableProperty] private string _areaFriendlyName = "(area not yet known)";
@@ -46,8 +50,6 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _measuredAtText = "—";
     [ObservableProperty] private string _positionSourceText = "—";
 
-    [ObservableProperty] private int _pinCount;
-    [ObservableProperty] private bool _hasPins;
     [ObservableProperty] private string _pinsObservedAtText = "—";
 
     [ObservableProperty] private bool _hasMoonPhase;
@@ -59,9 +61,12 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _weatherConditionText = "(weather unknown for this map)";
     [ObservableProperty] private string _weatherObservedAtText = "—";
 
-    /// <summary>The current area's pins as presentation rows. Mutated only
-    /// on the dispatched (UI) thread.</summary>
-    public ObservableCollection<MapPinRow> Pins { get; } = [];
+    /// <summary>The presenter's UI-thread <see cref="WpfMapPinPresenter.Pins"/>.
+    /// XAML binds directly; the VM no longer rebuilds a parallel collection.</summary>
+    public System.Collections.ObjectModel.ObservableCollection<MapPinEntry> Pins => _pinPresenter.Pins;
+
+    public int PinCount => Pins.Count;
+    public bool HasPins => Pins.Count > 0;
 
     public WorldStateViewModel(
         IPositionState position,
@@ -69,24 +74,9 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         IMapPinState pins,
         ICelestialState celestial,
         IWeatherState weather,
-        IDomainEventSubscriber bus,
+        IUiEventSubscriber bus,
+        WpfMapPinPresenter pinPresenter,
         IReferenceDataService? refData = null)
-        : this(position, area, pins, celestial, weather, bus, refData, dispatch: null)
-    { }
-
-    /// <summary>
-    /// Test-friendly ctor: inject a synchronous dispatcher so unit tests
-    /// don't need an STA Application running.
-    /// </summary>
-    public WorldStateViewModel(
-        IPositionState position,
-        IAreaState area,
-        IMapPinState pins,
-        ICelestialState celestial,
-        IWeatherState weather,
-        IDomainEventSubscriber bus,
-        IReferenceDataService? refData,
-        Action<Action>? dispatch)
     {
         _position = position;
         _area = area;
@@ -94,7 +84,7 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         _celestial = celestial;
         _weather = weather;
         _refData = refData;
-        _dispatch = dispatch ?? DefaultDispatch;
+        _pinPresenter = pinPresenter;
 
         SeedFromState();
 
@@ -104,12 +94,19 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         _pinRemovedSub = bus.Subscribe<MapPinRemoved>(OnPinRemoved);
         _celestialSub = bus.Subscribe<CelestialInfoChanged>(OnCelestial);
         _weatherSub = bus.Subscribe<WeatherChanged>(OnWeather);
+
+        // Pin count/HasPins shadow the presenter's collection; flip change
+        // notification when its size changes. Handler stored in a field so
+        // Dispose can unsubscribe — the presenter is a singleton, so leaving
+        // the inline lambda subscribed would pin the VM in memory.
+        _pinsChangedHandler = (_, _) =>
+        {
+            OnPropertyChanged(nameof(PinCount));
+            OnPropertyChanged(nameof(HasPins));
+        };
+        _pinPresenter.Pins.CollectionChanged += _pinsChangedHandler;
     }
 
-    /// <summary>
-    /// Reads current state from the Arda state interfaces to seed the UI
-    /// (replay may already have run before the VM is constructed).
-    /// </summary>
     private void SeedFromState()
     {
         RefreshArea();
@@ -119,8 +116,6 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
             HasPosition = true;
             PositionText = FormatPosition(_position.X.Value, _position.Y ?? 0, _position.Z ?? 0);
         }
-
-        RefreshPins();
 
         if (_celestial.Phase != MoonPhase.Unknown || _celestial.CurrentPhaseRaw is not null)
         {
@@ -139,7 +134,7 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void OnPosition(PlayerPositionChanged e) => _dispatch(() =>
+    private void OnPosition(PlayerPositionChanged e)
     {
         HasPosition = true;
         PositionText = FormatPosition(e.X, e.Y, e.Z);
@@ -151,23 +146,15 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
             _ => e.Source.ToString(),
         };
         RefreshArea();
-    });
+    }
 
-    private void OnAreaChanged(AreaChanged e) => _dispatch(RefreshArea);
+    private void OnAreaChanged(AreaChanged e) => RefreshArea();
 
-    private void OnPinAdded(MapPinAdded e) => _dispatch(() =>
-    {
-        PinsObservedAtText = FormatTimestamp(e.Metadata.Timestamp);
-        RefreshPins();
-    });
+    private void OnPinAdded(MapPinAdded e) => PinsObservedAtText = FormatTimestamp(e.Metadata.Timestamp);
 
-    private void OnPinRemoved(MapPinRemoved e) => _dispatch(() =>
-    {
-        PinsObservedAtText = FormatTimestamp(e.Metadata.Timestamp);
-        RefreshPins();
-    });
+    private void OnPinRemoved(MapPinRemoved e) => PinsObservedAtText = FormatTimestamp(e.Metadata.Timestamp);
 
-    private void OnCelestial(CelestialInfoChanged e) => _dispatch(() =>
+    private void OnCelestial(CelestialInfoChanged e)
     {
         HasMoonPhase = true;
         MoonPhaseText = e.DisplayName;
@@ -175,21 +162,17 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
             ? $"{e.RawPhase} (unrecognised token)"
             : e.RawPhase;
         MoonMeasuredAtText = FormatTimestamp(e.Metadata.Timestamp);
-    });
+    }
 
-    private void OnWeather(WeatherChanged e) => _dispatch(() =>
+    private void OnWeather(WeatherChanged e)
     {
         HasWeather = e.Current is not null;
         WeatherConditionText = e.Current ?? "(weather unknown for this map)";
         WeatherObservedAtText = FormatTimestamp(e.Metadata.Timestamp);
-    });
+    }
 
     [RelayCommand]
-    private void Refresh() => _dispatch(() =>
-    {
-        RefreshArea();
-        RefreshPins();
-    });
+    private void Refresh() => RefreshArea();
 
     private void RefreshArea()
     {
@@ -220,33 +203,15 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>
-    /// Rebuilds the pin list from <see cref="IMapPinState.Pins"/>. The set is
-    /// tiny (a handful per area), so clear-and-refill is simpler than diffing.
-    /// </summary>
-    private void RefreshPins()
-    {
-        Pins.Clear();
-        foreach (var pin in _pinState.Pins)
-            Pins.Add(MapPinRow.From(pin));
-        PinCount = Pins.Count;
-        HasPins = Pins.Count > 0;
-    }
-
     public void Dispose()
     {
-        _positionSub?.Dispose();
-        _positionSub = null;
-        _areaSub?.Dispose();
-        _areaSub = null;
-        _pinAddedSub?.Dispose();
-        _pinAddedSub = null;
-        _pinRemovedSub?.Dispose();
-        _pinRemovedSub = null;
-        _celestialSub?.Dispose();
-        _celestialSub = null;
-        _weatherSub?.Dispose();
-        _weatherSub = null;
+        _pinPresenter.Pins.CollectionChanged -= _pinsChangedHandler;
+        _positionSub?.Dispose(); _positionSub = null;
+        _areaSub?.Dispose(); _areaSub = null;
+        _pinAddedSub?.Dispose(); _pinAddedSub = null;
+        _pinRemovedSub?.Dispose(); _pinRemovedSub = null;
+        _celestialSub?.Dispose(); _celestialSub = null;
+        _weatherSub?.Dispose(); _weatherSub = null;
     }
 
     private static string FormatPosition(double x, double y, double z) =>
@@ -254,40 +219,4 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
 
     private static string FormatTimestamp(DateTimeOffset? ts) =>
         ts?.UtcDateTime.ToString("u", CultureInfo.InvariantCulture) ?? "—";
-
-    private static void DefaultDispatch(Action action)
-    {
-        var d = System.Windows.Application.Current?.Dispatcher;
-        if (d is null || d.CheckAccess()) action();
-        else d.InvokeAsync(action);
-    }
-}
-
-/// <summary>
-/// Presentation-only projection of a <see cref="MapPinEntry"/> for the World
-/// State debug list — formatting lives here, not in the XAML.
-/// </summary>
-/// <param name="Label">The pin label.</param>
-/// <param name="Appearance">Friendly shape+color description (e.g. "red dot").</param>
-/// <param name="Coords">Signed engine-unit ground-plane coordinate.</param>
-/// <param name="Detail">Raw shape/color values — debug-surface extra.</param>
-public sealed record MapPinRow(string Label, string Appearance, string Coords, string Detail)
-{
-    public static MapPinRow From(MapPinEntry p) => new(
-        string.IsNullOrEmpty(p.Label) ? "Unnamed pin" : p.Label,
-        FormatAppearance(p.Shape, p.Color),
-        string.Format(CultureInfo.InvariantCulture, "X {0:0.00}   Z {1:0.00}", p.X, p.Z),
-        $"Color {p.Color} · Shape {p.Shape}");
-
-    private static string FormatAppearance(int shape, int color)
-    {
-        var c = color switch
-        {
-            0 => "white", 1 => "red", 2 => "orange", 3 => "yellow",
-            4 => "green", 5 => "cyan", 6 => "blue", 7 => "purple",
-            8 => "pink", 9 => "black", _ => ""
-        };
-        var s = shape switch { 0 => "dot", 1 => "square", _ => "pin" };
-        return string.IsNullOrEmpty(c) ? s : $"{c} {s}";
-    }
 }
