@@ -12,7 +12,9 @@ public readonly record struct MapPinEntry(double X, double Z, string Label, int 
 public interface IMapPinState
 {
     /// <summary>
-    /// Active pins in the current area, keyed by (X, Z) coordinate.
+    /// Active pins in the current area, keyed by (X, Z) coordinate. Each call
+    /// returns a fresh snapshot — consumers may enumerate the result from any
+    /// thread without coordinating with the Arda ingest thread.
     /// </summary>
     IReadOnlyCollection<MapPinEntry> Pins { get; }
 }
