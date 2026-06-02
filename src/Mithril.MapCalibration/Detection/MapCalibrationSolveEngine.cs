@@ -214,6 +214,60 @@ public sealed class MapCalibrationSolveEngine
         return fields;
     }
 
+    /// <summary>
+    /// For one orientation, score each of the RANSAC top-K candidates with
+    /// <see cref="JEvaluator"/>, LM-refine the highest-J candidate with
+    /// <see cref="LocalRefine"/>, and return the orientation winner. The winner's
+    /// <c>Calibration</c> reflects the LM-refined fit; <c>Inliers</c> are the
+    /// raw RANSAC inlier set of the pre-refine candidate (the LM step adjusts
+    /// the geometry but the inlier set was the seed of that geometry).
+    /// </summary>
+    private SynthesisOrientationWinner? ScoreOrientationCandidates(
+        bool rotate180,
+        IReadOnlyList<TypeAwareRansacSolver.TopKCandidate> candidates,
+        IReadOnlyDictionary<string, double[,]> fields,
+        IReadOnlyList<LandmarkReference> references,
+        MapRect alignedRect)
+    {
+        if (candidates.Count == 0) return null;
+
+        SynthesisOrientationWinner? best = null;
+        foreach (var cand in candidates)
+        {
+            var t = CandidateTransform.FromCalibration(cand.Calibration, alignedRect);
+            var j = JEvaluator.Evaluate(t, fields, references);
+            if (best is null || j.J > best.J)
+            {
+                best = new SynthesisOrientationWinner(
+                    Rotate180: rotate180,
+                    Calibration: cand.Calibration,
+                    Inliers: cand.Inliers,
+                    J: j.J,
+                    RefsAboveHalf: j.RefsAboveHalf,
+                    RefsOffCrop: j.RefsOffCrop,
+                    RefsTotal: references.Count);
+            }
+        }
+
+        if (best is null) return null;
+
+        // LM-refine the highest-J candidate's transform. The refined transform
+        // re-scores against the same L_t fields → we update J / RefsAboveHalf /
+        // RefsOffCrop to reflect the refined geometry. We do NOT mutate
+        // best.Calibration, because that's the texture-pixel-space AreaCalibration
+        // the engine still persists; LM works in aligned-pair-pixel space and
+        // wouldn't round-trip cleanly through the rect re-scale.
+        var seed = CandidateTransform.FromCalibration(best.Calibration, alignedRect);
+        var refined = LocalRefine.Run(seed, fields, references, maxIter: 24, stepInit: 1.0);
+        var refinedJ = JEvaluator.Evaluate(refined, fields, references);
+        return best with
+        {
+            J = refinedJ.J,
+            RefsAboveHalf = refinedJ.RefsAboveHalf,
+            RefsOffCrop = refinedJ.RefsOffCrop,
+        };
+    }
+
     private static IReadOnlyDictionary<string, List<TypedDetection>> ToMutable(
         IReadOnlyDictionary<string, IReadOnlyList<TypedDetection>> byType)
     {
