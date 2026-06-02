@@ -29,6 +29,7 @@ When you create a new slug folder, append a row to the table below: `slug | stat
 
 | Slug | Status | Issue/PR | Description |
 |------|--------|----------|-------------|
+| [arda-state-snapshot-and-ui-dispatch](arda-state-snapshot-and-ui-dispatch/) | active | [#1011](https://github.com/moumantai-gg/mithril/issues/1011) | Fix Palantir pin-enum crash; `MapPins.Pins` snapshot + new `Arda.Wpf` `IUiEventSubscriber` + `WpfMapPinPresenter` |
 | [gandalf-164-in-game-clock-alarm](gandalf-164-in-game-clock-alarm/) | shipped | [#164](https://github.com/moumantai-gg/mithril/issues/164) | Gandalf: fire timers at PG in-game time-of-day |
 | [legolas-wizard](legolas-wizard/) | shipped | [#111](https://github.com/moumantai-gg/mithril/issues/111) · [#112](https://github.com/moumantai-gg/mithril/issues/112) · [#113](https://github.com/moumantai-gg/mithril/issues/113) | Legolas wizard view + dashboard rework + Motherlode wizard depth |
 | [quest-discovery-module](quest-discovery-module/) | deferred | _no issue_ | Quest browser / eligibility surface (separate from Gandalf) |
