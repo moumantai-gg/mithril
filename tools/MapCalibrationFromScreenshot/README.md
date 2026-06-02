@@ -207,6 +207,36 @@ dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- `
 
 Artifacts are written to `study/synthesis-probe/<area>/`.
 
+### Bundle-driven workflow (after PR #985)
+
+The synthesis probe consumes the per-attempt diagnostic bundles Mithril's live engine writes (`%LocalAppData%/Mithril/diagnostics/calibration/<Area>-<timestamp>-<outcome>/`). For a single attempt:
+
+```powershell
+dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- `
+  --phase synthesis-probe `
+  --area AreaEltibule `
+  --bundle-dir "C:/Users/<you>/AppData/Local/Mithril/diagnostics/calibration/AreaEltibule-20260602-1230-accepted"
+```
+
+`--bundle-dir` resolves the rest from the bundle's `01-attempt.json` manifest:
+
+| Bundle file | Probe flag (auto-resolved) |
+|---|---|
+| `04-maprect.json` | `--maprect-json` |
+| `07-deviation.png` | `--aligned-deviation` |
+| `11-recovered-cal.json` | `--recovered-cal-json` |
+| `10-detections.json` | `--detections-json` (not consumed in v1) |
+
+When both `--maprect-json` and `--recovered-cal-json` are present, the probe derives truth-cal automatically — no manual `--truth-cal` needed.
+
+If production's recovered cal is known-wrong (e.g. a 4-inlier, residual-≈4-px solve that geometrically misaligns the overlay), override with `--hand-truth-cal scale,rot,ox,oy,mirror` — texture-pixel-space, gets converted via the same MapRect to the field's coord space. Source for hand-verified Eltibule: `src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json`.
+
+When `--aligned-deviation` is present, the probe skips `IconLikelihoodField.Build`'s screenshot-minus-base subtraction and runs `ScoreAll` directly on the bundle's post-ECC deviation.
+
+E5's scale bracket auto-narrows to ±20% of the expected aligned-pair-pixel scale (derived from the MapRect's resize ratio), excluding the tiny-scale degeneracy by construction.
+
+Override any auto-resolved flag by passing it explicitly — the explicit flag wins.
+
 Flags specific to this phase: `--truth-cal`, `--ransac-seeds-csv`, `--trace-console`, `--otlp`. The full flag table near the top of this README documents each.
 
 ## Out of scope (v1)

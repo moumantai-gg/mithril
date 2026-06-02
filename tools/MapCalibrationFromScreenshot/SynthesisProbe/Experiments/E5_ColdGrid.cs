@@ -4,6 +4,16 @@ internal sealed record E5Report(double BestDistanceToTruthPx, double JBestAfterR
 
 internal static class E5_ColdGrid
 {
+    /// <summary>
+    /// Compute a tight scaleBracket around an expected scale (typically derived
+    /// from the MapRect's resize ratio + production AreaCalibration). Excludes the
+    /// tiny-scale degeneracy by construction — the synthesis objective's worst
+    /// failure mode is at scales orders of magnitude below truth, which never
+    /// arise inside a physically-plausible bracket.
+    /// </summary>
+    public static (double Min, double Max) BracketAroundExpected(double expected, double fractionAbove)
+        => (expected * (1.0 - fractionAbove), expected * (1.0 + fractionAbove));
+
     public static E5Report Run(
         IReadOnlyDictionary<string, double[,]> fields,
         IReadOnlyList<ReferencePoint> refs,

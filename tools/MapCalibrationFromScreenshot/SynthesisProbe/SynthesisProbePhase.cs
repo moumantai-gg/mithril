@@ -1,6 +1,8 @@
+using System.Text.Json;
 using Mithril.MapCalibration;
 using Mithril.MapCalibration.Detection;
 using Mithril.Tools.MapCalibration.Common;
+using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Bundle;
 using Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Experiments;
 
 namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe;
@@ -9,12 +11,93 @@ internal static class SynthesisProbePhase
 {
     public static int Run(CliArgs args)
     {
-        // Prereq guards.
-        if (args.TruthCal is null)
+        // Resolve --bundle-dir into the four file paths if not explicitly overridden.
+        LoadedBundle? loadedBundle = null;
+        string? mapRectJsonPath = args.MapRectJsonPath;
+        string? recoveredCalJsonPath = args.RecoveredCalJsonPath;
+        string? alignedDeviationPath = args.AlignedDeviationPath;
+        string? detectionsJsonPath = args.DetectionsJsonPath;
+
+        if (!string.IsNullOrEmpty(args.BundleDir))
         {
-            Console.Error.WriteLine("--truth-cal required for --phase synthesis-probe");
+            loadedBundle = BundleLoader.Open(args.BundleDir);
+            mapRectJsonPath ??= loadedBundle.Attempt.Files.MapRect is { } mr ? Path.Combine(args.BundleDir, mr) : null;
+            recoveredCalJsonPath ??= loadedBundle.Attempt.Files.RecoveredCalibration is { } rc ? Path.Combine(args.BundleDir, rc) : null;
+            alignedDeviationPath ??= loadedBundle.DeviationPath;
+            detectionsJsonPath ??= loadedBundle.Attempt.Files.Detections is { } d ? Path.Combine(args.BundleDir, d) : null;
+        }
+
+        // Derive truth-cal per precedence:
+        //   1. --truth-cal           (crop-pixel space, wins outright)
+        //   2. --hand-truth-cal      (texture-pixel space + MapRect → conversion)
+        //   3. --recovered-cal-json  (texture-pixel space + MapRect → conversion)
+        CandidateTransform? truth = null;
+
+        if (args.TruthCal is { } tc)
+        {
+            truth = new CandidateTransform(tc.Scale, tc.Rot, tc.Mirror, tc.Ox, tc.Oy);
+        }
+        else if (args.HandTruthCal is { } htc)
+        {
+            if (mapRectJsonPath is null)
+            {
+                Console.Error.WriteLine("[err] --hand-truth-cal requires --maprect-json (directly or via --bundle-dir).");
+                return 2;
+            }
+            var mapRectJson = JsonSerializer.Deserialize(
+                File.ReadAllText(mapRectJsonPath),
+                BundleJsonContext.Default.MapRectJson)!;
+            var mapRect = new MapRect(
+                mapRectJson.OriginX, mapRectJson.OriginY,
+                mapRectJson.Width, mapRectJson.Height,
+                mapRectJson.TextureWidth, mapRectJson.TextureHeight,
+                mapRectJson.AutoDetectScore, mapRectJson.SourceScaleFactor);
+            var handCalJson = new RecoveredCalibrationJson(
+                SchemaVersion: 1,
+                Scale: htc.Scale, RotationRadians: htc.Rot,
+                OriginX: htc.Ox, OriginY: htc.Oy,
+                MirrorNorth: htc.Mirror,
+                CalibrationZoom: 1.0,
+                ResidualPixels: 0.0,
+                ReferenceCount: 0,
+                Source: "HandSupplied",
+                Inliers: System.Array.Empty<InlierJson>());
+            truth = MapRectConversion.FromRecoveredCalibration(handCalJson, mapRect, out var handAnisoPct);
+            if (handAnisoPct > 1.0)
+                Console.Error.WriteLine($"[warn] MapRect resize is anisotropic by {handAnisoPct:0.00}%; using geometric mean.");
+            Console.Error.WriteLine("[truth] using --hand-truth-cal (texture-pixel space → crop-pixel via MapRect).");
+        }
+        else if (mapRectJsonPath is not null && recoveredCalJsonPath is not null)
+        {
+            var mapRectJson = JsonSerializer.Deserialize(
+                File.ReadAllText(mapRectJsonPath),
+                BundleJsonContext.Default.MapRectJson)!;
+            var recoveredCalJson = JsonSerializer.Deserialize(
+                File.ReadAllText(recoveredCalJsonPath),
+                BundleJsonContext.Default.RecoveredCalibrationJson)!;
+            var mapRect = new MapRect(
+                mapRectJson.OriginX, mapRectJson.OriginY,
+                mapRectJson.Width, mapRectJson.Height,
+                mapRectJson.TextureWidth, mapRectJson.TextureHeight,
+                mapRectJson.AutoDetectScore, mapRectJson.SourceScaleFactor);
+            truth = MapRectConversion.FromRecoveredCalibration(recoveredCalJson, mapRect, out var anisoPct);
+            if (anisoPct > 1.0)
+                Console.Error.WriteLine($"[warn] MapRect resize is anisotropic by {anisoPct:0.00}%; using geometric mean.");
+            Console.Error.WriteLine(
+                $"[truth] using --recovered-cal-json (production's recovered cal, residual {recoveredCalJson.ResidualPixels:0.00} px). " +
+                "If production's solve is suspect, override with --hand-truth-cal.");
+        }
+
+        if (truth is null)
+        {
+            Console.Error.WriteLine("[err] No truth-cal: pass --truth-cal, or --hand-truth-cal + --maprect-json, or --bundle-dir/--recovered-cal-json + --maprect-json.");
             return 2;
         }
+
+        // Non-nullable local for use throughout the rest of Run.
+        var truthNn = truth.Value;
+
+        // Prereq guards (unchanged).
         if (string.IsNullOrEmpty(args.ScreenshotPath))
         {
             Console.Error.WriteLine("--screenshot required for --phase synthesis-probe");
@@ -30,16 +113,9 @@ internal static class SynthesisProbePhase
         using var rootSpan = SynthesisProbeTracer.Source.StartActivity("probe.attempt");
         rootSpan?.SetTag("area", args.Area);
         rootSpan?.SetTag("screenshot", args.ScreenshotPath);
-
-        var truth = new CandidateTransform(
-            Scale: args.TruthCal.Value.Scale,
-            RotRadians: args.TruthCal.Value.Rot,
-            Mirror: args.TruthCal.Value.Mirror,
-            Tx: args.TruthCal.Value.Ox,
-            Ty: args.TruthCal.Value.Oy);
-        rootSpan?.SetTag("truth.scale", truth.Scale);
-        rootSpan?.SetTag("truth.rot", truth.RotRadians);
-        rootSpan?.SetTag("truth.mirror", truth.Mirror);
+        rootSpan?.SetTag("truth.scale", truthNn.Scale);
+        rootSpan?.SetTag("truth.rot", truthNn.RotRadians);
+        rootSpan?.SetTag("truth.mirror", truthNn.Mirror);
 
         // Load screenshot + crop to map rect.
         var screenshot = ImageIo.LoadGray(args.ScreenshotPath);
@@ -117,16 +193,35 @@ internal static class SynthesisProbePhase
         }
 
         // Build per-type likelihood fields by sliding each template over the
-        // positive-deviation layer (screenshot minus aligned base).
+        // positive-deviation layer. When --aligned-deviation is provided, load
+        // the pre-computed post-ECC deviation directly (skips screenshot-minus-base
+        // subtraction). Otherwise fall back to Build(screenshotCrop, alignedBase).
         var fieldsByType = new Dictionary<string, double[,]>(StringComparer.Ordinal);
-        foreach (var template in templates)
+        if (alignedDeviationPath is not null)
         {
-            using var fieldSpan = SynthesisProbeTracer.Source.StartActivity("field.build");
-            fieldSpan?.SetTag("template.type", template.LandmarkType);
-            fieldSpan?.SetTag("template.size_px", Math.Max(template.Gray.Width, template.Gray.Height));
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            fieldsByType[template.LandmarkType] = IconLikelihoodField.Build(screenshotCrop, alignedBase, template);
-            fieldSpan?.SetTag("duration_ms", sw.ElapsedMilliseconds);
+            var deviation = ImageIo.LoadGray(alignedDeviationPath);
+            foreach (var template in templates)
+            {
+                using var fieldSpan = SynthesisProbeTracer.Source.StartActivity("field.build");
+                fieldSpan?.SetTag("template.type", template.LandmarkType);
+                fieldSpan?.SetTag("template.size_px", Math.Max(template.Gray.Width, template.Gray.Height));
+                fieldSpan?.SetTag("source", "aligned-deviation");
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                fieldsByType[template.LandmarkType] = IconLikelihoodField.LoadDeviationAsField(deviation, template);
+                fieldSpan?.SetTag("duration_ms", sw.ElapsedMilliseconds);
+            }
+        }
+        else
+        {
+            foreach (var template in templates)
+            {
+                using var fieldSpan = SynthesisProbeTracer.Source.StartActivity("field.build");
+                fieldSpan?.SetTag("template.type", template.LandmarkType);
+                fieldSpan?.SetTag("template.size_px", Math.Max(template.Gray.Width, template.Gray.Height));
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                fieldsByType[template.LandmarkType] = IconLikelihoodField.Build(screenshotCrop, alignedBase, template);
+                fieldSpan?.SetTag("duration_ms", sw.ElapsedMilliseconds);
+            }
         }
 
         // Load reference points (landmarks + NPCs) for the area.
@@ -144,22 +239,25 @@ internal static class SynthesisProbePhase
             writer.WriteFieldPng(type, field);
 
         // E1 — truth score (always).
-        E1_TruthScore.Run(fieldsByType, refs, truth, writer);
+        E1_TruthScore.Run(fieldsByType, refs, truthNn, writer);
 
         // E2 — translation sweep ±2×templateSizePx (always).
-        E2_TranslationSweep.Run(fieldsByType, refs, truth, templateSizePx: renderSizePx, writer);
+        E2_TranslationSweep.Run(fieldsByType, refs, truthNn, templateSizePx: renderSizePx, writer);
 
         // E3 — scale sweep ±25 % in 1 % steps (always).
-        E3_ScaleSweep.Run(fieldsByType, refs, truth, writer);
+        E3_ScaleSweep.Run(fieldsByType, refs, truthNn, writer);
 
         // E4 — RANSAC seed scores (only when a seeds CSV is supplied).
         if (!string.IsNullOrEmpty(args.RansacSeedsCsvPath))
-            E4_RansacSeedScore.Run(fieldsByType, refs, truth, args.RansacSeedsCsvPath, writer);
+            E4_RansacSeedScore.Run(fieldsByType, refs, truthNn, args.RansacSeedsCsvPath, writer);
 
         // E5 — cold-grid global search + local refine (always).
+        // Narrow the scale bracket to ±20% of the expected scale derived from
+        // truth, excluding the tiny-scale degeneracy.
+        var scaleBracket = E5_ColdGrid.BracketAroundExpected(truthNn.Scale, fractionAbove: 0.2);
         E5_ColdGrid.Run(
-            fieldsByType, refs, truth,
-            scaleBracket: (0.1, 2.0),
+            fieldsByType, refs, truthNn,
+            scaleBracket: scaleBracket,
             scaleSamples: 16,
             cropWidth: mw,
             cropHeight: mh,
