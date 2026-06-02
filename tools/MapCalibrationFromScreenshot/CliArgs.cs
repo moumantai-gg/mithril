@@ -46,7 +46,8 @@ internal sealed record CliArgs(
     string? RecoveredCalJsonPath,
     string? AlignedDeviationPath,
     string? DetectionsJsonPath,
-    (double Scale, double Rot, double Ox, double Oy, bool Mirror)? HandTruthCal)
+    (double Scale, double Rot, double Ox, double Oy, bool Mirror)? HandTruthCal,
+    bool SkipRimMask)
 {
     public static CliArgs? Parse(string[] argv)
     {
@@ -90,6 +91,7 @@ internal sealed record CliArgs(
         string? alignedDeviationPath = null;
         string? detectionsJsonPath = null;
         (double, double, double, double, bool)? handTruthCal = null;
+        bool skipRimMask = false;
 
         for (int i = 0; i < argv.Length; i++)
         {
@@ -200,6 +202,9 @@ internal sealed record CliArgs(
                     }
                     break;
                 }
+                case "--no-rim-mask":
+                    skipRimMask = true;
+                    break;
                 case "-h" or "--help":
                     return null;
                 default:
@@ -285,7 +290,8 @@ internal sealed record CliArgs(
             RecoveredCalJsonPath: recoveredCalJsonPath,
             AlignedDeviationPath: alignedDeviationPath,
             DetectionsJsonPath: detectionsJsonPath,
-            HandTruthCal: handTruthCal);
+            HandTruthCal: handTruthCal,
+            SkipRimMask: skipRimMask);
     }
 
     private static (double, double, double, double, bool) ParseSeed(string s)
@@ -517,6 +523,12 @@ internal sealed record CliArgs(
                                                      recovered cal is known-wrong, e.g. the 2026-06-02 4-inlier
                                                      residual-4-px solves; supply the hand-verified entry from
                                                      src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json).
+              --no-rim-mask                         disable the edge-connected DeviationFlood rim mask that
+                                                     the probe applies by default when consuming a bundle's
+                                                     deviation. Use to compare rim-masked vs raw scores for
+                                                     diagnostic purposes; production's RANSAC detector always
+                                                     applies this mask, so the default-on matches what
+                                                     production sees.
             """);
     }
 }

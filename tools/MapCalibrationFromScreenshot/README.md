@@ -241,6 +241,12 @@ E5's scale bracket auto-narrows to ±20% of the expected aligned-pair-pixel scal
 
 Override any auto-resolved flag by passing it explicitly — the explicit flag wins.
 
+### Rim masking
+
+When `--aligned-deviation` (or `--bundle-dir`) is the field source, the probe applies the same edge-connected rim flood production's detector uses (`RimMaskMode.DeviationFlood`), zeroing the rocky rim of outdoor zones before NCC. This matches what production's RANSAC inlier pool sees, so the probe's J numbers reflect production's actual scoring surface.
+
+Pass `--no-rim-mask` to disable for diagnostic comparisons (e.g., when measuring how much of the J drop on a wrong-fit attempt comes from the rim vs from interior topographic ghosting).
+
 Flags specific to this phase: `--truth-cal`, `--ransac-seeds-csv`, `--trace-console`, `--otlp`. The full flag table near the top of this README documents each.
 
 ## Out of scope (v1)
