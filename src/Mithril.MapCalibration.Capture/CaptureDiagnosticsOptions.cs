@@ -28,4 +28,14 @@ public sealed class CaptureDiagnosticsOptions
     /// Default <see langword="false"/>.
     /// </summary>
     public bool DumpGrayFrames { get; set; }
+
+    /// <summary>
+    /// When <see langword="true"/>, <see cref="AutoCalibrationEngine"/> writes a
+    /// per-attempt diagnostic bundle to
+    /// <c>%LocalAppData%/Mithril/diagnostics/calibration/&lt;area&gt;-&lt;ts&gt;-&lt;outcome&gt;/</c>
+    /// for every attempt that reaches the capture stage.
+    /// Default <see langword="false"/>. Supersedes <see cref="DumpCaptureFrames"/>;
+    /// the old flag is retired in this PR.
+    /// </summary>
+    public bool DumpCalibrationBundles { get; set; }
 }
