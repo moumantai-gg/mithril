@@ -402,6 +402,89 @@ public sealed class AutoCalibrationEngineTests
         captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedSolveInsufficientInliers);
     }
 
+    // ── #988 monotonicity gate (engine-level) ────────────────────────────────
+
+    [Fact]
+    public async Task Replaces_existing_when_new_fit_is_better()
+    {
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, MakeCal(residual: 3.0, refs: 6));
+        var h = new EngineHarness { Solve = Accepted(residual: 0.65, inliers: 8), Service = svc };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeTrue();
+        svc.Saved.Should().ContainKey(Area);
+        svc.Saved[Area].ResidualPixels.Should().Be(0.65);
+    }
+
+    [Fact]
+    public async Task Rejects_when_new_residual_blows_up_vs_existing()
+    {
+        // Mirrors the PR #986 Eltibule case: existing residual 0.79 px, new 4.03 px.
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, MakeCal(residual: 0.79, refs: 10));
+        var h = new EngineHarness { Solve = Accepted(residual: 4.03, inliers: 4), Service = svc };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeFalse();
+        outcome.RejectReason.Should().Contain("residual");
+        svc.Saved.Should().NotContainKey(Area); // existing untouched
+    }
+
+    [Fact]
+    public async Task Rejects_when_new_inlier_count_drops_vs_existing()
+    {
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, MakeCal(residual: 1.0, refs: 10));
+        var h = new EngineHarness { Solve = Accepted(residual: 1.0, inliers: 4), Service = svc };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeFalse();
+        outcome.RejectReason.Should().Contain("inlier");
+        svc.Saved.Should().NotContainKey(Area);
+    }
+
+    // ── #988 monotonicity gate (helper-level) ────────────────────────────────
+
+    [Fact]
+    public void Monotonicity_helper_accepts_better_residual_and_same_inliers()
+    {
+        var existing = MakeCal(residual: 2.0, refs: 8);
+        var candidate = MakeCal(residual: 1.0, refs: 8);
+        AutoCalibrationEngine.CheckMonotonicAccept(existing, candidate, candidateInlierCount: 8)
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void Monotonicity_helper_rejects_residual_blowup_beyond_ratio()
+    {
+        var existing = MakeCal(residual: 1.0, refs: 8);
+        var candidate = MakeCal(residual: 3.0, refs: 8); // 3× > 2× threshold
+        AutoCalibrationEngine.CheckMonotonicAccept(existing, candidate, candidateInlierCount: 8)
+            .Should().Contain("residual");
+    }
+
+    [Fact]
+    public void Monotonicity_helper_rejects_inlier_drop_beyond_delta()
+    {
+        var existing = MakeCal(residual: 1.0, refs: 10);
+        var candidate = MakeCal(residual: 1.0, refs: 10); // ReferenceCount on the cal is metadata
+        AutoCalibrationEngine.CheckMonotonicAccept(existing, candidate, candidateInlierCount: 4) // 10 − 4 = 6 > delta 2
+            .Should().Contain("inlier");
+    }
+
+    [Fact]
+    public void Monotonicity_helper_accepts_marginal_within_tolerances()
+    {
+        var existing = MakeCal(residual: 1.0, refs: 8);
+        var candidate = MakeCal(residual: 1.8, refs: 8); // 1.8 < 1.0 × 2.0
+        AutoCalibrationEngine.CheckMonotonicAccept(existing, candidate, candidateInlierCount: 7) // 8 − 7 = 1 ≤ delta 2
+            .Should().BeNull();
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private static CalibrationAttemptBundleSinkSelector MakeSinkSelector(ICalibrationAttemptBundleSink sink) =>
@@ -428,6 +511,10 @@ public sealed class AutoCalibrationEngineTests
 
     private static AreaCalibration SomeBaseline() =>
         new(1.0, 0, 50, 50, 4, 3.0) { Source = CalibrationSource.BundledBaseline };
+
+    private static AreaCalibration MakeCal(double residual, int refs) => new(
+        Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
+        ReferenceCount: refs, ResidualPixels: residual);
 
     /// <summary>
     /// Mutable harness: each property has a sensible "happy path" default; a test
