@@ -167,6 +167,52 @@ public sealed class MapCalibrationSolveEngine
             inliers.Count, maxX - minX, maxY - minY, string.Join("  ", parts));
     }
 
+    /// <summary>
+    /// Build per-type L_t fields for one orientation by computing the additive
+    /// deviation D = max(0, screenshot − baseTexture), applying the rim-mask
+    /// (mithril#992), and scoring each unique landmark-type template against the
+    /// masked deviation. Cached by orientation: built once per orientation, reused
+    /// across all top-K candidates the re-rank scores.
+    /// </summary>
+    private static IReadOnlyDictionary<string, double[,]> BuildLikelihoodFieldsFromDeviation(
+        GrayImage screenshot,
+        GrayImage baseTexture,
+        IconTemplateSet templates)
+    {
+        if (screenshot.Width != baseTexture.Width || screenshot.Height != baseTexture.Height)
+            throw new ArgumentException("screenshot and base texture must have matching dimensions");
+
+        int w = screenshot.Width, h = screenshot.Height;
+        var deviation = new byte[w * h];
+        for (int i = 0; i < deviation.Length; i++)
+        {
+            int d = screenshot.Pixels[i] - baseTexture.Pixels[i];
+            deviation[i] = d > 0 ? (byte)Math.Min(255, d) : (byte)0;
+        }
+        var devImage = new GrayImage(w, h, deviation);
+
+        // One template per landmark-type — the per-type L_t fields are keyed by
+        // LandmarkType. If a type has multiple templates (e.g. variants), the
+        // first is used; mirror the probe's behaviour (which uses the same
+        // ProbeReferences-driven per-type single template).
+        var perType = new Dictionary<string, IconTemplate>(StringComparer.Ordinal);
+        foreach (var template in templates.Templates)
+        {
+            if (!perType.ContainsKey(template.LandmarkType))
+                perType[template.LandmarkType] = template;
+        }
+
+        var fields = new Dictionary<string, double[,]>(perType.Count, StringComparer.Ordinal);
+        foreach (var (type, template) in perType)
+        {
+            fields[type] = IconLikelihoodField.LoadDeviationAsField(
+                devImage, template,
+                applyRimMask: true,
+                devThr: IconLikelihoodField.DefaultDevThr);
+        }
+        return fields;
+    }
+
     private static IReadOnlyDictionary<string, List<TypedDetection>> ToMutable(
         IReadOnlyDictionary<string, IReadOnlyList<TypedDetection>> byType)
     {
