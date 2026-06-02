@@ -91,4 +91,27 @@ public class CliArgsBundleFlagsTests
             .WithMessage("*--hand-truth-cal*")
             .Which.Message.Should().NotContain("--truth-cal wants");
     }
+
+    [Fact]
+    public void Parses_no_rim_mask_flag()
+    {
+        var args = CliArgs.Parse(new[]
+        {
+            "--phase", "synthesis-probe", "--area", "AreaEltibule",
+            "--no-rim-mask",
+        })!;
+
+        args.SkipRimMask.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Parses_default_rim_mask_on()
+    {
+        var args = CliArgs.Parse(new[]
+        {
+            "--phase", "synthesis-probe", "--area", "AreaEltibule",
+        })!;
+
+        args.SkipRimMask.Should().BeFalse();
+    }
 }

@@ -8,30 +8,41 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot.SynthesisProbe.Tests;
 public class IconLikelihoodFieldLoadDeviationRimMaskTests
 {
     [Fact]
-    public void LoadDeviationAsField_RimMaskZerosFieldUnderRim()
+    public void LoadDeviationAsField_RimMaskAffectsScoredColumnAdjacentToEdge()
     {
-        // 64x64 deviation: an edge-touching strip on the right + an interior
-        // cross-shaped icon-like blob. Rim mask should zero the right strip
-        // (peak score there must be 0) but leave the interior blob scoreable.
+        // 64x64 deviation with an edge-touching strip at column 63 (right edge),
+        // rows 10-15, value 200 (above the 0.5 * 255 = 127.5 threshold). Plus an
+        // interior cross at (32, 32) far from any edge.
+        //
+        // ScoreAll only writes field[y, cx] where (cx - ax) + tw <= W. For a 5x5
+        // template with ax = Math.Round(0.5 * 5) = 2 (banker's rounding), the
+        // last scored column is cx = 61 (window spans columns 59-63). The
+        // template's opaque pixel at (ty=2, tx=4) reads source pixel (cy, 63).
+        // So scoring at cx = 61 INCLUDES the rim-strip pixel; masking it
+        // changes the field value there. cx = 62, 63 are never scored, so any
+        // assertion at those columns would be a no-op (would pass even with
+        // applyRimMask: false). That's why we assert at cx = 61.
         const int W = 64, H = 64;
         var devBytes = new byte[W * H];
-        // Right-edge strip: column 63, rows 10..15, value 200.
         for (int y = 10; y <= 15; y++) devBytes[y * W + (W - 1)] = 200;
-        // Interior cross at (32, 32): 5x5 plus pattern.
         StampCross(devBytes, W, cx: 32, cy: 32);
         var deviation = new GrayImage(W, H, devBytes);
 
         var template = MakeCrossTemplate();
-        var fieldMasked = IconLikelihoodField.LoadDeviationAsField(
+
+        var raw = IconLikelihoodField.LoadDeviationAsField(
+            deviation, template, applyRimMask: false, devThr: IconLikelihoodField.DefaultDevThr);
+        var masked = IconLikelihoodField.LoadDeviationAsField(
             deviation, template, applyRimMask: true, devThr: IconLikelihoodField.DefaultDevThr);
 
-        // Field score directly UNDER the right strip's pixels must be zero
-        // (rim was zeroed → NCC over an all-zero window has zero std → field=0).
-        fieldMasked[12, W - 1].Should().Be(0.0);
-        fieldMasked[13, W - 1].Should().Be(0.0);
+        // At cx=61, the window spans cols 59-63 and the template reads (cy, 63).
+        // raw includes the rim pixel (value 200); masked zeros it.
+        masked[12, 61].Should().NotBe(raw[12, 61],
+            "masking the rim pixel at (12, 63) must change the score at the adjacent scored column cx=61");
 
-        // Interior cross's peak score must be high.
-        fieldMasked[32, 32].Should().BeGreaterThan(0.8);
+        // The interior cross peak must still score high under masking (the flood
+        // shouldn't reach inland from any edge).
+        masked[32, 32].Should().BeGreaterThan(0.8);
     }
 
     [Fact]
