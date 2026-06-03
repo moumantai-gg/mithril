@@ -79,4 +79,26 @@ public static class CalibrationStatusFormatter
 
     private static bool Contains(string haystack, string needle)
         => haystack.Contains(needle, StringComparison.OrdinalIgnoreCase);
+
+    // ── Drift-check + recalibrate chip messages (spec §6.5) ──────────────────
+
+    /// <summary>Chip shown when CheckDriftAsync returns Ok — predictions matched detections within tolerance.</summary>
+    public static string DriftCheckOk() =>
+        "Calibration check OK — no drift detected.";
+
+    /// <summary>Chip shown when CheckDriftAsync returns Inconclusive (e.g., too few visible landmarks).</summary>
+    public static string DriftCheckInconclusive(string reason) =>
+        $"Drift check inconclusive — {reason}.";
+
+    /// <summary>Chip shown when CheckDriftAsync returns Drift, arming the hotkey for a confirmation re-press.</summary>
+    public static string DriftDetected(double maxResidualPx, int armingSeconds) =>
+        $"Drift detected (~{maxResidualPx:0.0}px). Press calibrate hotkey again within {armingSeconds}s to recalibrate.";
+
+    /// <summary>Chip shown when CheckDriftAsync returns CaptureFailed/MapNotLocated — actionable reject reason.</summary>
+    public static string DriftCheckCaptureFailed(string reason) =>
+        $"Drift check: {reason}.";
+
+    /// <summary>Chip shown when an armed re-press successfully ran the full solve and persisted.</summary>
+    public static string RecalibratedSuccessfully() =>
+        "Recalibrated successfully.";
 }
