@@ -161,7 +161,7 @@ public sealed class AutoCalibrationEngineTests
         // Build an engine with a throwing extractor directly to prove fail-soft.
         var solver = new SpySolver(new CalibrationSolveResult(new AreaCalibration(1, 0, 0, 0, 6, 0.5), 6, null));
         var engine = new AutoCalibrationEngine(
-            new FakeAreaState(Area),
+            new FakeMapState { CurrentArea = Area, CurrentMapAsset = "Map_" + Area },
             new FakeWindowLocator(new GameWindow(1, new CaptureRect(0, 0, 1920, 1080))),
             new FakeRegionProvider(new CaptureRect(0, 0, 64, 64)),
             new SpyCapture(new GrayImage(64, 64, new byte[64 * 64])),
@@ -214,7 +214,7 @@ public sealed class AutoCalibrationEngineTests
         var captureSpy = new SpyCapture(capture);
         var solver = new SpySolver(h.Solve);
         var engine = new AutoCalibrationEngine(
-            new FakeAreaState(Area),
+            new FakeMapState { CurrentArea = Area, CurrentMapAsset = "Map_" + Area },
             new FakeWindowLocator(h.GameWindow),
             new FakeRegionProvider(h.Bbox),
             captureSpy,
@@ -314,7 +314,7 @@ public sealed class AutoCalibrationEngineTests
         var captureSpy = new SpyCapture(null);
         var solver = new SpySolver(Accepted(0.5, 4));
         var engine = new AutoCalibrationEngine(
-            new FakeAreaState(Area),
+            new FakeMapState { CurrentArea = Area, CurrentMapAsset = "Map_" + Area },
             new FakeWindowLocator(h.GameWindow),
             new FakeRegionProvider(h.Bbox),
             captureSpy,
@@ -684,5 +684,74 @@ public sealed class AutoCalibrationEngineTests
     private static AreaCalibration MakeCal(double residual, int refs) => new(
         Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
         ReferenceCount: refs, ResidualPixels: residual);
+
+    // ── mithril#1021 strict gate + per-scene keying ─────────────────────────
+
+    /// <summary>
+    /// #1021 D3 (ratified): when <see cref="IMapState.CurrentMapAsset"/> is null
+    /// — autocal fired before any <c>Downloading Map</c> line was observed in
+    /// this session — the engine refuses outright. No fallback to a synthesised
+    /// <c>Map_&lt;area&gt;</c> guess; no texture/solver invocation. The outcome
+    /// surfaces <see cref="OutcomeVocabulary.MapAssetNotYetKnown"/> on BOTH
+    /// <see cref="AutoCalibrationOutcome.RejectReason"/> (legacy substring router)
+    /// AND <see cref="AutoCalibrationOutcome.OutcomeCategory"/> (structural router,
+    /// Task 14), so the status formatter routes the zone-change hint
+    /// deterministically.
+    /// </summary>
+    [Fact]
+    public async Task TryCalibrate_NoCurrentMapAsset_ReturnsRejectWithMapAssetNotYetKnown()
+    {
+        var h = new EngineHarness
+        {
+            CurrentArea = "AreaCave1",     // areas.json key is set…
+            CurrentMapAsset = null,        // …but no Downloading Map line yet
+            CurrentSceneFriendlyName = null,
+        };
+
+        var engine = h.Engine();
+        var outcome = await engine.TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeFalse();
+        outcome.RejectReason.Should().Be(OutcomeVocabulary.MapAssetNotYetKnown);
+        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.MapAssetNotYetKnown);
+        outcome.AreaKey.Should().Be("AreaCave1"); // context for logs, not a lookup key
+
+        // No side effects: the gate fires before texture resolution or solving.
+        h.BaseTextureProvider.Calls.Should().BeEmpty(
+            "the strict gate refuses outright — no Map_<X> fallback texture lookup");
+        h.Solver.SolveCalls.Should().Be(0,
+            "no detector input → no solve call");
+        h.Capture.Called.Should().BeFalse(
+            "the strict gate fires BEFORE any capture or downstream collaborator");
+    }
+
+    /// <summary>
+    /// #1021: when <see cref="IMapState.CurrentMapAsset"/> + <see cref="IMapState.CurrentSceneFriendlyName"/>
+    /// are set, the literal asset key flows verbatim to <see cref="IBaseTextureProvider.TryGetBaseTexture"/>
+    /// (no Map_-prefix synthesis) and the composite <see cref="MapSceneRef"/>
+    /// (ParentArea + sub-zone) flows to <see cref="IAreaReferenceProvider.ForArea"/>.
+    /// This is the aggregator-sub-zone case the spec calls out
+    /// (<c>AreaCave1</c> + <c>"Hogan's Basement"</c> → <c>Map_HogansKeepBasement</c>).
+    /// </summary>
+    [Fact]
+    public async Task TryCalibrate_CurrentMapAssetSet_PassesLiteralAssetKeyAndSceneRefDownstream()
+    {
+        var h = new EngineHarness
+        {
+            CurrentArea = "AreaCave1",
+            CurrentMapAsset = "Map_HogansKeepBasement",
+            CurrentSceneFriendlyName = "Hogan's Basement",
+            Solve = Accepted(residual: 0.65, inliers: 5),
+        };
+
+        var engine = h.Engine();
+        await engine.TryCalibrateCurrentAreaAsync(default);
+
+        h.BaseTextureProvider.Calls.Should().ContainSingle()
+            .Which.Should().Be("Map_HogansKeepBasement",
+                "the engine MUST pass the literal Unity Texture2D name from IMapState — no Map_<area> synthesis");
+        h.AreaRefs.LastSceneRef.Should().Be(new MapSceneRef("AreaCave1", "Hogan's Basement"),
+            "ParentAreaKey sources from IMapState.CurrentArea; SceneFriendlyName from IMapState.CurrentSceneFriendlyName");
+    }
 
 }

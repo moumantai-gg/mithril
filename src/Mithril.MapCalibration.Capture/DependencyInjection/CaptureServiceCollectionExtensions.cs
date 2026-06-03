@@ -47,7 +47,9 @@ public static partial class CaptureServiceCollectionExtensions
     /// registered the cross-cutting singletons it consumes: <see cref="GameConfig"/>,
     /// <see cref="Mithril.Overlay.IOverlayWindow"/>,
     /// <see cref="Arda.Contracts.IDomainEventSubscriber"/>,
-    /// <see cref="Arda.World.Player.IAreaState"/>, and
+    /// <see cref="Arda.World.Player.IMapState"/> (the engine reads
+    /// <c>CurrentMapAsset</c> / <c>CurrentSceneFriendlyName</c> for per-scene
+    /// keying, #1021), and
     /// <see cref="Mithril.Shared.Reference.IReferenceDataService"/>.
     ///
     /// <para>#947: the capture region is a SHELL-persisted desktop rect, sourced
@@ -57,6 +59,15 @@ public static partial class CaptureServiceCollectionExtensions
     /// consumes it optionally so the graph still builds in test setups without the
     /// shell. The overlay's own <c>WindowLayoutBinder</c> (→ <c>LegolasSettings</c>)
     /// is untouched; full overlay-reads-shell-store consolidation is a follow-up.</para>
+    ///
+    /// <para>#1021: the engine now resolves
+    /// <see cref="Arda.World.Player.IMapState"/> instead of
+    /// <see cref="Arda.World.Player.IAreaState"/> so the per-scene
+    /// <c>CurrentMapAsset</c> + <c>CurrentSceneFriendlyName</c> drive texture
+    /// + reference lookups (texture is keyed on <c>Map_&lt;X&gt;</c>, NPC
+    /// filtering is sub-zone-aware). The shell registers
+    /// <see cref="Arda.World.Player.IMapState"/> via
+    /// <c>PlayerWorldExtensions.AddArdaPlayerWorld</c>.</para>
     /// </summary>
     public static IServiceCollection AddMithrilMapCalibrationCapture(
         this IServiceCollection services,
@@ -146,7 +157,7 @@ public static partial class CaptureServiceCollectionExtensions
         // The orchestrator. Resolved as both the concrete type (for the hotkey +
         // DI test) and the narrow IAutoCalibrationRunner seam.
         services.AddSingleton<AutoCalibrationEngine>(sp => new AutoCalibrationEngine(
-            sp.GetRequiredService<Arda.World.Player.IAreaState>(),
+            sp.GetRequiredService<Arda.World.Player.IMapState>(),
             sp.GetRequiredService<IGameWindowLocator>(),
             sp.GetRequiredService<IMapCaptureRegionProvider>(),
             sp.GetRequiredService<ICaptureService>(),

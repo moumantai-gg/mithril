@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using Arda.Contracts;
 using Arda.World.Player;
+using Arda.World.Player.Events;
 using Mithril.MapCalibration;
 using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Detection;
@@ -35,6 +36,38 @@ internal sealed class FakeAreaState : IAreaState
 {
     public FakeAreaState(string? area) => CurrentArea = area;
     public string? CurrentArea { get; }
+}
+
+/// <summary>
+/// Flat <see cref="IMapState"/> fake for engine tests (mithril#1021). Every
+/// property is a settable init so tests construct what they need with an
+/// object initializer; un-set properties default to <c>null</c> / empty.
+/// </summary>
+internal sealed class FakeMapState : IMapState
+{
+    // --- Area ---
+    public string? CurrentArea { get; set; }
+    public string? PreviousArea { get; set; }
+    public DateTimeOffset? TransitionedAt { get; set; }
+
+    // --- Map asset ---
+    public string? CurrentMapAsset { get; set; }
+    public string? CurrentSceneFriendlyName { get; set; }
+    public DateTimeOffset? MapAssetMeasuredAt { get; set; }
+
+    // --- Position ---
+    public double? X { get; set; }
+    public double? Y { get; set; }
+    public double? Z { get; set; }
+    public DateTimeOffset? PositionMeasuredAt { get; set; }
+    public PositionSource? PositionSource { get; set; }
+
+    // --- Weather ---
+    public string? CurrentWeather { get; set; }
+    public DateTimeOffset? WeatherMeasuredAt { get; set; }
+
+    // --- Pins ---
+    public IReadOnlyList<MapPinEntry> Pins { get; set; } = Array.Empty<MapPinEntry>();
 }
 
 internal sealed class FakeWindowLocator : IGameWindowLocator
@@ -87,9 +120,27 @@ internal sealed class FakeRefiner : IMapRegionRefiner
 
 internal sealed class FakeBaseTextureProvider : IBaseTextureProvider
 {
-    private readonly GrayImage? _tex;
-    public FakeBaseTextureProvider(GrayImage? tex) => _tex = tex;
-    public GrayImage? TryGetBaseTexture(string areaKey) => _tex;
+    /// <summary>
+    /// Parameterless constructor for the mithril#1021 object-initializer style:
+    /// <c>new FakeBaseTextureProvider { ResolveAs = ... }</c>.
+    /// </summary>
+    public FakeBaseTextureProvider() { }
+
+    /// <summary>Legacy positional constructor — pre-#1021 tests pass the texture directly.</summary>
+    public FakeBaseTextureProvider(GrayImage? tex) => ResolveAs = tex;
+
+    /// <summary>The texture this provider returns for any <see cref="TryGetBaseTexture"/> call.</summary>
+    public GrayImage? ResolveAs { get; set; }
+
+    /// <summary>Every <see cref="TryGetBaseTexture"/> key, in call order. The strict-gate test
+    /// (#1021) asserts this is empty when the engine refuses early.</summary>
+    public List<string> Calls { get; } = new();
+
+    public GrayImage? TryGetBaseTexture(string mapAssetKey)
+    {
+        Calls.Add(mapAssetKey);
+        return ResolveAs;
+    }
 }
 
 /// <summary>
@@ -138,9 +189,13 @@ internal sealed class SpySolver : IMapCalibrationSolver
     private readonly CalibrationSolveResult _result;
     public SpySolver(CalibrationSolveResult result) => _result = result;
     public bool Called { get; private set; }
+    /// <summary>Number of <see cref="Solve"/> calls. The mithril#1021 strict-gate
+    /// test asserts this is zero when the engine refuses early.</summary>
+    public int SolveCalls { get; private set; }
     public CalibrationSolveResult Solve(DetectionRequest request, IReadOnlyList<LandmarkReference> references)
     {
         Called = true;
+        SolveCalls++;
         return _result;
     }
 }

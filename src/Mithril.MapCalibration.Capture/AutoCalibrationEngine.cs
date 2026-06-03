@@ -78,7 +78,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     /// </summary>
     private const double ScaleRegimeRelTolerance = 0.02;
 
-    private readonly IAreaState _areaState;
+    private readonly IMapState _mapState;
     private readonly IGameWindowLocator _windowLocator;
     private readonly IMapCaptureRegionProvider _region;
     private readonly ICaptureService _capture;
@@ -100,7 +100,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private readonly string? _pgVersion;
 
     public AutoCalibrationEngine(
-        IAreaState areaState,
+        IMapState mapState,
         IGameWindowLocator windowLocator,
         IMapCaptureRegionProvider region,
         ICaptureService capture,
@@ -117,7 +117,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         string? assetCacheDir = null,
         string? pgVersion = null)
     {
-        _areaState = areaState;
+        _mapState = mapState;
         _windowLocator = windowLocator;
         _region = region;
         _capture = capture;
@@ -159,8 +159,28 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     /// </summary>
     public async Task<AutoCalibrationOutcome> TryCalibrateCurrentAreaAsync(CancellationToken ct)
     {
-        var area = _areaState.CurrentArea ?? string.Empty;
-        var attempt = new CalibrationAttemptContext(area, DateTimeOffset.UtcNow);
+        // Strict gate (mithril#1021 D3): refuse outright when the per-scene
+        // Map_<X> asset name isn't known yet (no Downloading Map line observed
+        // in this session). No fallback to a synthesised key — keying texture
+        // + reference lookups on a guess would silently mis-calibrate aggregator
+        // sub-zones. Fires BEFORE any side effect (no bundle write, no attempt
+        // context, no texture/solver invocation).
+        if (string.IsNullOrEmpty(_mapState.CurrentMapAsset))
+        {
+            _logger?.LogInformation(
+                "Auto-calibration refused: per-scene map asset not yet known (Area={Area}); change zones once or restart while in this scene.",
+                _mapState.CurrentArea ?? "<none>");
+            return new AutoCalibrationOutcome(
+                Persisted: false,
+                AreaKey: _mapState.CurrentArea ?? string.Empty,
+                RejectReason: OutcomeVocabulary.MapAssetNotYetKnown,
+                OutcomeCategory: OutcomeVocabulary.MapAssetNotYetKnown);
+        }
+
+        // From here on, CurrentMapAsset is the authoritative per-scene key
+        // (#1021): texture lookup, sidecar requests, attempt-bundle naming.
+        var assetKey = _mapState.CurrentMapAsset;
+        var attempt = new CalibrationAttemptContext(assetKey, DateTimeOffset.UtcNow);
         var sink = _sinkSelector.Resolve();
         try
         {
@@ -201,7 +221,14 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // step is slow.
         using var actSpan = MithrilActivitySources.MapCalibration.StartActivity("calibration.attempt");
 
-        var area = attempt.Area;
+        // #1021: the bundle/log "Area" tag in attempt.Area is the per-scene asset
+        // key (the bundle subfolder + 01-attempt.json read it). The parent
+        // area-key and sub-zone friendly name source from IMapState so the
+        // reference filter scopes NPC lookups to the right sub-zone for
+        // aggregator scenes.
+        var assetKey = attempt.Area;
+        var area = _mapState.CurrentArea ?? string.Empty;
+        var sceneRef = new MapSceneRef(area, _mapState.CurrentSceneFriendlyName);
         if (string.IsNullOrWhiteSpace(area))
         {
             attempt.Outcome = OutcomeVocabulary.RejectedNoArea;
@@ -250,9 +277,9 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         var gray = captureResult.Gray;
 
         _logger?.LogInformation(
-            "Auto-calibration {Area}: captured {Width}x{Height} frame; resolving base texture…",
-            area, gray.Width, gray.Height);
-        var baseTexture = await ResolveBaseTextureAsync(area, ct).ConfigureAwait(false);
+            "Auto-calibration {Area} ({MapAsset}): captured {Width}x{Height} frame; resolving base texture…",
+            area, assetKey, gray.Width, gray.Height);
+        var baseTexture = await ResolveBaseTextureAsync(assetKey, ct).ConfigureAwait(false);
         if (baseTexture is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedNoBaseTexture;
@@ -314,14 +341,16 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             "Auto-calibration {Area}: map sub-rect located ({MapRect}) in {ElapsedMs:0} ms.",
             area, mapRect, Stopwatch.GetElapsedTime(refineStart).TotalMilliseconds);
 
-        // Task 15 (mithril#1021) will replace this with the strict (Map_<X>, SceneFriendlyName)
-        // pair from IMapState. For now, keep the build green by lifting the area
-        // string into a directly-registered MapSceneRef (SceneFriendlyName = null
-        // → area-only filter, same behaviour as pre-#1021).
-        var references = _references.ForArea(new MapSceneRef(area, SceneFriendlyName: null));
+        // #1021: scene-aware reference lookup. ParentAreaKey scopes landmarks
+        // (landmarks.json has no sub-zone field) and the NPC parent filter;
+        // SceneFriendlyName further narrows the NPC filter for aggregator
+        // scenes (e.g. AreaCave1 → Hogan's Basement) so the solver doesn't
+        // pair the captured Texture2D against every NPC under the aggregator.
+        var references = _references.ForArea(sceneRef);
         attempt.References = references;
         _logger?.LogInformation(
-            "Auto-calibration {Area}: {ReferenceCount} landmark reference(s) for this area.", area, references.Count);
+            "Auto-calibration {Area} ({MapAsset}, scene={Scene}): {ReferenceCount} landmark reference(s).",
+            area, assetKey, sceneRef.SceneFriendlyName ?? "<none>", references.Count);
 
         // Resolve icon templates per attempt (#949). On a fresh icon cache the
         // provider returns Empty; if a sidecar is wired, demand-trigger its --icons
@@ -461,10 +490,14 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     /// Task-21 policy. Resolve the base texture from the #931 provider; on a
     /// cache-miss, optionally trigger the sidecar once to populate the cache,
     /// then retry. Fail-soft to null on any path.
+    ///
+    /// <para>Keyed on the per-scene <paramref name="assetKey"/> (mithril#1021):
+    /// the literal Unity Texture2D name observed in the Player.log
+    /// <c>Downloading Map … runtime key …[Map_&lt;X&gt;]</c> line.</para>
     /// </summary>
-    private async Task<GrayImage?> ResolveBaseTextureAsync(string area, CancellationToken ct)
+    private async Task<GrayImage?> ResolveBaseTextureAsync(string assetKey, CancellationToken ct)
     {
-        var tex = _baseTextures.TryGetBaseTexture(area);
+        var tex = _baseTextures.TryGetBaseTexture(assetKey);
         if (tex is not null) return tex;
 
         if (_assetExtractor is null || _gameConfig is null
@@ -473,46 +506,46 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return null; // no extractor wired → safe-degrade (caller surfaces "preparing map assets…")
         }
 
-        _logger?.LogInformation("Base texture cache-miss for {Area}; invoking asset-extractor sidecar.", area);
+        _logger?.LogInformation("Base texture cache-miss for {MapAsset}; invoking asset-extractor sidecar.", assetKey);
         try
         {
             var request = new ExtractRequest(
                 InstallRoot: _gameConfig.InstallRoot,
                 OutDir: _assetCacheDir!,
                 Kind: ExtractKind.Texture,
-                MapAssetName: area,
+                MapAssetName: assetKey,
                 ExpectPgVersion: _pgVersion,
                 TpkPath: ResolveTpkPath());
             var extract = await _assetExtractor.ExtractAsync(request, ct).ConfigureAwait(false);
             if (!extract.Ok)
             {
                 _logger?.LogWarning(
-                    "Asset-extractor sidecar failed for {Area} (exit {Exit}): {Error}. Safe-degrade.",
-                    area, extract.ExitCode, extract.Error);
+                    "Asset-extractor sidecar failed for {MapAsset} (exit {Exit}): {Error}. Safe-degrade.",
+                    assetKey, extract.ExitCode, extract.Error);
                 return null;
             }
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Asset-extractor sidecar threw for {Area}. Safe-degrade.", area);
+            _logger?.LogWarning(ex, "Asset-extractor sidecar threw for {MapAsset}. Safe-degrade.", assetKey);
             return null;
         }
 
-        var retried = _baseTextures.TryGetBaseTexture(area); // retry after populate
+        var retried = _baseTextures.TryGetBaseTexture(assetKey); // retry after populate
         if (retried is null)
         {
             // The extractor reported success but the provider still has no usable
-            // texture for this area. Distinguish this from a plain transient
+            // texture for this asset. Distinguish this from a plain transient
             // cache-miss: it usually means an asset-shape change or a
             // canonical-hash-gate mismatch (the extracted bytes don't match the
             // gated hash), which a future PG patch can introduce silently.
             // Behaviour is unchanged (still fail-soft); this just makes the
             // gate/shape mismatch visible instead of looking like a cache hiccup.
             _logger?.LogWarning(
-                "Asset-extractor reported success for {Area} but no usable base texture is available after retry "
+                "Asset-extractor reported success for {MapAsset} but no usable base texture is available after retry "
                 + "(possible asset-shape change or canonical-hash-gate mismatch, not a transient cache-miss). Safe-degrade.",
-                area);
+                assetKey);
         }
         return retried;
     }
