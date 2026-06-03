@@ -10,6 +10,11 @@ namespace Mithril.MapCalibration.Internal;
 /// File: <c>%LocalAppData%/Mithril/MapCalibration/scene-asset-cache.json</c>.</summary>
 internal sealed class SceneAssetCacheStore
 {
+    /// <summary>Highest <c>schemaVersion</c> this build knows how to read.
+    /// On-disk shape currently matches v1. Bump alongside any breaking
+    /// shape change to <see cref="SceneAssetCacheFile"/>.</summary>
+    private const int KnownSchemaVersion = 1;
+
     private readonly string _filePath;
     private readonly ILogger? _logger;
     private readonly object _gate = new();
@@ -49,11 +54,6 @@ internal sealed class SceneAssetCacheStore
             }
         }
     }
-
-    /// <summary>Highest <c>schemaVersion</c> this build knows how to read.
-    /// On-disk shape currently matches v1. Bump alongside any breaking
-    /// shape change to <see cref="SceneAssetCacheFile"/>.</summary>
-    private const int KnownSchemaVersion = 1;
 
     private void Load()
     {
