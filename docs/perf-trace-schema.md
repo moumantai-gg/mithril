@@ -329,7 +329,7 @@ One span per `AutoCalibrationEngine.CheckDriftAsync` invocation. Emitted on ever
 | `threshold_px` | double | `DriftToleranceFactor × stored.ResidualPixels` (currently 3.0×). |
 | `outcome` | string | One of `"NoStoredCalibration"`, `"CaptureFailed"`, `"MapNotLocated"`, `"NoIconDetections"`, `"Inconclusive"`, `"Ok"`, `"Drift"`. |
 
-Early exits (`NoStoredCalibration`, `CaptureFailed`, `MapNotLocated`, `NoIconDetections`) set the `outcome` tag and stop before the residual comparison; `refs.matched`, `max_residual_px`, and `threshold_px` are `0` on those paths.
+Early exits (`NoStoredCalibration`, `CaptureFailed`, `MapNotLocated`, `NoIconDetections`) set the `outcome` tag and stop before the residual comparison; `refs.matched`, `max_residual_px`, and `threshold_px` are not emitted on those paths.
 
 ```powershell
 # Drift-check pass rate per area

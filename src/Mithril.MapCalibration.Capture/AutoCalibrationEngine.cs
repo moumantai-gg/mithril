@@ -73,7 +73,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private const double DriftToleranceFactor = 3.0;
     private const double DriftMatchGatePx = 20.0;
     private const int DriftMinMatchedReferences = 3;
-    internal const int DriftArmingSeconds = 10;
 
     /// <summary>
     /// Relative tolerance for <see cref="IsSameScaleRegime"/>: a new candidate's
@@ -173,6 +172,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return new DriftCheckOutcome.NoStoredCalibration();
         }
         var sceneRef = resolvedScene.Value;
+        span?.SetTag("map.area", sceneRef.MapAssetKey);
 
         // Step 2: resolve stored calibration.
         var stored = _calibrationService.GetCalibration(sceneRef);
@@ -329,7 +329,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 sceneRef.MapAssetKey, r.Name, predScreenX, predScreenY, bestDx, bestDy, best.Value);
         }
 
-        span?.SetTag("map.area", sceneRef.MapAssetKey);
         span?.SetTag("refs.matched", residuals.Count);
 
         // Step 8: aggregate.
@@ -351,7 +350,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         {
             _logger?.LogWarning(
                 "Drift check {MapAssetKey}: DRIFT detected ({Matched} refs matched, max residual {MaxResid:0.00}px exceeds threshold {Threshold:0.00}px). Hotkey armed for {Arm}s — re-press to recalibrate.",
-                sceneRef.MapAssetKey, residuals.Count, maxResidual, threshold, DriftArmingSeconds);
+                sceneRef.MapAssetKey, residuals.Count, maxResidual, threshold, ManualCalibrationCoordinator.ArmingSeconds);
             span?.SetTag("outcome", "Drift");
             return new DriftCheckOutcome.Drift(maxResidual, residuals.Count, threshold);
         }

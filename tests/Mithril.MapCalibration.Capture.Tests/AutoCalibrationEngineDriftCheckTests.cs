@@ -11,9 +11,7 @@ using Xunit;
 namespace Mithril.MapCalibration.Capture.Tests;
 
 /// <summary>
-/// Failing tests for <see cref="IAutoCalibrationRunner.CheckDriftAsync"/>
-/// (mithril#1046 §6). All tests are expected to fail with
-/// <see cref="NotImplementedException"/> until Task B4 implements the body.
+/// Tests for <see cref="IAutoCalibrationRunner.CheckDriftAsync"/> (mithril#1046 §6).
 /// </summary>
 public sealed class AutoCalibrationEngineDriftCheckTests
 {

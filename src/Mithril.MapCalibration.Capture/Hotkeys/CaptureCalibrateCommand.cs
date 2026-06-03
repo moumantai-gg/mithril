@@ -38,6 +38,7 @@ public sealed class CaptureCalibrateCommand : IHotkeyCommand
         {
             await _coordinator.HandleHotkeyAsync(cancellationToken).ConfigureAwait(false);
         }
+        // Hotkey thread: never let an exception escape into the Win32 message pump; log + swallow.
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Manual calibrate hotkey threw; chip will not update.");

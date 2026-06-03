@@ -65,12 +65,14 @@ public sealed class ManualCalibrationCoordinator
         var scene = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache);
         var (armed, expiredArmed) = ConsumeArmingState();
 
-        var storedSourceForLog = scene is { } s
-            ? _calibrationService.GetCalibration(s)?.Source
-            : null;
+        var stored = scene is { } s ? _calibrationService.GetCalibration(s) : null;
         _logger?.LogInformation(
-            "Manual calibrate hotkey: scene={MapAssetKey}, armed={IsArmed}, storedSource={Source}.",
-            scene?.MapAssetKey ?? "<none>", armed, storedSourceForLog?.ToString() ?? "<none>");
+            "Manual calibrate hotkey: scene={MapAssetKey}, armed={IsArmed}, storedSource={Source}, storedResidualPx={Residual:0.00}, storedRefs={Refs}.",
+            scene?.MapAssetKey ?? "<none>",
+            armed,
+            stored?.Source.ToString() ?? "<none>",
+            stored?.ResidualPixels ?? double.NaN,
+            stored?.ReferenceCount ?? 0);
 
         if (expiredArmed)
         {
@@ -96,7 +98,6 @@ public sealed class ManualCalibrationCoordinator
             return;
         }
 
-        var stored = _calibrationService.GetCalibration(scene.Value);
         if (stored is null)
         {
             var outcome = await _runner.TryCalibrateCurrentAreaAsync(ct).ConfigureAwait(false);
