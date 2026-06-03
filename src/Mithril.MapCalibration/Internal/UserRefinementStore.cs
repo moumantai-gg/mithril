@@ -191,7 +191,7 @@ internal sealed class UserRefinementStore
                 // predates this field, written by builds before #1021). v1 keyed
                 // refinements by bare area name (e.g. "AreaSerbule"); v2+ uses the
                 // per-scene Map_<X> grammar from the asset-load log (e.g.
-                // "Map_AreaSerbule"). See docs/planning/per-scene-calibration-keying/.
+                // "Map_AreaSerbule"). See docs/planning/map-calibration-1021-per-scene-keying/.
                 var schemaVersion = 1;
                 if (doc.RootElement.ValueKind == JsonValueKind.Object &&
                     doc.RootElement.TryGetProperty("schemaVersion", out var verProp) &&
