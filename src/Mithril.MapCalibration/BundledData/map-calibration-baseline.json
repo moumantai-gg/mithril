@@ -1,8 +1,8 @@
 {
   "$schema": "https://moumantai-gg.github.io/mithril/map-calibration-baseline-v1.json",
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "anchors": {
-    "AreaSerbule": {
+    "Map_AreaSerbule": {
       "scale": 0.8225888770409359,
       "rotationRadians": 7.088147823900868E-05,
       "originX": -159.67286441908084,
@@ -11,7 +11,7 @@
       "residualPixels": 0.3030622255943075,
       "source": "BundledBaseline"
     },
-    "AreaEltibule": {
+    "Map_AreaEltibule": {
       "scale": 0.7632337115580504,
       "rotationRadians": 3.141276165642632,
       "originX": 2146.21356708398,
@@ -20,7 +20,7 @@
       "residualPixels": 0.650247611982931,
       "source": "BundledBaseline"
     },
-    "AreaKurMountains": {
+    "Map_AreaKurMountains": {
       "scale": 0.5686213259799479,
       "rotationRadians": -3.141467542457235,
       "originX": 2188.818672930765,
