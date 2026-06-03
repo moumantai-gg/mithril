@@ -64,7 +64,9 @@ public sealed class AutoCalibrationTriggerTests
     {
         var engine = new SpyAutoCalibrationEngine();
         var svc = new FakeCalibrationService();
-        svc.Seed(AssetKey, new AreaCalibration(1, 0, 0, 0, 6, 0.5) { Source = CalibrationSource.UserRefinement });
+        var cal = new AreaCalibration(1, 0, 0, 0, 6, 0.5) { Source = CalibrationSource.UserRefinement };
+        svc.Seed(AssetKey, cal);
+        svc.SeedAllSources(AssetKey, new[] { cal });
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
         await trigger.OnSceneChangedAsync(Scene());
         engine.Calls.Should().Be(0, "the auto path never displaces a user refinement");
@@ -75,7 +77,9 @@ public sealed class AutoCalibrationTriggerTests
     {
         var engine = new SpyAutoCalibrationEngine();
         var svc = new FakeCalibrationService();
-        svc.Seed(AssetKey, new AreaCalibration(1, 0, 0, 0, 6, 0.5) { Source = CalibrationSource.AutoCapture });
+        var cal = new AreaCalibration(1, 0, 0, 0, 6, 0.5) { Source = CalibrationSource.AutoCapture };
+        svc.Seed(AssetKey, cal);
+        svc.SeedAllSources(AssetKey, new[] { cal });
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
         await trigger.OnSceneChangedAsync(Scene());
         engine.Calls.Should().Be(0, "an existing auto-capture is not re-attempted on every zone-in");

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Arda.Contracts;
@@ -152,15 +153,34 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
             if (_region.Current is null) return;                 // no bbox → can't capture
             if (_windowLocator.Locate() is null) return;         // PG not foreground
 
-            // Auto path only upgrades an uncalibrated scene or a bundled baseline; it
-            // never displaces a converged user/auto transform.
-            var existing = _calibrationService.GetCalibration(scene);
-            if (existing is not null && existing.Source != CalibrationSource.BundledBaseline)
+            // Skip if the store has any UserRefinement or AutoCapture record for this
+            // scene. Decoupled from GetCalibration's picker: the picker may return a
+            // BundledBaseline when its residual+ref-count beats a stored AutoCapture,
+            // but the trigger's promise is "one cold solve per scene per install"
+            // (mithril#1046 §7).
+            var sources = _calibrationService.GetAllSources(scene);
+            var converged = sources.FirstOrDefault(s => s.Source is CalibrationSource.UserRefinement or CalibrationSource.AutoCapture);
+            if (converged is not null)
             {
+                _logger.LogInformation(
+                    "Auto-trigger skipped for {MapAssetKey}: store has {Source} record (residual {Residual:0.00}px, refs {Refs}). One-shot-per-install respected.",
+                    key, converged.Source, converged.ResidualPixels, converged.ReferenceCount);
+
+                // Picker/store-disagreement telemetry — informational, surfaces how
+                // often the picker prefers a baseline over a stored auto.
+                var picked = _calibrationService.GetCalibration(scene);
+                if (picked is not null && picked.Source != converged.Source)
+                {
+                    _logger.LogInformation(
+                        "Auto-trigger skipped for {MapAssetKey}: store has converged solve (source={StoredSource}) but picker returned {PickedSource}. Picker chose better-quality record; trigger respects store.",
+                        key, converged.Source, picked.Source);
+                }
                 return;
             }
 
-            _logger.LogInformation("Auto-attempting calibration on scene-in to {AssetKey}.", key);
+            _logger.LogInformation(
+                "Auto-trigger firing for {MapAssetKey}: no converged solve in store; attempting cold solve (existing source: {Source}).",
+                key, sources.FirstOrDefault()?.Source.ToString() ?? "<none>");
             AutoCalibrationOutcome? outcome = null;
             try
             {
