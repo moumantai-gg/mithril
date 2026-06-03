@@ -47,12 +47,18 @@ internal sealed class SceneAssetCacheRecorder : IHostedService, IDisposable
         {
             _cache.Record(scene, evt.Metadata.Timestamp ?? evt.Metadata.ReadOn);
         }
-        catch (IOException ex)
+        catch (Exception ex) when (
+            ex is IOException
+            or UnauthorizedAccessException
+            or System.Security.SecurityException)
         {
             // Lossy: in-memory state was rolled back by Record's transactional
             // wrapper. Log + drop; the next observation will retry. Surface as
             // Warning so a persistently-failing disk shows in diagnostics
-            // without spamming Error on every event.
+            // without spamming Error on every event. The filter covers the
+            // realistic disk-failure modes (IO error, AV quarantine / ACL
+            // denial, sandboxed filesystem) — without it those bubble to the
+            // domain-event bus as ERROR per transition.
             _logger?.LogWarning(ex,
                 "Failed to persist scene-asset-cache entry for {ParentArea}/{Friendly}; will retry on next observation.",
                 scene.ParentAreaKey, scene.SceneFriendlyName);
