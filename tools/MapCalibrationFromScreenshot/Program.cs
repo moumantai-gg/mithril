@@ -36,6 +36,10 @@ internal static class Program
             {
                 return RunEmitRefs(args);
             }
+            if (PhaseIs(args, "sparse-locate-spike"))
+            {
+                return SparseLocateSpike.Run();
+            }
 
             var parsed = CliArgs.Parse(args);
             if (parsed is null)

@@ -30,6 +30,15 @@
     <PackageReference Include="OpenTelemetry" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.3" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <!--
+      mithril#1061 spike: comparison of locate-stage algorithms on sparse-interior
+      maps (GoblinDungeon). OpenCvSharp4 4.10's managed assembly includes contrib
+      bindings (XImgProc, LineDescriptor, XFeatures2D); the runtime.win package
+      bundles the matching native DLLs. Invoked via the sparse-locate-spike
+      phase. Remove these references when the spike is retired.
+    -->
+    <PackageReference Include="OpenCvSharp4" Version="4.10.0.20240616" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" />
   </ItemGroup>
 
   <ItemGroup>
