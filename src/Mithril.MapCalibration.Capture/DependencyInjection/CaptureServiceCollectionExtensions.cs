@@ -158,6 +158,7 @@ public static partial class CaptureServiceCollectionExtensions
         // DI test) and the narrow IAutoCalibrationRunner seam.
         services.AddSingleton<AutoCalibrationEngine>(sp => new AutoCalibrationEngine(
             sp.GetRequiredService<Arda.World.Player.IMapState>(),
+            sp.GetRequiredService<ISceneAssetCache>(),
             sp.GetRequiredService<IGameWindowLocator>(),
             sp.GetRequiredService<IMapCaptureRegionProvider>(),
             sp.GetRequiredService<ICaptureService>(),
@@ -201,6 +202,8 @@ public static partial class CaptureServiceCollectionExtensions
             sp.GetRequiredService<IMapCaptureRegionProvider>(),
             sp.GetRequiredService<IGameWindowLocator>(),
             sp.GetRequiredService<IMapCalibrationService>(),
+            sp.GetRequiredService<Arda.World.Player.IMapState>(),
+            sp.GetRequiredService<ISceneAssetCache>(),
             sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>(),
             sp.GetRequiredService<ILoggerFactory>().CreateLogger("Mithril.MapCalibration.Capture.Trigger")));
         services.AddHostedService(sp => sp.GetRequiredService<AutoCalibrationTrigger>());
