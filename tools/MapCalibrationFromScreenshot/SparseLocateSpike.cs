@@ -36,12 +36,18 @@ internal static class SparseLocateSpike
         var outDir = Path.Combine(Path.GetTempPath(), "sparse-locate-spike");
         Directory.CreateDirectory(outDir);
 
+        // Eltibule accepted bundle's 04-maprect.json: (360, 283, 565, 561) — the
+        // production-recovered map sub-rect inside the captured frame. Using it as
+        // a *given* crop is the apples-to-apples easy-regime control: with locate
+        // already solved, can the candidate algorithms recover (tx≈0, ty≈0,
+        // scale≈565/2048=0.276)?
         var bundles = new[]
         {
-            new Bundle("GoblinDungeon-19:15:51 (fail)", Path.Combine(calibRoot, "Map_GoblinDungeon-20260603-191551-238-rejected-map-not-located", "02-screenshot-raw.png"), "Map_GoblinDungeon"),
-            new Bundle("GoblinDungeon-19:16:30 (fail)", Path.Combine(calibRoot, "Map_GoblinDungeon-20260603-191630-875-rejected-map-not-located", "02-screenshot-raw.png"), "Map_GoblinDungeon"),
-            new Bundle("GoblinDungeon-19:17:40 (fail)", Path.Combine(calibRoot, "Map_GoblinDungeon-20260603-191740-273-rejected-map-not-located", "02-screenshot-raw.png"), "Map_GoblinDungeon"),
-            new Bundle("Eltibule-06:14:06 (accept)",   Path.Combine(calibRoot, "AreaEltibule-20260603-061406-016-accepted",                 "02-screenshot-raw.png"), "AreaEltibule"),
+            new Bundle("GoblinDungeon-19:15:51 (fail)", Path.Combine(calibRoot, "Map_GoblinDungeon-20260603-191551-238-rejected-map-not-located", "02-screenshot-raw.png"), "Map_GoblinDungeon", null),
+            new Bundle("GoblinDungeon-19:16:30 (fail)", Path.Combine(calibRoot, "Map_GoblinDungeon-20260603-191630-875-rejected-map-not-located", "02-screenshot-raw.png"), "Map_GoblinDungeon", null),
+            new Bundle("GoblinDungeon-19:17:40 (fail)", Path.Combine(calibRoot, "Map_GoblinDungeon-20260603-191740-273-rejected-map-not-located", "02-screenshot-raw.png"), "Map_GoblinDungeon", null),
+            new Bundle("Eltibule-06:14:06 (accept, full-frame)", Path.Combine(calibRoot, "AreaEltibule-20260603-061406-016-accepted",                 "02-screenshot-raw.png"), "AreaEltibule", null),
+            new Bundle("Eltibule-06:14:06 (accept, cropped to mapRect)", Path.Combine(calibRoot, "AreaEltibule-20260603-061406-016-accepted",                 "02-screenshot-raw.png"), "AreaEltibule", new Rect(360, 283, 565, 561)),
         };
 
         Console.WriteLine($"=== SparseLocateSpike — {DateTime.UtcNow:O} ===");
@@ -56,8 +62,9 @@ internal static class SparseLocateSpike
                 continue;
             }
             using var capColor = Cv2.ImRead(b.ScreenshotPath, ImreadModes.Color);
-            using var cap = new Mat();
-            Cv2.CvtColor(capColor, cap, ColorConversionCodes.BGR2GRAY);
+            using var capFull = new Mat();
+            Cv2.CvtColor(capColor, capFull, ColorConversionCodes.BGR2GRAY);
+            using var cap = b.CropRect is Rect r ? new Mat(capFull, r) : capFull.Clone();
             using var tex = LoadBaseTextureGray(assetsDir, b.TextureKey);
             if (tex is null || tex.Empty())
             {
@@ -68,14 +75,15 @@ internal static class SparseLocateSpike
             Console.WriteLine($"--- {b.Name} ---  capture={cap.Width}x{cap.Height}  texture={tex.Width}x{tex.Height}");
             Console.WriteLine($"  {"alg",-26} {"tx",8} {"ty",8} {"sc",8} {"conf",10} {"ms",7}   note");
 
+            // Round 1 baseline (production parity).
             RunOne("ORB+Lowe",            () => FeatureMatch(cap, tex, FeatureKind.Orb),    b, outDir);
-            RunOne("AKAZE+Lowe",          () => FeatureMatch(cap, tex, FeatureKind.Akaze),  b, outDir);
-            // SIFT skipped — namespace verification deferred; AKAZE is the focal candidate.
-            RunOne("matchTemplate (raw)", () => TemplateMatchScaleLadder(cap, tex, edgesOnly: false), b, outDir);
+            // Round 1 also-rans — kept for tx/ty/scale comparison vs the new methods.
             RunOne("matchTemplate (edge)",() => TemplateMatchScaleLadder(cap, tex, edgesOnly: true),  b, outDir);
-            RunOne("Chamfer (dist-NCC)",  () => ChamferMatchScaleLadder(cap, tex),          b, outDir);
-            RunOne("PhaseCorrelate",      () => PhaseCorrelateAssumedScale(cap, tex),       b, outDir);
-            RunOne("FastLineDetector",    () => LineSegmentCensus(cap, tex),                b, outDir);
+            RunOne("Chamfer (dist-NCC, broken)", () => ChamferMatchScaleLadder(cap, tex),   b, outDir);
+            // Round 2 new methods: subset-aware matchers that score correspondences
+            // without penalizing un-revealed pixels.
+            RunOne("Chamfer (Borgefors)", () => BorgeforsChamfer(cap, tex),                 b, outDir);
+            RunOne("GHT (edge points)",   () => GeneralizedHough(cap, tex),                 b, outDir);
             Console.WriteLine();
         }
 
@@ -85,7 +93,7 @@ internal static class SparseLocateSpike
 
     // ---- harness ----
 
-    private sealed record Bundle(string Name, string ScreenshotPath, string TextureKey);
+    private sealed record Bundle(string Name, string ScreenshotPath, string TextureKey, Rect? CropRect);
 
     private sealed record SpikeResult(
         double? Tx, double? Ty, double? Scale, double Confidence, string Note,
@@ -341,5 +349,199 @@ internal static class SparseLocateSpike
             $"capture={capLines.Length} segs (mean={capMean:0.0}px)  texture={texLines.Length} segs (mean={texMean:0.0}px)");
 
         static double LineLen(Vec4f v) => Math.Sqrt((v.Item2 - v.Item0) * (v.Item2 - v.Item0) + (v.Item3 - v.Item1) * (v.Item3 - v.Item1));
+    }
+
+    // ---- Borgefors classical chamfer matching (sparse point set vs distance field) ----
+    //
+    // For each candidate (tx, ty, scale): project every texture edge point through
+    // T, look up the screenshot's distance transform at the projected position, sum.
+    // Best fit = lowest mean distance. Robust to occlusion in the SCREENSHOT — fog
+    // pixels have no edges to mislead the score; they're simply not "queried." The
+    // texture is the model (full information); the screenshot is the observation
+    // (partial information).
+    //
+    // Cost: O(N_scales * N_tx * N_ty * N_tex_pts). With sane subsampling + coarse
+    // grid: ~1-3 s per bundle on a 1280x1060 capture.
+
+    private static SpikeResult BorgeforsChamfer(Mat cap, Mat tex)
+    {
+        // Screenshot distance transform: distance from each pixel to the nearest
+        // screenshot edge. Sparse fog → large distances. Edge pixel → 0.
+        using var capE = new Mat(); Cv2.Canny(cap, capE, 50, 150);
+        using var capEinv = new Mat(); Cv2.BitwiseNot(capE, capEinv);
+        using var capDt = new Mat(); Cv2.DistanceTransform(capEinv, capDt, DistanceTypes.L2, DistanceTransformMasks.Mask3);
+
+        // Texture edges as a point list. Subsample to ~1500 for tractability.
+        using var texE = new Mat(); Cv2.Canny(tex, texE, 50, 150);
+        var texEdgePts = new List<Point>(8192);
+        var capDtIdx = capDt.GetGenericIndexer<float>();
+        // Extract nonzero edge pixels.
+        var texEIdx = texE.GetGenericIndexer<byte>();
+        for (int y = 0; y < texE.Rows; y++)
+            for (int x = 0; x < texE.Cols; x++)
+                if (texEIdx[y, x] != 0) texEdgePts.Add(new Point(x, y));
+
+        if (texEdgePts.Count == 0)
+            return new SpikeResult(null, null, null, 0, "no texture edges");
+        if (texEdgePts.Count > 1500)
+        {
+            // Even-stride subsample.
+            int stride = texEdgePts.Count / 1500;
+            var sub = new List<Point>(1500);
+            for (int i = 0; i < texEdgePts.Count; i += stride) sub.Add(texEdgePts[i]);
+            texEdgePts = sub;
+        }
+
+        int capW = cap.Width, capH = cap.Height;
+        double bestCost = double.MaxValue;
+        double bestScale = 0, bestTx = 0, bestTy = 0;
+        int bestInBounds = 0;
+        const int gridStep = 6;  // pixel quantization for tx/ty search
+        const float outOfBoundsPenalty = 25f;  // chamfer "miss" penalty (px)
+
+        for (double s = ScaleMin; s <= ScaleMax + 1e-6; s += ScaleStep)
+        {
+            // Texture bbox at this scale.
+            int sw = (int)Math.Round(tex.Width * s);
+            int sh = (int)Math.Round(tex.Height * s);
+            if (sw < 20 || sh < 20) continue;
+
+            // Translation search range: texture can extend off-screen a bit on either side.
+            int txMin = -sw / 2;
+            int txMax = capW - sw / 2;
+            int tyMin = -sh / 2;
+            int tyMax = capH - sh / 2;
+
+            for (int tx = txMin; tx <= txMax; tx += gridStep)
+            {
+                for (int ty = tyMin; ty <= tyMax; ty += gridStep)
+                {
+                    double sum = 0; int inBounds = 0;
+                    for (int i = 0; i < texEdgePts.Count; i++)
+                    {
+                        int px = (int)(tx + s * texEdgePts[i].X);
+                        int py = (int)(ty + s * texEdgePts[i].Y);
+                        if (px < 0 || py < 0 || px >= capW || py >= capH)
+                        {
+                            sum += outOfBoundsPenalty;
+                            continue;
+                        }
+                        sum += capDtIdx[py, px];
+                        inBounds++;
+                    }
+                    double cost = sum / texEdgePts.Count;
+                    // Penalize candidates where most of the texture would lie offscreen.
+                    if (inBounds < texEdgePts.Count / 3) continue;
+                    if (cost < bestCost)
+                    {
+                        bestCost = cost;
+                        bestScale = s;
+                        bestTx = tx;
+                        bestTy = ty;
+                        bestInBounds = inBounds;
+                    }
+                }
+            }
+        }
+
+        if (bestScale == 0)
+            return new SpikeResult(null, null, null, 0, "no candidate fit");
+
+        // Confidence: invert the cost (lower is better). Saturate so it's in [0, 1].
+        double confidence = 1.0 / (1.0 + bestCost / 5.0);
+        return new SpikeResult(bestTx, bestTy, bestScale, confidence,
+            $"mean chamfer dist={bestCost:0.00}px  inBounds={bestInBounds}/{texEdgePts.Count}");
+    }
+
+    // ---- Generalized Hough Transform on edge points (axis-aligned isotropic similarity) ----
+    //
+    // For each pair (texture edge point P, screenshot edge point S) under each
+    // candidate scale s, the implied translation is (tx, ty) = (Sx - s*Px, Sy - s*Py).
+    // Vote in a 3D accumulator (scale, tx, ty). The correct transform receives many
+    // consistent votes; random pairings are scattered across the accumulator. Peak
+    // = best fit. Robust to massive occlusion: only the visible screenshot edges
+    // need to vote; the rest contribute nothing.
+    //
+    // Cost: O(N_tex_pts * N_screen_pts * N_scales). Subsample both sides to ~400
+    // pts each → 400*400*19 ≈ 3M votes. Sub-second.
+
+    private static SpikeResult GeneralizedHough(Mat cap, Mat tex)
+    {
+        using var capE = new Mat(); Cv2.Canny(cap, capE, 50, 150);
+        using var texE = new Mat(); Cv2.Canny(tex, texE, 50, 150);
+
+        var capPts = ExtractEdgePoints(capE, maxPoints: 600);
+        var texPts = ExtractEdgePoints(texE, maxPoints: 400);
+        if (capPts.Count == 0 || texPts.Count == 0)
+            return new SpikeResult(null, null, null, 0, $"cap={capPts.Count} tex={texPts.Count} — no edges");
+
+        int capW = cap.Width, capH = cap.Height;
+        // Accumulator: scale × tx × ty. Quantize tx, ty to 8 px bins.
+        const int bin = 8;
+        int txBins = (capW + 400) / bin;
+        int tyBins = (capH + 400) / bin;
+        int txOffset = 200 / bin;  // allow texture to start up to 200 px off-screen
+        int tyOffset = 200 / bin;
+
+        int numScales = (int)Math.Round((ScaleMax - ScaleMin) / ScaleStep) + 1;
+        var accumulator = new ushort[numScales, txBins, tyBins];
+
+        for (int si = 0; si < numScales; si++)
+        {
+            double s = ScaleMin + si * ScaleStep;
+            for (int i = 0; i < texPts.Count; i++)
+            {
+                double spx = s * texPts[i].X;
+                double spy = s * texPts[i].Y;
+                for (int j = 0; j < capPts.Count; j++)
+                {
+                    int tx = (int)(capPts[j].X - spx);
+                    int ty = (int)(capPts[j].Y - spy);
+                    int txi = tx / bin + txOffset;
+                    int tyi = ty / bin + tyOffset;
+                    if (txi < 0 || tyi < 0 || txi >= txBins || tyi >= tyBins) continue;
+                    if (accumulator[si, txi, tyi] < ushort.MaxValue) accumulator[si, txi, tyi]++;
+                }
+            }
+        }
+
+        // Find peak.
+        ushort peakVotes = 0;
+        int peakS = 0, peakTxi = 0, peakTyi = 0;
+        for (int si = 0; si < numScales; si++)
+            for (int txi = 0; txi < txBins; txi++)
+                for (int tyi = 0; tyi < tyBins; tyi++)
+                    if (accumulator[si, txi, tyi] > peakVotes)
+                    {
+                        peakVotes = accumulator[si, txi, tyi];
+                        peakS = si; peakTxi = txi; peakTyi = tyi;
+                    }
+
+        double bestScale = ScaleMin + peakS * ScaleStep;
+        double bestTx = (peakTxi - txOffset) * bin;
+        double bestTy = (peakTyi - tyOffset) * bin;
+
+        // Confidence: peak / expected-random-floor. Random expectation per bin =
+        // total_votes / num_bins. Ratio of peak to this floor.
+        long totalVotes = (long)texPts.Count * capPts.Count * numScales;
+        double floor = (double)totalVotes / (numScales * txBins * tyBins);
+        double confidence = floor > 0 ? peakVotes / floor : 0;
+
+        return new SpikeResult(bestTx, bestTy, bestScale, confidence,
+            $"peakVotes={peakVotes} floor={floor:0.0} cap={capPts.Count} tex={texPts.Count}");
+    }
+
+    private static List<Point> ExtractEdgePoints(Mat edges, int maxPoints)
+    {
+        var pts = new List<Point>(8192);
+        var idx = edges.GetGenericIndexer<byte>();
+        for (int y = 0; y < edges.Rows; y++)
+            for (int x = 0; x < edges.Cols; x++)
+                if (idx[y, x] != 0) pts.Add(new Point(x, y));
+        if (pts.Count <= maxPoints) return pts;
+        int stride = pts.Count / maxPoints;
+        var sub = new List<Point>(maxPoints + 8);
+        for (int i = 0; i < pts.Count; i += stride) sub.Add(pts[i]);
+        return sub;
     }
 }
