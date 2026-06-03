@@ -36,19 +36,13 @@ internal static class SparseLocateSpike
         var outDir = Path.Combine(Path.GetTempPath(), "sparse-locate-spike");
         Directory.CreateDirectory(outDir);
 
-        // Eltibule accepted bundle's 04-maprect.json: (360, 283, 565, 561) — the
-        // production-recovered map sub-rect inside the captured frame. Using it as
-        // a *given* crop is the apples-to-apples easy-regime control: with locate
-        // already solved, can the candidate algorithms recover (tx≈0, ty≈0,
-        // scale≈565/2048=0.276)?
-        var bundles = new[]
+        var bundles = DiscoverBundles(calibRoot, assetsDir);
+        if (bundles.Count == 0)
         {
-            new Bundle("GoblinDungeon-19:15:51 (fail)", Path.Combine(calibRoot, "Map_GoblinDungeon-20260603-191551-238-rejected-map-not-located", "02-screenshot-raw.png"), "Map_GoblinDungeon", null),
-            new Bundle("GoblinDungeon-19:16:30 (fail)", Path.Combine(calibRoot, "Map_GoblinDungeon-20260603-191630-875-rejected-map-not-located", "02-screenshot-raw.png"), "Map_GoblinDungeon", null),
-            new Bundle("GoblinDungeon-19:17:40 (fail)", Path.Combine(calibRoot, "Map_GoblinDungeon-20260603-191740-273-rejected-map-not-located", "02-screenshot-raw.png"), "Map_GoblinDungeon", null),
-            new Bundle("Eltibule-06:14:06 (accept, full-frame)", Path.Combine(calibRoot, "AreaEltibule-20260603-061406-016-accepted",                 "02-screenshot-raw.png"), "AreaEltibule", null),
-            new Bundle("Eltibule-06:14:06 (accept, cropped to mapRect)", Path.Combine(calibRoot, "AreaEltibule-20260603-061406-016-accepted",                 "02-screenshot-raw.png"), "AreaEltibule", new Rect(360, 283, 565, 561)),
-        };
+            Console.WriteLine($"!! no usable bundles under {calibRoot}");
+            return 1;
+        }
+        Console.WriteLine($"discovered {bundles.Count} bundle(s)");
 
         Console.WriteLine($"=== SparseLocateSpike — {DateTime.UtcNow:O} ===");
         Console.WriteLine($"out dir: {outDir}");
@@ -94,6 +88,71 @@ internal static class SparseLocateSpike
     // ---- harness ----
 
     private sealed record Bundle(string Name, string ScreenshotPath, string TextureKey, Rect? CropRect);
+
+    // Auto-discover bundles under %LocalAppData%/Mithril/diagnostics/calibration/.
+    // Directory naming convention (from CalibrationAttemptContext): the area key
+    // is the prefix up to the first '-', the outcome is the trailing
+    // '-<outcome>' suffix. We include:
+    //   - everything ending in -rejected-map-not-located (these are the
+    //     locate-stage failures the spike is built to investigate)
+    //   - any -accepted bundle (controls). For these we also emit a second
+    //     synthetic bundle cropped to 04-maprect.json — the apples-to-apples
+    //     easy-regime check.
+    // Bundles whose base texture isn't on disk (sidecar failed) are skipped.
+    private static List<Bundle> DiscoverBundles(string calibRoot, string assetsDir)
+    {
+        var bundles = new List<Bundle>();
+        if (!Directory.Exists(calibRoot)) return bundles;
+
+        foreach (var dir in Directory.EnumerateDirectories(calibRoot).OrderBy(d => d))
+        {
+            var name = Path.GetFileName(dir);
+            var screenshotPath = Path.Combine(dir, "02-screenshot-raw.png");
+            if (!File.Exists(screenshotPath)) continue;
+
+            // Parse "<areaKey>-<yyyyMMdd>-<HHmmss>-<ms>-<outcome>" with the
+            // first 4 dash-separated chunks fixed.
+            var parts = name.Split('-');
+            if (parts.Length < 5) continue;
+            var areaKey = parts[0];
+            var outcome = string.Join("-", parts.Skip(4));
+
+            // Filter: only the locate-stage failures + accepted controls.
+            bool isInteresting =
+                outcome.StartsWith("rejected-map-not-located", StringComparison.Ordinal)
+                || outcome == "accepted";
+            if (!isInteresting) continue;
+
+            // Verify base texture exists on disk.
+            if (!File.Exists(Path.Combine(assetsDir, $"map-texture-{areaKey}.bin")))
+                continue;
+
+            // Pretty timestamp from parts[1] + parts[2].
+            string label = $"{areaKey}-{parts[1]}-{parts[2]} ({outcome.Substring(0, Math.Min(outcome.Length, 32))})";
+            bundles.Add(new Bundle(label, screenshotPath, areaKey, null));
+
+            // Accepted bundles get a second cropped entry from 04-maprect.json.
+            if (outcome == "accepted")
+            {
+                var mapRectPath = Path.Combine(dir, "04-maprect.json");
+                if (File.Exists(mapRectPath))
+                {
+                    try
+                    {
+                        using var s = File.OpenRead(mapRectPath);
+                        var mr = JsonDocument.Parse(s).RootElement;
+                        int ox = mr.GetProperty("originX").GetInt32();
+                        int oy = mr.GetProperty("originY").GetInt32();
+                        int w = mr.GetProperty("width").GetInt32();
+                        int h = mr.GetProperty("height").GetInt32();
+                        bundles.Add(new Bundle($"{label} [cropped to mapRect]", screenshotPath, areaKey, new Rect(ox, oy, w, h)));
+                    }
+                    catch { /* ignore malformed maprect */ }
+                }
+            }
+        }
+        return bundles;
+    }
 
     private sealed record SpikeResult(
         double? Tx, double? Ty, double? Scale, double Confidence, string Note,
