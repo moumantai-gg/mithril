@@ -19,7 +19,7 @@ namespace Mithril.MapCalibration.Capture.Tests;
 /// </summary>
 public sealed class AutoCalibrationEngineTests
 {
-    private const string Area = "AreaEltibule";
+    private const string Area = EngineHarness.DefaultArea;
 
     [Fact]
     public async Task Persists_with_AutoCapture_source_on_accept()
@@ -469,9 +469,18 @@ public sealed class AutoCalibrationEngineTests
     public async Task Rejects_when_new_residual_blows_up_vs_existing()
     {
         // Mirrors the PR #986 Eltibule case: existing residual 0.79 px, new 4.03 px.
+        // Both sides must be at the same LocatorScale regime (#1005) for the
+        // monotonicity gate to fire — same in-game zoom is the original #988 case.
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, MakeCal(residual: 0.79, refs: 10));
-        var h = new EngineHarness { Solve = Accepted(residual: 4.03, inliers: 4), Service = svc };
+        svc.Seed(Area, MakeCal(residual: 0.79, refs: 10) with { LocatorScale = 0.408 });
+        var h = new EngineHarness
+        {
+            Solve = Accepted(residual: 4.03, inliers: 4),
+            Service = svc,
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.408)),
+        };
 
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
@@ -483,9 +492,18 @@ public sealed class AutoCalibrationEngineTests
     [Fact]
     public async Task Rejects_when_new_inlier_count_drops_vs_existing()
     {
+        // Same in-game zoom (matching LocatorScale) so the #1005 regime predicate
+        // does NOT skip the gate; the inlier-delta arm is then free to fire.
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, MakeCal(residual: 1.0, refs: 10));
-        var h = new EngineHarness { Solve = Accepted(residual: 1.0, inliers: 4), Service = svc };
+        svc.Seed(Area, MakeCal(residual: 1.0, refs: 10) with { LocatorScale = 0.408 });
+        var h = new EngineHarness
+        {
+            Solve = Accepted(residual: 1.0, inliers: 4),
+            Service = svc,
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.408)),
+        };
 
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
@@ -532,6 +550,110 @@ public sealed class AutoCalibrationEngineTests
             .Should().BeNull();
     }
 
+    // ── #1005: scale-aware monotonicity gate ─────────────────────────────────
+
+    [Fact]
+    public async Task Persisted_calibration_carries_LocatorScale_from_the_locate_metrics()
+    {
+        var svc = new FakeCalibrationService();
+        var h = new EngineHarness
+        {
+            Solve = Accepted(residual: 0.65, inliers: 5),
+            Service = svc,
+            // Refiner returns a populated Metrics with a known scale — the
+            // engine must stamp this onto the persisted AreaCalibration so the
+            // gate has it to compare on the next attempt.
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.408)),
+        };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeTrue();
+        svc.Saved[Area].LocatorScale.Should().Be(0.408);
+    }
+
+    [Fact]
+    public async Task Different_scale_regime_accepts_even_when_monotonicity_would_have_rejected()
+    {
+        var svc = new FakeCalibrationService();
+        // Seed an EXISTING calibration at scale 0.408 with high quality.
+        svc.Seed(Area, SomeBaseline() with { LocatorScale = 0.408, ResidualPixels = 0.5, ReferenceCount = 10 });
+
+        // Capture at scale 0.800 (different regime) with a WORSE-looking fit
+        // (would trip both monotonicity arms: residual much higher, inliers much lower).
+        // Different regime → gate skipped → accept.
+        var h = new EngineHarness
+        {
+            Service = svc,
+            Solve = Accepted(residual: 3.5, inliers: 4),
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.800)),
+        };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeTrue();
+        outcome.RejectReason.Should().BeNull();
+        svc.Saved[Area].LocatorScale.Should().Be(0.800);
+    }
+
+    [Fact]
+    public async Task Same_scale_regime_still_protects_a_good_fit_from_a_worse_one()
+    {
+        // The original #988 protection: same in-game zoom, second wrong-fit
+        // attempt seconds later. LocatorScale values match within tolerance,
+        // gate fires, prior calibration kept.
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, SomeBaseline() with { LocatorScale = 0.408, ResidualPixels = 0.79, ReferenceCount = 10 });
+
+        var h = new EngineHarness
+        {
+            Service = svc,
+            Solve = Accepted(residual: 4.03, inliers: 4),
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.411)), // within ±2%
+        };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeFalse();
+        // Assert structurally on OutcomeCategory rather than substring-matching
+        // RejectReason — the category is the contract, the human-readable
+        // reason string is diagnostic. The Eltibule pair trips the residual
+        // arm first (checked before inlier-delta), but either arm is the same
+        // monotonicity-reject outcome from a router POV.
+        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.RejectedNotMonotonic);
+        svc.Saved.Should().NotContainKey(Area); // prior preserved (no Save call)
+    }
+
+    [Fact]
+    public async Task Legacy_null_LocatorScale_on_existing_skips_the_gate()
+    {
+        // Legacy record (pre-#1005) has null LocatorScale. A new capture's
+        // candidate has a value. IsSameScaleRegime(null, _) → false → gate skipped.
+        // First re-capture stamps a value and subsequent comparisons can gate normally.
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, SomeBaseline() with { LocatorScale = null, ResidualPixels = 0.5, ReferenceCount = 10 });
+
+        var h = new EngineHarness
+        {
+            Service = svc,
+            Solve = Accepted(residual: 5.0, inliers: 3), // would normally trip both gates
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.408)),
+        };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeTrue();
+        svc.Saved[Area].LocatorScale.Should().Be(0.408); // legacy null replaced with stamped value
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private static CalibrationAttemptBundleSinkSelector MakeSinkSelector(ICalibrationAttemptBundleSink sink) =>
@@ -563,60 +685,4 @@ public sealed class AutoCalibrationEngineTests
         Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
         ReferenceCount: refs, ResidualPixels: residual);
 
-    /// <summary>
-    /// Mutable harness: each property has a sensible "happy path" default; a test
-    /// overrides exactly the one input it exercises. Setting a reference-type
-    /// property to <c>null</c> models the absence of that input.
-    /// </summary>
-    private sealed class EngineHarness
-    {
-        public string? CurrentArea { get; init; } = Area;
-        public CaptureRect? Bbox { get; init; } = new CaptureRect(0, 0, 64, 64);
-        public GameWindow? GameWindow { get; init; } = new GameWindow(1, new CaptureRect(0, 0, 1920, 1080));
-        public GrayImage? BaseTexture { get; init; } = new GrayImage(64, 64, new byte[64 * 64]);
-        public CalibrationSolveResult Solve { get; init; } = new(new AreaCalibration(1, 0, 0, 0, 6, 0.5), 6, null);
-        public FakeCalibrationService Service { get; init; } = new();
-
-        // #949: icon templates resolve per attempt via IIconTemplateProvider.
-        public FakeIconTemplateProvider IconProvider { get; init; } = new();
-
-        // Optional sidecar wiring for the same-session --icons demand-trigger path.
-        // Leave null (default) to model "no extractor wired" (the unit-branch shape).
-        public RecordingAssetExtractor? Extractor { get; init; }
-        public GameConfig? GameConfig { get; init; }
-        public string? AssetCacheDir { get; init; }
-
-        // Optional sink selector for bundle-sink tests. Null → engine default (null sink).
-        public CalibrationAttemptBundleSinkSelector? SinkSelector { get; init; }
-
-        public SpyCapture Capture { get; } = new(new GrayImage(64, 64, new byte[64 * 64]));
-        public SpySolver Solver { get; private set; } = null!;
-
-        // Refiner stub: defaults to the happy-path rect. Tests can override to:
-        //   - new FakeRefiner(null) → drives the engine into the map-not-located path
-        //   - a rect with origin >= frame dims → drives the engine into clamp-degenerate
-        public IMapRegionRefiner Refiner { get; init; }
-            = new FakeRefiner(new MapRect(0, 0, 64, 64, 64, 64));
-
-        public AutoCalibrationEngine Engine()
-        {
-            Solver = new SpySolver(Solve);
-            return new AutoCalibrationEngine(
-                new FakeAreaState(CurrentArea),
-                new FakeWindowLocator(GameWindow),
-                new FakeRegionProvider(Bbox),
-                Capture,
-                Refiner,
-                new FakeBaseTextureProvider(BaseTexture),
-                new FakeAreaRefs(new[] { new LandmarkReference("landmark_npc", "x", new WorldCoord(1, 0, 1)) }),
-                Solver,
-                IconProvider,
-                Service,
-                logger: null,
-                sinkSelector: SinkSelector,
-                assetExtractor: Extractor,
-                gameConfig: GameConfig,
-                assetCacheDir: AssetCacheDir);
-        }
-    }
 }

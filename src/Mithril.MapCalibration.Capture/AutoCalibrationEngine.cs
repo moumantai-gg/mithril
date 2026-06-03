@@ -69,6 +69,15 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private const double MonotonicResidualRatio = 2.0;
     private const int MonotonicInlierDelta = 2;
 
+    /// <summary>
+    /// Relative tolerance for <see cref="IsSameScaleRegime"/>: a new candidate's
+    /// <c>LocatorScale</c> must be within ±2% of the stored one to count as the
+    /// same in-game zoom regime. Generous over the
+    /// <c>FeatureMatchingRefiner</c>'s sub-percent stability for repeated
+    /// captures at the same zoom (see #1005).
+    /// </summary>
+    private const double ScaleRegimeRelTolerance = 0.02;
+
     private readonly IAreaState _areaState;
     private readonly IGameWindowLocator _windowLocator;
     private readonly IMapCaptureRegionProvider _region;
@@ -196,7 +205,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (string.IsNullOrWhiteSpace(area))
         {
             attempt.Outcome = OutcomeVocabulary.RejectedNoArea;
-            return Fail("", "not in-world — open Project Gorgon and enter an area first");
+            return Fail("", "not in-world — open Project Gorgon and enter an area first", OutcomeVocabulary.RejectedNoArea);
         }
 
         // PG-foreground gate: capture must read the game's framebuffer, not
@@ -205,14 +214,14 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (_windowLocator.Locate() is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedPgNotForeground;
-            return Fail(area, "Project Gorgon is not the foreground window");
+            return Fail(area, "Project Gorgon is not the foreground window", OutcomeVocabulary.RejectedPgNotForeground);
         }
 
         var bbox = _region.Current;
         if (bbox is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedNoBbox;
-            return Fail(area, "no map bbox set — use the draw-map-bbox hotkey first");
+            return Fail(area, "no map bbox set — use the draw-map-bbox hotkey first", OutcomeVocabulary.RejectedNoBbox);
         }
 
         actSpan?.SetTag("map.area", area);
@@ -235,7 +244,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (captureResult.Gray is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedCaptureFailed;
-            return Fail(area, "map capture failed or was rejected (black / wrong-size frame)");
+            return Fail(area, "map capture failed or was rejected (black / wrong-size frame)", OutcomeVocabulary.RejectedCaptureFailed);
         }
 
         var gray = captureResult.Gray;
@@ -247,7 +256,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (baseTexture is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedNoBaseTexture;
-            return Fail(area, "preparing map assets… (base texture unavailable — no detections possible)");
+            return Fail(area, "preparing map assets… (base texture unavailable — no detections possible)", OutcomeVocabulary.RejectedNoBaseTexture);
         }
 
         // Locate the map within the captured frame. Under the production refiner
@@ -298,7 +307,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                     "Auto-calibration {Area}: locate rejected — raw fit rect at origin = ({X}, {Y}), size = {W}x{H}.",
                     area, best.OriginX, best.OriginY, best.Width, best.Height);
             }
-            return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map");
+            return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map", OutcomeVocabulary.RejectedMapNotLocated);
         }
         attempt.MapRect = mapRect;
         _logger?.LogInformation(
@@ -332,7 +341,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (clamped is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedClampDegenerate;
-            return Fail(area, "the located map rect fell outside the captured frame — redraw the capture box tightly around the in-game map");
+            return Fail(area, "the located map rect fell outside the captured frame — redraw the capture box tightly around the in-game map", OutcomeVocabulary.RejectedClampDegenerate);
         }
 
         // #989: the bundle sink reads attempt.MapRect to write 04-maprect.json.
@@ -390,23 +399,32 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (result.Calibration is null)
         {
             var reason = result.RejectReason ?? "no geometrically-consistent fit";
-            attempt.Outcome = OutcomeVocabulary.RejectSolveSubcategory(result.RejectReason);
+            var category = OutcomeVocabulary.RejectSolveSubcategory(result.RejectReason);
+            attempt.Outcome = category;
             _logger?.LogInformation("Auto-calibration rejected for {Area}: {Reason}. Prior calibration kept.", area, reason);
-            return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason);
+            return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason, OutcomeCategory: category);
         }
 
         // Gate-accept: persist through the user store stamped AutoCapture, which
-        // inherits user-store precedence by construction (Task 20).
-        var stamped = result.Calibration with { Source = CalibrationSource.AutoCapture };
+        // inherits user-store precedence by construction (Task 20). Stamp
+        // LocatorScale from the FeatureMatchingRefiner's recovered partial-affine
+        // scale (#1005) so the next attempt's regime comparison has an anchor.
+        var stamped = result.Calibration with
+        {
+            Source = CalibrationSource.AutoCapture,
+            LocatorScale = refineResult.Metrics?.Scale,
+        };
 
-        // #988 monotonicity gate. When a stored calibration already exists for
-        // this area, the new fit must not regress residual/inlier quality (a
-        // wrong-fit second attempt that clears the cold-start gate would
-        // otherwise replace a good first attempt — see the Eltibule 03:11:05
-        // vs 03:11:30 pair in the originating issue). Cold start (no existing)
-        // takes the same accept path it always did.
+        // #988 monotonicity gate, scale-aware (#1005). A new fit must not regress
+        // residual/inlier quality vs. an existing calibration at the SAME zoom
+        // regime — comparing across regimes is invalid because the per-attempt
+        // inlier count tracks visible-icon size, not fit quality (the
+        // RenderSizePx-16 typed-detection bar). When the regimes differ (or either
+        // side has no stamped factor — pre-#1005 legacy records, or a refiner
+        // returning null Metrics), skip the comparison and accept.
         var existing = _calibrationService.GetCalibration(area);
-        if (existing is not null)
+        if (existing is not null
+            && IsSameScaleRegime(existing.LocatorScale, stamped.LocatorScale))
         {
             var monotonicReason = CheckMonotonicAccept(existing, stamped, result.InlierCount);
             if (monotonicReason is not null)
@@ -415,7 +433,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 _logger?.LogInformation(
                     "Auto-calibration rejected for {Area}: monotonicity gate — {Reason}. Prior calibration kept (residual {PriorResidual:0.00}px, refs {PriorRefs}).",
                     area, monotonicReason, existing.ResidualPixels, existing.ReferenceCount);
-                return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: monotonicReason);
+                return new AutoCalibrationOutcome(
+                    Persisted: false,
+                    AreaKey: area,
+                    RejectReason: monotonicReason,
+                    OutcomeCategory: OutcomeVocabulary.RejectedNotMonotonic);
             }
         }
 
@@ -424,7 +446,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         _logger?.LogInformation(
             "Auto-calibration persisted for {Area} (residual {Residual:0.00} px, {Inliers} inliers).",
             area, stamped.ResidualPixels, result.InlierCount);
-        return new AutoCalibrationOutcome(Persisted: true, AreaKey: area, RejectReason: null);
+        return new AutoCalibrationOutcome(
+            Persisted: true,
+            AreaKey: area,
+            RejectReason: null,
+            OutcomeCategory: OutcomeVocabulary.Accepted);
     }
 
     /// <summary>
@@ -561,10 +587,33 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         return rect with { OriginX = x, OriginY = y, Width = w, Height = h };
     }
 
-    private AutoCalibrationOutcome Fail(string area, string reason)
+    private AutoCalibrationOutcome Fail(string area, string reason, string outcomeCategory)
     {
         _logger?.LogInformation("Auto-calibration not attempted for {Area}: {Reason}.", string.IsNullOrEmpty(area) ? "<none>" : area, reason);
-        return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason);
+        return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason, OutcomeCategory: outcomeCategory);
+    }
+
+    /// <summary>
+    /// True when an existing stored calibration and a new candidate were both
+    /// solved at the same in-game zoom regime &#8212; i.e. the locator's
+    /// <see cref="LocateMetrics.Scale"/> values agree within
+    /// <see cref="ScaleRegimeRelTolerance"/> (currently 2%, generous over the
+    /// <c>FeatureMatchingRefiner</c>'s sub-percent stability for repeated
+    /// captures at the same zoom).
+    ///
+    /// <para>Returns <see langword="false"/> when either side is <see langword="null"/>
+    /// (legacy record stamped pre-#1005, or a candidate whose locator didn't
+    /// populate the factor) OR non-positive/non-finite. "Regime unknown" routes
+    /// to "skip the gate, accept the new fit" at the call site &#8212; the
+    /// monotonicity check is only valid when both fits saw the same icon-size
+    /// regime, and we have no basis to claim that when the data is missing or
+    /// degenerate.</para>
+    /// </summary>
+    internal static bool IsSameScaleRegime(double? existing, double? candidate)
+    {
+        if (existing is not { } e || candidate is not { } c) return false;
+        if (!double.IsFinite(e) || !double.IsFinite(c) || e <= 0 || c <= 0) return false;
+        return Math.Abs(c / e - 1.0) <= ScaleRegimeRelTolerance;
     }
 
     /// <summary>
@@ -597,7 +646,18 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 
 /// <summary>
 /// The outcome of one auto-calibration attempt: whether a transform was
-/// persisted, the area it was for, and (when not persisted) a user-facing reason
-/// for status surfacing (<see cref="CalibrationStatusFormatter"/>).
+/// persisted, the area it was for, a user-facing reason when not persisted
+/// (<see cref="CalibrationStatusFormatter"/>), and the structured outcome
+/// category (one of the constants on <see cref="Diagnostics.OutcomeVocabulary"/>).
+///
+/// <para><see cref="OutcomeCategory"/> is nullable for backward-compat with
+/// callers that pre-date #1005; <see cref="CalibrationStatusFormatter.ForOutcome"/>
+/// routes structurally when it is set and falls back to substring-matching
+/// the <see cref="RejectReason"/> when null. New engine return sites MUST
+/// populate it.</para>
 /// </summary>
-public sealed record AutoCalibrationOutcome(bool Persisted, string AreaKey, string? RejectReason);
+public sealed record AutoCalibrationOutcome(
+    bool Persisted,
+    string AreaKey,
+    string? RejectReason,
+    string? OutcomeCategory = null);

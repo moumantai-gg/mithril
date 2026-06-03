@@ -133,8 +133,9 @@ internal sealed class UserRefinementStore
     /// Compares only the fields that determine the world&#8596;pixel
     /// projection. Ignores <see cref="AreaCalibration.Source"/> (always
     /// re-stamped on import), <see cref="AreaCalibration.SchemaVersion"/>,
-    /// <see cref="AreaCalibration.ReferenceCount"/>, and
-    /// <see cref="AreaCalibration.ResidualPixels"/> (metadata, not transform).
+    /// <see cref="AreaCalibration.ReferenceCount"/>,
+    /// <see cref="AreaCalibration.ResidualPixels"/>, and
+    /// <see cref="AreaCalibration.LocatorScale"/> (all metadata, not transform).
     ///
     /// <para>Uses a relative tolerance instead of raw <c>==</c> so a one-ULP
     /// drift from JSON round-trip / cross-JIT codegen does not re-trigger an

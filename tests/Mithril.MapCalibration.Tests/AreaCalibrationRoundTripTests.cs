@@ -1,4 +1,6 @@
+using System.Text.Json;
 using FluentAssertions;
+using Mithril.MapCalibration.Internal;
 using Xunit;
 
 namespace Mithril.MapCalibration.Tests;
@@ -80,6 +82,52 @@ public sealed class AreaCalibrationRoundTripTests
             ReferenceCount: 0,
             ResidualPixels: 0);
         degenerate.WindowToWorld(new PixelPoint(1, 1), currentZoom: 1.0).Should().BeNull();
+    }
+
+    [Fact]
+    public void Roundtrip_preserves_LocatorScale()
+    {
+        var original = new AreaCalibration(
+            Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
+            ReferenceCount: 5, ResidualPixels: 0.5)
+        {
+            LocatorScale = 0.408,
+        };
+
+        var json = JsonSerializer.Serialize(original, MapCalibrationJsonContext.Default.AreaCalibration);
+        var rt = JsonSerializer.Deserialize(json, MapCalibrationJsonContext.Default.AreaCalibration);
+
+        rt.Should().NotBeNull();
+        rt!.LocatorScale.Should().Be(0.408);
+    }
+
+    [Fact]
+    public void Roundtrip_omits_LocatorScale_from_JSON_when_null()
+    {
+        var original = new AreaCalibration(1.0, 0.0, 0.0, 0.0, 5, 0.5);
+
+        var json = JsonSerializer.Serialize(original, MapCalibrationJsonContext.Default.AreaCalibration);
+
+        // DefaultIgnoreCondition = WhenWritingDefault means null nullable doubles
+        // are omitted. This is the downgrade-safety guarantee.
+        json.Should().NotContain("locatorScale", "null nullable doubles should be omitted");
+
+        var rt = JsonSerializer.Deserialize(json, MapCalibrationJsonContext.Default.AreaCalibration);
+        rt!.LocatorScale.Should().BeNull();
+    }
+
+    [Fact]
+    public void Roundtrip_accepts_legacy_JSON_without_LocatorScale_field()
+    {
+        const string legacyJson = """
+            {"scale":1.0,"rotationRadians":0.0,"originX":0.0,"originY":0.0,
+             "referenceCount":5,"residualPixels":0.5}
+            """;
+
+        var rt = JsonSerializer.Deserialize(legacyJson, MapCalibrationJsonContext.Default.AreaCalibration);
+
+        rt.Should().NotBeNull();
+        rt!.LocatorScale.Should().BeNull();
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Mithril.MapCalibration.Capture.Diagnostics;
 using Xunit;
 
 namespace Mithril.MapCalibration.Capture.Tests;
@@ -43,4 +44,52 @@ public sealed class CalibrationStatusFormatterTests
     public void A_rejected_outcome_with_no_reason_falls_back_to_a_generic_string()
         => CalibrationStatusFormatter.ForOutcome(new AutoCalibrationOutcome(false, "AreaSerbule", null))
             .Should().NotBeNullOrWhiteSpace();
+
+    // ── #1005: structural OutcomeCategory route ──────────────────────────────
+
+    [Fact]
+    public void RejectedNotMonotonic_outcome_gets_its_own_message_not_zoom_out_instruction()
+    {
+        var outcome = new AutoCalibrationOutcome(
+            Persisted: false,
+            AreaKey: "AreaTest",
+            RejectReason: "new inlier count 4 below existing 10 − 2",
+            OutcomeCategory: OutcomeVocabulary.RejectedNotMonotonic);
+
+        var msg = CalibrationStatusFormatter.ForOutcome(outcome);
+
+        msg.Should().NotBeNull();
+        msg.Should().Contain("Calibration unchanged");
+        msg.Should().Contain("clear");
+        msg.Should().NotContain("zoom the in-game map all the way out");
+    }
+
+    [Fact]
+    public void Null_OutcomeCategory_falls_back_to_substring_route_for_legacy_callers()
+    {
+        // A caller that hasn't been updated to populate OutcomeCategory still
+        // gets today's-behaviour chip via ForReject substring matching.
+        // Regression guard: don't accidentally break legacy emit sites.
+        var outcome = new AutoCalibrationOutcome(
+            Persisted: false,
+            AreaKey: "AreaTest",
+            RejectReason: "residual 25.00 px exceeds threshold 12.00 px",
+            OutcomeCategory: null);
+
+        var msg = CalibrationStatusFormatter.ForOutcome(outcome);
+
+        msg.Should().Contain("zoom the in-game map all the way out");
+    }
+
+    [Fact]
+    public void Persisted_outcome_returns_null_regardless_of_OutcomeCategory()
+    {
+        var outcome = new AutoCalibrationOutcome(
+            Persisted: true,
+            AreaKey: "AreaTest",
+            RejectReason: null,
+            OutcomeCategory: OutcomeVocabulary.Accepted);
+
+        CalibrationStatusFormatter.ForOutcome(outcome).Should().BeNull();
+    }
 }
