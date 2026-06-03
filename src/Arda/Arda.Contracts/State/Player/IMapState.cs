@@ -3,10 +3,11 @@ using Arda.World.Player.Events;
 namespace Arda.World.Player;
 
 /// <summary>
-/// Flat read-only view of all map-scoped state: area, position, weather, pins.
+/// Flat read-only view of all map-scoped state: area, map asset, position, weather, pins.
 /// Consumers needing change notifications subscribe to the corresponding domain
-/// events (<see cref="AreaChanged"/>, <see cref="PlayerPositionChanged"/>,
-/// <see cref="WeatherChanged"/>, <see cref="MapPinAdded"/>, <see cref="MapPinRemoved"/>)
+/// events (<see cref="AreaChanged"/>, <see cref="MapAssetChanged"/>,
+/// <see cref="PlayerPositionChanged"/>, <see cref="WeatherChanged"/>,
+/// <see cref="MapPinAdded"/>, <see cref="MapPinRemoved"/>)
 /// via <see cref="Arda.Contracts.IDomainEventSubscriber"/>.
 /// </summary>
 public interface IMapState
