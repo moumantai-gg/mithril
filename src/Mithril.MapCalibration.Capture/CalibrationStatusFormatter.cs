@@ -1,4 +1,5 @@
 using System;
+using Mithril.MapCalibration.Capture.Diagnostics;
 
 namespace Mithril.MapCalibration.Capture;
 
@@ -8,6 +9,14 @@ namespace Mithril.MapCalibration.Capture;
 /// overlay chip (<c>IOverlayWindow.SetStatusMessage</c>) is shell wiring (Task 28).
 /// The engine's reject reasons are diagnostic ("residual 25.00 px exceeds
 /// threshold…"); this turns them into an actionable instruction.
+///
+/// <para><b>Routing model (#1005).</b> <see cref="ForOutcome"/> routes
+/// structurally on <see cref="AutoCalibrationOutcome.OutcomeCategory"/> first:
+/// when set, the outcome category maps deterministically to its user message.
+/// When <see langword="null"/> (legacy callers that pre-date #1005),
+/// <see cref="ForReject"/> falls back to substring-matching the
+/// <see cref="AutoCalibrationOutcome.RejectReason"/> &#8212; preserving the
+/// pre-#1005 behaviour for any path that hasn't been updated yet.</para>
 /// </summary>
 public static class CalibrationStatusFormatter
 {
@@ -16,7 +25,26 @@ public static class CalibrationStatusFormatter
     /// succeeded (a persisted calibration clears the chip — happy state).
     /// </summary>
     public static string? ForOutcome(AutoCalibrationOutcome outcome)
-        => outcome.Persisted ? null : ForReject(outcome.RejectReason ?? "couldn't auto-calibrate the map");
+    {
+        if (outcome.Persisted) return null;
+        return ForCategory(outcome.OutcomeCategory)
+               ?? ForReject(outcome.RejectReason ?? "couldn't auto-calibrate the map");
+    }
+
+    /// <summary>
+    /// Structural route — known <see cref="OutcomeVocabulary"/> categories to
+    /// their user-facing messages. Returns <see langword="null"/> for unknown
+    /// or null categories so the caller falls back to <see cref="ForReject"/>.
+    /// </summary>
+    private static string? ForCategory(string? category) => category switch
+    {
+        OutcomeVocabulary.RejectedNotMonotonic =>
+            "Calibration unchanged: the new fit was worse than the saved one. "
+            + "To force-replace, clear the saved calibration for this area.",
+        // Other categories deliberately not routed here yet — they fall through
+        // to the substring path so today's wording is preserved by default.
+        _ => null,
+    };
 
     /// <summary>Map a raw reject reason to an actionable user instruction.</summary>
     public static string ForReject(string reason)
