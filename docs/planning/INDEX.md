@@ -30,7 +30,7 @@ When you create a new slug folder, append a row to the table below: `slug | stat
 | Slug | Status | Issue/PR | Description |
 |------|--------|----------|-------------|
 | [arda-state-snapshot-and-ui-dispatch](arda-state-snapshot-and-ui-dispatch/) | shipped | [#1011](https://github.com/moumantai-gg/mithril/issues/1011) · [#1013](https://github.com/moumantai-gg/mithril/issues/1013) | Fix Palantir pin-enum crash; `MapPins.Pins` snapshot + new `Arda.Wpf` `IUiEventSubscriber` + `WpfMapPinPresenter` |
-| [calibration-1005-scale-aware-gate](calibration-1005-scale-aware-gate/) | active | [#1005](https://github.com/moumantai-gg/mithril/issues/1005) | Map auto-calibration: scale-aware monotonicity gate — don't reject a re-capture taken at a different in-game zoom |
+| [calibration-1005-scale-aware-gate](calibration-1005-scale-aware-gate/) | shipped | [#1005](https://github.com/moumantai-gg/mithril/issues/1005) · [#1023](https://github.com/moumantai-gg/mithril/pull/1023) | Map auto-calibration: scale-aware monotonicity gate — don't reject a re-capture taken at a different in-game zoom |
 | [gandalf-164-in-game-clock-alarm](gandalf-164-in-game-clock-alarm/) | shipped | [#164](https://github.com/moumantai-gg/mithril/issues/164) | Gandalf: fire timers at PG in-game time-of-day |
 | [legolas-wizard](legolas-wizard/) | shipped | [#111](https://github.com/moumantai-gg/mithril/issues/111) · [#112](https://github.com/moumantai-gg/mithril/issues/112) · [#113](https://github.com/moumantai-gg/mithril/issues/113) | Legolas wizard view + dashboard rework + Motherlode wizard depth |
 | [quest-discovery-module](quest-discovery-module/) | deferred | _no issue_ | Quest browser / eligibility surface (separate from Gandalf) |
