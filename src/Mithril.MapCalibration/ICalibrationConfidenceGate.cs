@@ -1,4 +1,4 @@
-namespace Mithril.MapCalibration.Detection;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// Accept/reject gate for a candidate auto-solved calibration. An auto solve is

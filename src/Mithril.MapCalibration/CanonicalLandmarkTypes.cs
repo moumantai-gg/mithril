@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Mithril.MapCalibration.Detection;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// The single source of truth for the landmark-type vocabulary the calibration

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.DependencyInjection;
 using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Internal;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 

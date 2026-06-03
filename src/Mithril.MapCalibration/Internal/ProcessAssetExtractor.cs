@@ -8,9 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection.Internal;
-using Mithril.MapCalibration.Internal;
 
-namespace Mithril.MapCalibration.Detection;
+namespace Mithril.MapCalibration.Internal;
 
 /// <summary>
 /// Runs the out-of-process asset-extractor sidecar via

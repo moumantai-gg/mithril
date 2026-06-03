@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Mithril.MapCalibration.Capture.DependencyInjection;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
 using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Internal;
 using Mithril.Overlay;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
@@ -39,7 +40,7 @@ public sealed class CaptureDependencyInjectionTests
 
         // The GameConfig-wired gate must win over the engine's default gate
         // (last-registration-wins): a residual of 9.5 exceeds the configured 9.0.
-        var gate = provider.GetRequiredService<Detection.ICalibrationConfidenceGate>();
+        var gate = provider.GetRequiredService<ICalibrationConfidenceGate>();
         gate.Accept(new AreaCalibration(1, 0, 0, 0, 8, 9.5), 8, out _).Should().BeFalse();
 
         provider.GetRequiredService<AutoCalibrationTrigger>().Should().NotBeNull();

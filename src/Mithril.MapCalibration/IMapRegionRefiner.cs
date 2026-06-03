@@ -1,6 +1,6 @@
 using Mithril.MapCalibration.Detection;
 
-namespace Mithril.MapCalibration.Capture;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// Locates the map's true sub-rect inside a captured frame (spec §4 step 4) via

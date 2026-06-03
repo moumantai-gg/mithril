@@ -2,6 +2,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Mithril.MapCalibration;
 using Mithril.MapCalibration.Detection;
 
 namespace Mithril.Tools.MapCalibration.Common;

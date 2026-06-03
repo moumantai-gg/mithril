@@ -1,4 +1,4 @@
-namespace Mithril.MapCalibration.Capture;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// Diagnostic + gate-feeding metrics from one
