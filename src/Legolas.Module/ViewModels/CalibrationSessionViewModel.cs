@@ -154,7 +154,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
 
     /// <summary>Blunt always-visible state readout.</summary>
     public string DebugState =>
-        $"area={_service.CurrentAreaKey ?? "-"}  refs={References.Count}  " +
+        $"area={_service.CurrentScene?.ParentAreaKey ?? "-"}  refs={References.Count}  " +
         $"sel={SelectedReference?.Name ?? "-"}  pins={Placements.Count}  " +
         $"last={(Placements.Count > 0 ? $"({Placements[^1].X:0},{Placements[^1].Y:0})" : "-")}  " +
         $"you={(PlayerPin is { } pp ? $"({pp.X:0},{pp.Y:0}){(pp.IsSelected ? "*" : "")}" : "-")}  " +
@@ -265,8 +265,8 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
 
     partial void OnSelectedAreaChanged(AreaEntry? value)
     {
-        if (value is null || value.Key == _service.CurrentAreaKey) return;
-        _service.SelectArea(value.Key);
+        if (value is null || value.Key == _service.CurrentScene?.ParentAreaKey) return;
+        _service.SelectScene(AreaCalibrationService.MapSceneRefForDirectlyRegisteredArea(value.Key));
     }
 
     /// <summary>Arrow-key fine-tune of whatever is selected: the player pin
@@ -382,15 +382,15 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
         References.Clear();
         foreach (var r in _service.CurrentAreaReferences) References.Add(r);
 
-        if (_service.CurrentAreaKey is { } curKey)
-            SelectedArea = AvailableAreas.FirstOrDefault(a => a.Key == curKey);
+        if (_service.CurrentScene is { } scene)
+            SelectedArea = AvailableAreas.FirstOrDefault(a => a.Key == scene.ParentAreaKey);
 
         if (_service.CurrentAreaFriendlyName is not { } area)
         {
             StatusText = "No area detected — pick one from the dropdown, or walk into one in-game.";
             return;
         }
-        if (_service.CurrentAreaKey is null)
+        if (_service.CurrentScene is null)
         {
             StatusText = $"{area} — unrecognised area (no reference data); calibration unavailable.";
             return;
@@ -760,7 +760,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
             // (round-4 review #1).
             _logger?.LogWarning(ex,
                 "Calibration solve persist failed for area {AreaKey}; ResultText surfaces the error.",
-                _service.CurrentAreaKey ?? "(unknown)");
+                _service.CurrentScene?.ParentAreaKey ?? "(unknown)");
             ResultText = $"Couldn't save calibration: {ex.Message}. Check your disk / sync tooling and Solve again.";
             return;
         }
@@ -799,7 +799,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
             // (round-4 review #1).
             _logger?.LogWarning(ex,
                 "Calibration clear persist failed for area {AreaKey}; ResultText surfaces the error.",
-                _service.CurrentAreaKey ?? "(unknown)");
+                _service.CurrentScene?.ParentAreaKey ?? "(unknown)");
             ResultText = $"Couldn't clear calibration: {ex.Message}. Retry once the file lock clears.";
             return;
         }

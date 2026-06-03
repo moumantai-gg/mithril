@@ -7,16 +7,20 @@ namespace Legolas.Services;
 
 public interface IAreaCalibrationService
 {
-    /// <summary>Internal area key of the area the player is currently in (e.g. <c>"AreaEltibule"</c>), or null if unknown.</summary>
-    string? CurrentAreaKey { get; }
+    /// <summary>Composite scene identity for the current calibration scope
+    /// (parent area + sub-zone friendly name + Unity asset key), or null if
+    /// no scene is active yet. mithril#1041 — replaces the prior
+    /// <c>CurrentAreaKey</c> string with the typed composite the rest of the
+    /// calibration stack now consumes.</summary>
+    MapSceneRef? CurrentScene { get; }
 
     /// <summary>Friendly name of the current area (as seen in the chat banner), or null.</summary>
     string? CurrentAreaFriendlyName { get; }
 
-    /// <summary>True when the current area has a persisted <see cref="AreaCalibration"/> applied.</summary>
+    /// <summary>True when the current scene has a persisted <see cref="AreaCalibration"/> applied.</summary>
     bool IsCurrentAreaCalibrated { get; }
 
-    /// <summary>Persisted calibration for the current area, if any.</summary>
+    /// <summary>Persisted calibration for the current scene, if any.</summary>
     AreaCalibration? CurrentCalibration { get; }
 
     /// <summary>
@@ -34,17 +38,18 @@ public interface IAreaCalibrationService
     /// </summary>
     IReadOnlyList<AreaEntry> AllAreas { get; }
 
-    /// <summary>Raised (CurrentAreaKey changed or calibration (re)applied) so UI can refresh.</summary>
+    /// <summary>Raised (CurrentScene changed or calibration (re)applied) so UI can refresh.</summary>
     event EventHandler? Changed;
 
     /// <summary>
-    /// Set the current area by internal key. The Arda-driven
-    /// <c>PlayerLogIngestionService</c> calls this when it receives an
-    /// <c>AreaChanged</c> domain event (#605 — the prior chat
-    /// <c>Entering Area:</c> banner path is gone; Arda's <c>IAreaState</c> is
-    /// the authoritative source). Also used by the manual area-picker UI.
+    /// Set the current scene by typed composite. The Arda-driven
+    /// <c>PlayerLogIngestionService</c> calls this when it receives a
+    /// <c>MapAssetChanged</c> domain event (mithril#1041 — per-scene
+    /// granularity is strictly-more-informative than the prior
+    /// <c>AreaChanged</c> path for aggregator areas). Also used by the
+    /// manual area-picker UI via <c>AreaCalibrationService.MapSceneRefForDirectlyRegisteredArea</c>.
     /// </summary>
-    void SelectArea(string areaKey);
+    void SelectScene(MapSceneRef scene);
 
     /// <summary>
     /// Solve a calibration from user-placed reference clicks (a world point
@@ -91,8 +96,8 @@ public interface IAreaCalibrationService
 }
 
 /// <summary>
-/// Owns the per-area calibration lifecycle: area-key handoff (from the
-/// Arda <c>AreaChanged</c> domain event bridge in
+/// Owns the per-area calibration lifecycle: scene-key handoff (from the
+/// Arda <c>MapAssetChanged</c> domain event bridge in
 /// <c>PlayerLogIngestionService</c> or the manual area-picker UI) &#8594;
 /// apply persisted <see cref="AreaCalibration"/> on entry, and the
 /// solve/persist path the calibration window drives. Reference points
@@ -103,28 +108,29 @@ public interface IAreaCalibrationService
 /// <para>The chat-log <c>Entering Area:</c> banner path was retired in #605 —
 /// per #531, Arda's <c>IAreaState</c> already exposes the same signal
 /// authoritatively from Player.log's <c>LOADING LEVEL</c> line.</para>
+///
+/// <para>mithril#1041: per-scene migration. <c>CurrentScene</c> is the
+/// typed <see cref="MapSceneRef"/>; the legacy <c>LegolasSettings.AreaCalibrations</c>
+/// dual-write/clear is retired (D6) — every solved calibration lands in the
+/// shared <see cref="IMapCalibrationService"/> alone. The settings field itself
+/// stays <c>[Obsolete]</c> for one release cycle so existing on-disk data is
+/// preserved across the upgrade.</para>
 /// </summary>
 public sealed class AreaCalibrationService : IAreaCalibrationService
 {
     private readonly IReferenceDataService _refData;
-    private readonly LegolasSettings _settings;
     private readonly ICoordinateProjector _projector;
-    private readonly SettingsAutoSaver<LegolasSettings> _saver;
     private readonly IMapCalibrationService _mapCal;
 
     private IReadOnlyList<CalibrationReference> _currentRefs = Array.Empty<CalibrationReference>();
 
     public AreaCalibrationService(
         IReferenceDataService refData,
-        LegolasSettings settings,
         ICoordinateProjector projector,
-        SettingsAutoSaver<LegolasSettings> saver,
         IMapCalibrationService mapCal)
     {
         _refData = refData;
-        _settings = settings;
         _projector = projector;
-        _saver = saver;
         _mapCal = mapCal;
 
         // Re-apply the projector when the active calibration changes from a
@@ -133,14 +139,14 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         _mapCal.Changed += OnMapCalChanged;
     }
 
-    public string? CurrentAreaKey { get; private set; }
+    public MapSceneRef? CurrentScene { get; private set; }
     public string? CurrentAreaFriendlyName { get; private set; }
 
     public bool IsCurrentAreaCalibrated =>
-        CurrentAreaKey is { } k && _mapCal.IsCalibrated(k);
+        CurrentScene is { } scene && _mapCal.IsCalibrated(scene);
 
     public AreaCalibration? CurrentCalibration =>
-        CurrentAreaKey is { } k ? _mapCal.GetCalibration(k) : null;
+        CurrentScene is { } scene ? _mapCal.GetCalibration(scene) : null;
 
     public IReadOnlyList<CalibrationReference> CurrentAreaReferences => _currentRefs;
 
@@ -152,22 +158,17 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
 
     public event EventHandler? Changed;
 
-    public void SelectArea(string areaKey)
+    public void SelectScene(MapSceneRef scene)
     {
-        if (string.IsNullOrWhiteSpace(areaKey)) return;
-        if (_refData.Areas.TryGetValue(areaKey, out var entry))
-            SetArea(entry.Key, entry.FriendlyName);
-        else
-            SetArea(areaKey, areaKey); // unknown key: still switch, no refs
-    }
+        if (string.IsNullOrWhiteSpace(scene.ParentAreaKey)) return;
 
-    private void SetArea(string? key, string friendlyName)
-    {
-        CurrentAreaFriendlyName = friendlyName;
-        CurrentAreaKey = key;
-        _currentRefs = key is null ? Array.Empty<CalibrationReference>() : BuildReferences(key);
+        CurrentScene = scene;
+        CurrentAreaFriendlyName = _refData.Areas.TryGetValue(scene.ParentAreaKey, out var entry)
+            ? entry.FriendlyName
+            : scene.ParentAreaKey;
+        _currentRefs = BuildReferences(scene.ParentAreaKey);
 
-        if (key is not null && _mapCal.GetCalibration(key) is { } calibration)
+        if (_mapCal.GetCalibration(scene) is { } calibration)
         {
             _projector.ApplyCalibration(calibration);
         }
@@ -175,10 +176,30 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    private void OnMapCalChanged(object? sender, string areaKey)
+    /// <summary>
+    /// Bridge for the manual area-picker (areas.json-shaped): synthesize a
+    /// <see cref="MapSceneRef"/> for a directly-registered area. The asset key
+    /// follows the <c>Map_</c> + areas.json-key convention. Returns the bare
+    /// area key as MapAssetKey for unrecognised areas (no calibration will be
+    /// found, but the picker still gives feedback).
+    ///
+    /// <para>This is a one-line bridge: the picker is areas.json-shaped, and
+    /// the directly-registered area set (#1041 spec §5.6) covers the 12 areas
+    /// the picker offers. Aggregator sub-zones (Hogan's Basement etc.) are
+    /// out-of-scope for the picker — they consume the SceneAssetCache via the
+    /// follow-up wizard sub-zone picker (D8).</para>
+    /// </summary>
+    public static MapSceneRef MapSceneRefForDirectlyRegisteredArea(string areaKey) =>
+        new(ParentAreaKey: areaKey, SceneFriendlyName: null, MapAssetKey: "Map_" + areaKey);
+
+    private void OnMapCalChanged(object? sender, MapSceneRef payload)
     {
-        if (!string.Equals(areaKey, CurrentAreaKey, StringComparison.Ordinal)) return;
-        if (_mapCal.GetCalibration(areaKey) is { } calibration)
+        // #1041 fix: compare by MapAssetKey (asset-key the store keys on), not
+        // by ParentAreaKey. The pre-#1041 path compared the engine-emitted
+        // Map_<X> against the bare CurrentAreaKey and dropped every event.
+        if (CurrentScene is not { } current) return;
+        if (!string.Equals(payload.MapAssetKey, current.MapAssetKey, StringComparison.Ordinal)) return;
+        if (_mapCal.GetCalibration(current) is { } calibration)
         {
             _projector.ApplyCalibration(calibration);
         }
@@ -189,7 +210,7 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
         double calibrationZoom = 1.0)
     {
-        if (CurrentAreaKey is not { } key || placements is null || placements.Count < 2)
+        if (CurrentScene is not { } scene || placements is null || placements.Count < 2)
             return null;
 
         var refs = placements
@@ -206,23 +227,12 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
             CalibrationZoom = calibrationZoom > 1e-6 ? calibrationZoom : 1.0,
         };
 
-        // Dual-write for #836's transition window: writes go to BOTH the shared
-        // service (canonical going forward) and LegolasSettings.AreaCalibrations
-        // (legacy, removed in a follow-up release once we've shipped one cycle
-        // of parity). A rollback to an older Mithril during the transition
-        // therefore preserves the user's calibration in the place that older
-        // Mithril expects to find it.
-        //
-        // ORDER: shared service first (canonical going forward; throws on
-        // persist failure with full in-memory rollback), legacy field second.
-        // If the new store throws we never touch the legacy field, so a retry
-        // from a clean state works. The reverse order would leave the legacy
-        // field written and the new store empty — for Clear that produces a
-        // permanent orphan (the migration only imports, never deletes), and
-        // for Save it would only self-heal on next migration pass.
-        _mapCal.SaveUserRefinement(key, calibration);
-        _settings.AreaCalibrations[key] = calibration;
-        _saver.Touch(); // AreaCalibrations is a sibling object — no PropertyChanged.
+        // mithril#1041: single write path — every solved calibration (manual
+        // wizard + auto-capture) lands in the shared IMapCalibrationService.
+        // The legacy LegolasSettings.AreaCalibrations dual-write was retired
+        // (D6) — the model justification for treating manual fits as special
+        // was ruled out (legolas_calibration_findings).
+        _mapCal.SaveUserRefinement(scene, calibration);
 
         // SaveUserRefinement raises IMapCalibrationService.Changed; our
         // OnMapCalChanged handler reads GetCalibration (which respects stacking
@@ -247,21 +257,15 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
 
     public void ClearCurrentAreaCalibration()
     {
-        if (CurrentAreaKey is not { } key) return;
-        // Dual-clear, ORDER matters here (round-3 review #2): clear the new
-        // store FIRST, only touch the legacy field on success. If the new
-        // store's Persist throws (disk full / AV lock) the rollback restores
-        // the in-memory entry so reads still return the prior calibration,
-        // and we don't proceed to delete the legacy entry — the user retries
-        // from a fully-consistent state. The pre-round-3 order (legacy first)
-        // could leave a permanent orphan: the migration only imports, never
-        // deletes, so a half-cleared state survived restarts.
+        if (CurrentScene is not { } scene) return;
+        // mithril#1041: single clear path — every retire lands in the shared
+        // IMapCalibrationService. The legacy LegolasSettings.AreaCalibrations
+        // dual-clear was retired (D6).
         //
         // ClearUserRefinement raises mapCal.Changed → OnMapCalChanged
         // re-broadcasts our Changed; do not raise Changed directly to avoid
         // double-delivery.
-        _mapCal.ClearUserRefinement(key);
-        if (_settings.AreaCalibrations.Remove(key)) _saver.Touch();
+        _mapCal.ClearUserRefinement(scene);
     }
 
     private IReadOnlyList<CalibrationReference> BuildReferences(string areaKey)

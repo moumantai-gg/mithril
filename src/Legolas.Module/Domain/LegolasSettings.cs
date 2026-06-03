@@ -161,13 +161,16 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     public LegolasPinStyle CalibrationPinStyle { get; set; } = LegolasPinStyle.CalibrationDefaults();
 
     /// <summary>
-    /// Per-area solved projector calibration, keyed by the internal area key
-    /// (e.g. <c>"AreaEltibule"</c>). Populated by the standalone calibration
-    /// window from landmark/NPC reference clicks; landmarks/NPCs don't move so a
-    /// calibration is reused on every later visit to that area, eliminating the
-    /// first-pins-land-off-frame warmup for surveys and treasure alike. Empty =
-    /// no area calibrated yet (the v2 default; see <see cref="SchemaVersion"/>).
+    /// Per-area solved projector calibration. Lifted to
+    /// <see cref="Mithril.MapCalibration.IMapCalibrationService"/> in #836; the
+    /// dual-write / dual-clear / one-time import paths were retired in
+    /// mithril#1041 (D6). Field is retained for one release cycle so on-disk
+    /// data isn't dropped from existing <c>LegolasSettings.json</c> mid-cycle;
+    /// removed in a follow-up PR after mithril#1041.
     /// </summary>
+    [Obsolete("Calibrations now live exclusively in IMapCalibrationService. " +
+              "Field retained for one cycle to avoid downgrade-window data loss; " +
+              "removed in a follow-up PR after mithril#1041.")]
     public Dictionary<string, AreaCalibration> AreaCalibrations { get; set; } = new(StringComparer.Ordinal);
     // #957: MapOverlay retired — the survey overlay window now reads/writes its
     // frame through the one shell-persisted capture rect (ShellSettings.MapCaptureBbox,

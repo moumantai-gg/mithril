@@ -434,7 +434,7 @@ public sealed partial class LegolasWizardViewModel : ObservableObject
     /// <summary>True when the area is identified in reference data (so a
     /// calibration is even possible). False ⇒ the chip shows "area not
     /// detected" rather than a calibrate prompt.</summary>
-    public bool IsAreaKnown => _areaCalibration.CurrentAreaKey is not null;
+    public bool IsAreaKnown => _areaCalibration.CurrentScene is not null;
 
     /// <summary>#113: the always-visible header chip text — area + calibration
     /// state at a glance, so the user never has to open the (experimental)
