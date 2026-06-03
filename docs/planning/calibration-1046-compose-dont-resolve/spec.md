@@ -130,7 +130,8 @@ private static int SourceRank(AreaCalibration c) => c.Source switch
 
 ### 5.2 What goes away
 
-- The `_goodResidualThresholdPx` constructor parameter on `MapCalibrationService` and its DI wiring (`GameConfig.CalibrationGoodResidualPx` → `AddMapCalibration` extension). The threshold was the old picker's gate; the new picker uses `ReferenceCount` + `ResidualPixels` ordering instead. Field, ctor param, DI wiring removed in the same PR; `GameConfig` keeps the property for one cycle marked `[Obsolete]` so on-disk settings round-trip cleanly during the upgrade.
+- The `_goodResidualThresholdPx` constructor parameter on `MapCalibrationService` and its DI wiring (the `goodResidualThresholdPx` parameter on `AddMithrilMapCalibration`). The field, ctor param, and DI parameter are removed in the same PR.
+- `GameConfig.CalibrationGoodResidualPx` **stays alive and unmarked** (no `[Obsolete]`). It has two non-picker consumers that still need it: `PinCalibrationCoordinator.IsResidualGood` (the Legolas calibration wizard's "Confirm" gate) and `CaptureServiceCollectionExtensions.BuildConfidenceGate` (the auto-capture `CalibrationConfidenceGate` accept threshold). The picker-side wiring is severed; the property itself is not dead.
 - The old precedence-based body of `GetCalibration` (lines 45–66 of `MapCalibrationService.cs`).
 
 ### 5.3 What's preserved
