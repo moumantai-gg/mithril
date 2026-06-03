@@ -5,8 +5,15 @@ namespace Mithril.Overlay.Tests.Fakes;
 /// <summary>
 /// Minimal test double for <see cref="IMapCalibrationService"/>. Maps every
 /// world point to a pixel via <c>(x, z)</c> (i.e. identity transform). Areas
-/// listed in <see cref="CalibratedAreas"/> are calibrated; all others
-/// return null from both <c>WorldToWindow</c> and <c>IsCalibrated</c>.
+/// whose <see cref="MapSceneRef.MapAssetKey"/> appears in
+/// <see cref="CalibratedAreas"/> are calibrated; all others return null from
+/// both <c>WorldToWindow</c> and <c>IsCalibrated</c>.
+///
+/// <para>mithril#1041: typed <see cref="MapSceneRef"/> replaces the bare
+/// area-key string parameter. <see cref="OverlayWindowService.DriveSceneForTest"/>
+/// synthesises a scene as <c>new MapSceneRef(areaKey, null, areaKey)</c>, so
+/// tests still <c>CalibratedAreas.Add("A")</c> to opt a single key in (the
+/// MapAssetKey doubles as the synth area key in that path).</para>
 /// </summary>
 internal sealed class FakeMapCalibrationService : IMapCalibrationService
 {
@@ -16,22 +23,21 @@ internal sealed class FakeMapCalibrationService : IMapCalibrationService
     /// Default is identity (x -&gt; X, z -&gt; Y). Returning null from the override
     /// short-circuits the per-marker projection (exercises the null-skip
     /// branch in <c>OverlayWindowService.ProjectMarkers</c>).</summary>
-    public Func<string, WorldCoord, double, PixelPoint?>? Projector { get; set; }
+    public Func<MapSceneRef, WorldCoord, double, PixelPoint?>? Projector { get; set; }
 
-    public bool IsCalibrated(string areaKey) => CalibratedAreas.Contains(areaKey);
+    public bool IsCalibrated(MapSceneRef scene) => CalibratedAreas.Contains(scene.MapAssetKey);
 
-    public PixelPoint? WorldToWindow(string areaKey, WorldCoord world, double currentZoom)
+    public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom)
     {
-        if (!IsCalibrated(areaKey)) return null;
-        return Projector is { } p ? p(areaKey, world, currentZoom) : new PixelPoint(world.X, world.Z);
+        if (!IsCalibrated(scene)) return null;
+        return Projector is { } p ? p(scene, world, currentZoom) : new PixelPoint(world.X, world.Z);
     }
 
-    public WorldCoord? WindowToWorld(string areaKey, PixelPoint pixel, double currentZoom) => null;
-    public AreaCalibration? GetCalibration(string areaKey) => null;
+    public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom) => null;
+    public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
     public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations { get; } = new Dictionary<string, AreaCalibration>();
-    public IReadOnlyList<AreaCalibration> GetAllSources(string areaKey) => Array.Empty<AreaCalibration>();
-    public void SaveUserRefinement(string areaKey, AreaCalibration calibration) { }
-    public void ClearUserRefinement(string areaKey) { }
-    public int ImportUserRefinements(IReadOnlyDictionary<string, AreaCalibration> source) => 0;
-    public event EventHandler<string>? Changed { add { } remove { } }
+    public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
+    public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration) { }
+    public void ClearUserRefinement(MapSceneRef scene) { }
+    public event EventHandler<MapSceneRef>? Changed { add { } remove { } }
 }

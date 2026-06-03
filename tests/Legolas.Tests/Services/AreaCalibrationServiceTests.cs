@@ -8,7 +8,6 @@ using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Misc;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Settings;
 using Npc = Mithril.Reference.Models.Npcs.Npc;
 using Quest = Mithril.Reference.Models.Quests.Quest;
 
@@ -16,43 +15,42 @@ namespace Legolas.Tests.Services;
 
 public class AreaCalibrationServiceTests
 {
-    private static (AreaCalibrationService svc, FakeProjector proj, LegolasSettings settings, IMapCalibrationService mapCal)
+    private static (AreaCalibrationService svc, FakeProjector proj, IMapCalibrationService mapCal)
         Build(FakeRefData refData)
     {
-        var settings = new LegolasSettings();
         var proj = new FakeProjector();
-        var saver = new SettingsAutoSaver<LegolasSettings>(new InMemoryStore(settings), settings);
         var mapCalDir = Path.Combine(Path.GetTempPath(), "mithril-mapcal-tests", Guid.NewGuid().ToString("N"));
         var mapCal = MapCalibrationServiceCollectionExtensions.Build(mapCalDir);
-        var svc = new AreaCalibrationService(refData, settings, proj, saver, mapCal);
-        return (svc, proj, settings, mapCal);
+        var svc = new AreaCalibrationService(refData, proj, mapCal);
+        return (svc, proj, mapCal);
     }
 
+    private static MapSceneRef SceneFor(string areaKey) =>
+        AreaCalibrationService.MapSceneRefForDirectlyRegisteredArea(areaKey);
+
     /// <summary>
-    /// Seed a persisted calibration through both stores, mirroring the dual-write
-    /// invariant <see cref="AreaCalibrationService.CalibrateCurrentArea"/> upholds
-    /// during the #836 transition window. Tests use this rather than reaching into
-    /// <see cref="LegolasSettings.AreaCalibrations"/> directly so reads (which now
-    /// go through <see cref="IMapCalibrationService"/>) see the seeded value.
+    /// Seed a persisted calibration via the shared <see cref="IMapCalibrationService"/>.
+    /// mithril#1041 (D6) retired the legacy <c>LegolasSettings.AreaCalibrations</c>
+    /// dual-write — the shared service is the sole calibration store, so the
+    /// seed-helper writes only there.
     /// </summary>
-    private static void Seed(IMapCalibrationService mapCal, LegolasSettings settings, string areaKey, AreaCalibration cal)
+    private static void Seed(IMapCalibrationService mapCal, string areaKey, AreaCalibration cal)
     {
-        mapCal.SaveUserRefinement(areaKey, cal);
-        settings.AreaCalibrations[areaKey] = cal;
+        mapCal.SaveUserRefinement(SceneFor(areaKey), cal);
     }
 
     [Fact]
     public void Unknown_area_key_records_key_as_friendly_name_with_no_refs()
     {
-        // SelectArea with a key that isn't in the gazetteer falls back to using
+        // SelectScene with a key that isn't in the gazetteer falls back to using
         // the key as the friendly name verbatim — the area-picker bypass path
         // (PlayerAreaTracker keys are always in-game-real, but a test/dev key
         // shouldn't crash the consumer).
-        var (svc, _, _, _) = Build(new FakeRefData());
+        var (svc, _, _) = Build(new FakeRefData());
 
-        svc.SelectArea("AreaNowheresville");
+        svc.SelectScene(SceneFor("AreaNowheresville"));
 
-        svc.CurrentAreaKey.Should().Be("AreaNowheresville");
+        svc.CurrentScene?.ParentAreaKey.Should().Be("AreaNowheresville");
         svc.CurrentAreaFriendlyName.Should().Be("AreaNowheresville");
         svc.CurrentAreaReferences.Should().BeEmpty();
         svc.IsCurrentAreaCalibrated.Should().BeFalse();
@@ -65,13 +63,13 @@ public class AreaCalibrationServiceTests
         {
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
-        var (svc, proj, settings, mapCal) = Build(refData);
+        var (svc, proj, mapCal) = Build(refData);
         var persisted = new AreaCalibration(3.0, 0.5, 11, 22, 4, 0.9);
-        Seed(mapCal, settings, "AreaEltibule", persisted);
+        Seed(mapCal, "AreaEltibule", persisted);
 
-        // PlayerLogIngestionService.ApplyAreaIfChanged drives SelectArea with
-        // the internal area key from PlayerAreaTracker — exercise that path.
-        svc.SelectArea("AreaEltibule");
+        // PlayerLogIngestionService bridges Arda MapAssetChanged → SelectScene
+        // with a typed MapSceneRef. Mirror the directly-registered area shape.
+        svc.SelectScene(SceneFor("AreaEltibule"));
 
         svc.IsCurrentAreaCalibrated.Should().BeTrue();
         svc.CurrentCalibration.Should().Be(persisted);
@@ -83,7 +81,7 @@ public class AreaCalibrationServiceTests
     {
         // Use an area with NO bundled baseline (Serbule/Eltibule/KurMountains now
         // ship gate-study baselines, #916) so "uncalibrated" is genuinely true:
-        // otherwise SelectArea applies the baseline fallback and LastApplied is set.
+        // otherwise SelectScene applies the baseline fallback and LastApplied is set.
         const string area = "AreaTestVille";
         var refData = new FakeRefData
         {
@@ -103,9 +101,9 @@ public class AreaCalibrationServiceTests
                 },
             },
         };
-        var (svc, proj, _, _) = Build(refData);
+        var (svc, proj, _) = Build(refData);
 
-        svc.SelectArea(area);
+        svc.SelectScene(SceneFor(area));
 
         proj.LastApplied.Should().BeNull(); // no persisted calibration → projector untouched
         svc.CurrentAreaReferences.Select(r => r.Name)
@@ -121,8 +119,9 @@ public class AreaCalibrationServiceTests
         {
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
-        var (svc, proj, settings, mapCal) = Build(refData);
-        svc.SelectArea("AreaEltibule");
+        var (svc, proj, mapCal) = Build(refData);
+        var scene = SceneFor("AreaEltibule");
+        svc.SelectScene(scene);
 
         var changed = 0;
         svc.Changed += (_, _) => changed++;
@@ -140,8 +139,8 @@ public class AreaCalibrationServiceTests
         cal.Should().NotBeNull();
         cal!.Scale.Should().BeApproximately(1.0, 1e-6);
         cal.CalibrationZoom.Should().BeApproximately(0.39, 1e-9); // stamped + persisted
-        settings.AreaCalibrations.Should().ContainKey("AreaEltibule");
-        settings.AreaCalibrations["AreaEltibule"].Should().Be(cal);
+        // mithril#1041 D6: calibrations land in the shared service only.
+        mapCal.GetCalibration(scene).Should().Be(cal);
         proj.LastApplied.Should().Be(cal);
         changed.Should().BeGreaterThanOrEqualTo(1);
     }
@@ -149,11 +148,16 @@ public class AreaCalibrationServiceTests
     [Fact]
     public void CalibrateCurrentArea_returns_null_with_fewer_than_two_placements_or_no_area()
     {
+        // Use a baseline-free area (#916: Eltibule now ships a bundled baseline,
+        // so mapCal.GetCalibration would return the baseline transform even
+        // after we abort the solve — masking the "nothing was persisted" intent).
+        const string area = "AreaTestVille";
         var refData = new FakeRefData
         {
-            AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
+            AreasByKey = { [area] = new AreaEntry(area, "Testville", "") },
         };
-        var (svc, _, settings, mapCal) = Build(refData);
+        var (svc, _, mapCal) = Build(refData);
+        var scene = SceneFor(area);
 
         // No current area yet.
         svc.CalibrateCurrentArea(new (WorldCoord, PixelPoint)[]
@@ -162,30 +166,30 @@ public class AreaCalibrationServiceTests
             (new WorldCoord(1, 0, 1), new PixelPoint(1, 1)),
         }).Should().BeNull();
 
-        svc.SelectArea("AreaEltibule");
+        svc.SelectScene(scene);
         svc.CalibrateCurrentArea(new (WorldCoord, PixelPoint)[]
         {
             (new WorldCoord(0, 0, 0), new PixelPoint(0, 0)),
         }).Should().BeNull();
 
-        settings.AreaCalibrations.Should().NotContainKey("AreaEltibule");
+        mapCal.GetCalibration(scene).Should().BeNull();
     }
 
     [Fact]
-    public void SelectArea_sets_current_area_builds_refs_and_applies_persisted()
+    public void SelectScene_sets_current_area_builds_refs_and_applies_persisted()
     {
         var refData = new FakeRefData
         {
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
             NpcsByKey = { ["NPC_Marn"] = new Npc { Name = "Marn", AreaName = "AreaEltibule", Pos = "x:1 y:0 z:2" } },
         };
-        var (svc, proj, settings, mapCal) = Build(refData);
+        var (svc, proj, mapCal) = Build(refData);
         var persisted = new AreaCalibration(2, 0.1, 5, 6, 3, 0.5);
-        Seed(mapCal, settings, "AreaEltibule", persisted);
+        Seed(mapCal, "AreaEltibule", persisted);
 
-        svc.SelectArea("AreaEltibule");
+        svc.SelectScene(SceneFor("AreaEltibule"));
 
-        svc.CurrentAreaKey.Should().Be("AreaEltibule");
+        svc.CurrentScene?.ParentAreaKey.Should().Be("AreaEltibule");
         svc.CurrentAreaFriendlyName.Should().Be("Eltibule");
         svc.CurrentAreaReferences.Should().ContainSingle(r => r.Name == "Marn");
         proj.LastApplied.Should().Be(persisted);
@@ -203,7 +207,7 @@ public class AreaCalibrationServiceTests
                 ["AreaAnagoge"] = new AreaEntry("AreaAnagoge", "Anagoge Island", ""),
             },
         };
-        var (svc, _, _, _) = Build(refData);
+        var (svc, _, _) = Build(refData);
 
         svc.AllAreas.Select(a => a.FriendlyName)
             .Should().ContainInOrder("Anagoge Island", "Eltibule", "Serbule");
@@ -212,7 +216,7 @@ public class AreaCalibrationServiceTests
     [Fact]
     public void NoteSurvey_reraises_as_SurveyObserved()
     {
-        var (svc, _, _, _) = Build(new FakeRefData());
+        var (svc, _, _) = Build(new FakeRefData());
         CalibrationSurveyObservation? seen = null;
         svc.SurveyObserved += (_, o) => seen = o;
 
@@ -235,9 +239,10 @@ public class AreaCalibrationServiceTests
         {
             AreasByKey = { [area] = new AreaEntry(area, "Testville", "") },
         };
-        var (svc, _, settings, mapCal) = Build(refData);
-        Seed(mapCal, settings, area, new AreaCalibration(1, 0, 0, 0, 2, 0));
-        svc.SelectArea(area);
+        var (svc, _, mapCal) = Build(refData);
+        var scene = SceneFor(area);
+        Seed(mapCal, area, new AreaCalibration(1, 0, 0, 0, 2, 0));
+        svc.SelectScene(scene);
         svc.IsCurrentAreaCalibrated.Should().BeTrue();
 
         var changed = 0;
@@ -245,30 +250,26 @@ public class AreaCalibrationServiceTests
 
         svc.ClearCurrentAreaCalibration();
 
-        settings.AreaCalibrations.Should().NotContainKey(area);
+        mapCal.GetCalibration(scene).Should().BeNull();
         svc.IsCurrentAreaCalibrated.Should().BeFalse();
         changed.Should().Be(1);
     }
 
     [Fact]
-    public void Dual_write_does_not_touch_legacy_field_when_shared_service_throws_on_Save()
+    public void Calibrate_throw_from_shared_service_propagates_without_leaving_state()
     {
-        // Round-4 review #2: pin the post-round-3 ordering invariant.
-        // CalibrateCurrentArea must call IMapCalibrationService.SaveUserRefinement
-        // BEFORE writing _settings.AreaCalibrations[key]. A future contributor
-        // cleaning up "awkward ordering" who re-swaps the order will trip this
-        // test, because the throwing fake fails before the legacy write would
-        // run.
+        // mithril#1041 D6 retired the legacy LegolasSettings.AreaCalibrations
+        // dual-write. The remaining contract is: when IMapCalibrationService.
+        // SaveUserRefinement throws, the exception propagates and no persisted
+        // calibration is left behind in the (now sole) shared store.
         var refData = new FakeRefData
         {
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
-        var settings = new LegolasSettings();
         var proj = new FakeProjector();
-        var saver = new SettingsAutoSaver<LegolasSettings>(new InMemoryStore(settings), settings);
         var throwingMapCal = new ThrowingMapCalibrationService();
-        var svc = new AreaCalibrationService(refData, settings, proj, saver, throwingMapCal);
-        svc.SelectArea("AreaEltibule");
+        var svc = new AreaCalibrationService(refData, proj, throwingMapCal);
+        svc.SelectScene(SceneFor("AreaEltibule"));
 
         var placements = new[]
         {
@@ -280,59 +281,60 @@ public class AreaCalibrationServiceTests
         FluentActions.Invoking(() => svc.CalibrateCurrentArea(placements))
             .Should().Throw<System.IO.IOException>();
 
-        settings.AreaCalibrations.Should().NotContainKey("AreaEltibule",
-            "shared-service throw must leave the legacy field untouched so retry starts from a clean state");
+        throwingMapCal.SavesAttempted.Should().Be(1,
+            "the service must reach SaveUserRefinement before failing — that's the " +
+            "single write site post-#1041.");
     }
 
     [Fact]
-    public void Dual_clear_does_not_touch_legacy_field_when_shared_service_throws_on_Clear()
+    public void Clear_throw_from_shared_service_propagates_without_leaving_state()
     {
-        // Round-4 review #2: same invariant for ClearCurrentAreaCalibration.
-        // Pre-round-3 order (legacy first) could leave a permanent orphan in
-        // refinements.json that no migration could recover.
+        // mithril#1041 D6 same invariant for ClearCurrentAreaCalibration.
         var refData = new FakeRefData
         {
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
-        var settings = new LegolasSettings();
-        var prior = new AreaCalibration(2, 0, 5, 6, 3, 0.5);
-        settings.AreaCalibrations["AreaEltibule"] = prior;
         var proj = new FakeProjector();
-        var saver = new SettingsAutoSaver<LegolasSettings>(new InMemoryStore(settings), settings);
         var throwingMapCal = new ThrowingMapCalibrationService();
-        var svc = new AreaCalibrationService(refData, settings, proj, saver, throwingMapCal);
-        svc.SelectArea("AreaEltibule");
+        var svc = new AreaCalibrationService(refData, proj, throwingMapCal);
+        svc.SelectScene(SceneFor("AreaEltibule"));
 
         FluentActions.Invoking(() => svc.ClearCurrentAreaCalibration())
             .Should().Throw<System.IO.IOException>();
 
-        settings.AreaCalibrations.Should().ContainKey("AreaEltibule",
-            "shared-service throw must leave the legacy field untouched so retry starts from a consistent state");
+        throwingMapCal.ClearsAttempted.Should().Be(1);
     }
 
     // ---- fakes ------------------------------------------------------------
 
     /// <summary>
     /// IMapCalibrationService that throws IOException on every write — used to
-    /// verify AreaCalibrationService's dual-write ordering. Reads return null
-    /// (uncalibrated) which is fine for the ordering tests.
+    /// verify AreaCalibrationService's propagation of shared-service failures.
+    /// Reads return null (uncalibrated) which is fine for the ordering tests.
     /// </summary>
     private sealed class ThrowingMapCalibrationService : IMapCalibrationService
     {
-        public event EventHandler<string>? Changed { add { } remove { } }
-        public bool IsCalibrated(string areaKey) => false;
-        public AreaCalibration? GetCalibration(string areaKey) => null;
-        public PixelPoint? WorldToWindow(string areaKey, WorldCoord world, double currentZoom) => null;
-        public WorldCoord? WindowToWorld(string areaKey, PixelPoint pixel, double currentZoom) => null;
+        public int SavesAttempted { get; private set; }
+        public int ClearsAttempted { get; private set; }
+
+        public event EventHandler<MapSceneRef>? Changed { add { } remove { } }
+        public bool IsCalibrated(MapSceneRef scene) => false;
+        public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
+        public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
+        public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom) => null;
         public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations { get; } =
             new Dictionary<string, AreaCalibration>(StringComparer.Ordinal);
-        public IReadOnlyList<AreaCalibration> GetAllSources(string areaKey) => Array.Empty<AreaCalibration>();
-        public void SaveUserRefinement(string areaKey, AreaCalibration calibration) =>
+        public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
+        public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration)
+        {
+            SavesAttempted++;
             throw new System.IO.IOException("simulated disk failure");
-        public void ClearUserRefinement(string areaKey) =>
+        }
+        public void ClearUserRefinement(MapSceneRef scene)
+        {
+            ClearsAttempted++;
             throw new System.IO.IOException("simulated disk failure");
-        public int ImportUserRefinements(IReadOnlyDictionary<string, AreaCalibration> source) =>
-            throw new System.IO.IOException("simulated disk failure");
+        }
     }
 
     private sealed class FakeProjector : ICoordinateProjector
@@ -346,17 +348,6 @@ public class AreaCalibrationServiceTests
         public void CalibrateFromClick(PixelPoint playerPixel, PixelPoint click, MetreOffset offset) { }
         public void Refit(IReadOnlyList<(MetreOffset Offset, PixelPoint Pixel)> corrections) { }
         public void ApplyCalibration(AreaCalibration calibration) => LastApplied = calibration;
-    }
-
-    private sealed class InMemoryStore : ISettingsStore<LegolasSettings>
-    {
-        private LegolasSettings _v;
-        public InMemoryStore(LegolasSettings v) => _v = v;
-        public string FilePath => "(memory)";
-        public LegolasSettings Load() => _v;
-        public Task<LegolasSettings> LoadAsync(CancellationToken ct = default) => Task.FromResult(_v);
-        public Task SaveAsync(LegolasSettings value, CancellationToken ct = default) { _v = value; return Task.CompletedTask; }
-        public void Save(LegolasSettings value) => _v = value;
     }
 
     private sealed class FakeRefData : IReferenceDataService
