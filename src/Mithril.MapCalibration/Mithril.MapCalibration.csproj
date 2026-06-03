@@ -23,12 +23,14 @@
 
     <!-- Arda.Contracts is the source of truth for IMapState, MapAssetChanged,
          IDomainEventSubscriber — types the cache + resolution helper + recorder
-         need to talk to the world model. mithril#1041: the cache (and the
-         universal MapSceneRef this assembly owns) sits south of IMapState, so
-         the dependency is naturally inward toward the contracts. Arda.Contracts
-         already references this project (for MapSceneRef on IMapState), and
-         that reference is acyclic because Arda.Contracts is net10.0 with no
-         windows-specific code — same TFM as this project. -->
+         need to talk to the world model. mithril#1041: the cache + resolution
+         helper sit south of IMapState, so the dependency direction is naturally
+         inward toward the contracts. NOTE: MapSceneRef physically lives in
+         Arda.Contracts (src/Arda/Arda.Contracts/State/Player/MapSceneRef.cs)
+         with namespace 'Mithril.MapCalibration' preserved — that placement
+         broke what would otherwise have been a circular project reference
+         between this project and Arda.Contracts. Same TFM (net10.0) at both
+         ends so the consume direction is unambiguous. -->
     <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
   </ItemGroup>
   <ItemGroup>

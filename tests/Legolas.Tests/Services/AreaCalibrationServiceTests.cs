@@ -305,6 +305,46 @@ public class AreaCalibrationServiceTests
         throwingMapCal.ClearsAttempted.Should().Be(1);
     }
 
+    [Fact]
+    public void OnMapCalChanged_for_current_scene_asset_key_reapplies_projector_and_raises_Changed()
+    {
+        // mithril#1041 regression pin: the equality fix at AreaCalibrationService.OnMapCalChanged
+        // compares payload.MapAssetKey == _currentScene.MapAssetKey. Pre-#1041 the comparison was
+        // (areaKey vs CurrentAreaKey), so the engine-emitted Map_<X> never matched the bare
+        // areas.json key and every change event dropped. This test fires Changed with a matching
+        // MapSceneRef and asserts both the projector re-applies and the service's own Changed
+        // event re-broadcasts.
+        var refData = new FakeRefData
+        {
+            AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
+        };
+        var (svc, proj, mapCal) = Build(refData);
+        var scene = SceneFor("AreaEltibule");
+
+        // Seed via the shared service first so SelectScene's initial ApplyCalibration runs.
+        var initial = new AreaCalibration(
+            Scale: 1.0, RotationRadians: 0, OriginX: 10, OriginY: 20,
+            ReferenceCount: 3, ResidualPixels: 5.0);
+        mapCal.SaveUserRefinement(scene, initial);
+
+        svc.SelectScene(scene);
+        proj.LastApplied.Should().NotBeNull();
+        proj.LastApplied!.OriginX.Should().Be(10);
+
+        // Now mutate the calibration via the shared service. The Changed event fires
+        // with payload.MapAssetKey == scene.MapAssetKey ("Map_AreaEltibule"), which the
+        // equality fix in OnMapCalChanged should now recognise.
+        var changedFired = 0;
+        svc.Changed += (_, _) => changedFired++;
+        var updated = initial with { OriginX = 99, OriginY = 88 };
+        mapCal.SaveUserRefinement(scene, updated);
+
+        proj.LastApplied.Should().NotBeNull();
+        proj.LastApplied!.OriginX.Should().Be(99, "OnMapCalChanged must re-apply the new calibration to the projector");
+        proj.LastApplied!.OriginY.Should().Be(88);
+        changedFired.Should().BeGreaterThan(0, "OnMapCalChanged must re-broadcast IAreaCalibrationService.Changed for UI subscribers");
+    }
+
     // ---- fakes ------------------------------------------------------------
 
     /// <summary>
