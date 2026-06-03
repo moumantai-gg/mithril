@@ -597,7 +597,18 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 
 /// <summary>
 /// The outcome of one auto-calibration attempt: whether a transform was
-/// persisted, the area it was for, and (when not persisted) a user-facing reason
-/// for status surfacing (<see cref="CalibrationStatusFormatter"/>).
+/// persisted, the area it was for, a user-facing reason when not persisted
+/// (<see cref="CalibrationStatusFormatter"/>), and the structured outcome
+/// category (one of the constants on <see cref="Diagnostics.OutcomeVocabulary"/>).
+///
+/// <para><see cref="OutcomeCategory"/> is nullable for backward-compat with
+/// callers that pre-date #1005; <see cref="CalibrationStatusFormatter.ForOutcome"/>
+/// routes structurally when it is set and falls back to substring-matching
+/// the <see cref="RejectReason"/> when null. New engine return sites MUST
+/// populate it.</para>
 /// </summary>
-public sealed record AutoCalibrationOutcome(bool Persisted, string AreaKey, string? RejectReason);
+public sealed record AutoCalibrationOutcome(
+    bool Persisted,
+    string AreaKey,
+    string? RejectReason,
+    string? OutcomeCategory = null);
