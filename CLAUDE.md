@@ -125,7 +125,7 @@ Project knowledge is split across four tiers. Route new content by what it is:
 
 | If you're writing… | Put it… |
 |---|---|
-| A pending unit of work (bug, feature, chore) | A GitHub Issue. Use the bug/feature template; the dropdowns auto-apply `module:*` and `area:*` labels. For behavior that was working and broke as a consequence of a known change, also add the `regression` label (the template doesn't surface it yet — apply manually). The issue body can be a brief description that refers to the relevant spec/plan in `docs/planning/<slug>/`. |
+| A pending unit of work (bug, feature, chore) | A GitHub Issue. Use the bug/feature template. The module + area dropdowns and the regression / performance checkboxes are guides — apply the matching `module:*` / `area:*` / `regression` labels manually after create (no auto-applier workflow exists yet — see #1024). The issue body can be a brief description that refers to the relevant spec/plan in `docs/planning/<slug>/`. |
 | Roadmap / prioritisation state | `docs/roadmaps/` in this repo (one file per module/area). The [**Mithril Roadmap** Project](https://github.com/orgs/moumantai-gg/projects/1) (org-level, replaced the legacy user-level board 2026-05-21) is still the queryable board; custom fields: `Status`, `Priority`, `Module`. Don't add inline checklists to roadmap docs — the doc holds *why*, the issue holds *what*. |
 | Stable reference, process, how-to, user guide | The [wiki](https://github.com/moumantai-gg/mithril/wiki). Stable content; doesn't co-evolve with code. |
 | Design rationale that co-evolves with code | `docs/` in this repo. Architecture decisions, design notebooks, cross-cutting concerns. |
