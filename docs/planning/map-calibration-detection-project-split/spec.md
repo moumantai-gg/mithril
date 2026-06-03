@@ -1,6 +1,6 @@
 # Map-calibration: extract detection into its own project
 
-**Tracked in:** _issue to be filed; placeholder_.
+**Tracked in:** [#1028](https://github.com/moumantai-gg/mithril/pull/1028) (implementation). Follow-up work tracked in [#1030](https://github.com/moumantai-gg/mithril/issues/1030).
 
 ## Context
 
@@ -158,7 +158,7 @@ A new test project `Mithril.MapCalibration.Detection.Tests` may or may not be ne
 
 ## Follow-up
 
-A separate issue will be filed to track the OpenCv migration of detection algorithms, which this spec deliberately does not address. Captured from this brainstorm, the follow-up's scope and design hooks are:
+Tracked in [#1030](https://github.com/moumantai-gg/mithril/issues/1030). The OpenCv migration of detection algorithms is deliberately not part of this spec. Captured from the brainstorm, the follow-up's scope and design hooks are:
 
 - **Scope (i) commodity ops first, (iv) profile-guided thereafter.** Domain math (`TypeAwareRansacSolver`, `JEvaluator`, `IconLikelihoodField`, `MapCalibrationSolveEngine` orchestration, `LocalRefine`) explicitly stays hand-rolled through phase (i).
 - **Op-by-op map:** direct one-liners for `ImageOps.{Downsample, Resize, Rotate180, Crop}`, `Morphology.Close`, `ConnectedComponents.Label`, `DeviationFloodRimMask`. Semantic nuance to validate per-bundle for `NccTemplateMatch` (`MatchTemplate` mask only available with `SqDiffNormed` / `CCorrNormed`, not `CCoeffNormed`; sub-pixel parabolic refine stays hand-rolled, fed the OpenCv score field), `LocalNccDeviation` (`Cv2.Integral` + retained branch logic), `BorderMask`, `IconRenderScaler`.
@@ -167,4 +167,4 @@ A separate issue will be filed to track the OpenCv migration of detection algori
 - **Per-op sequencing:** add `OpenCv{Op}` next to `{Op}`, run harness, cutover-and-delete in a follow-up PR. Two-PR pattern (add-only, then cutover-and-delete) avoids the squash-merge problem where an add-then-delete in a single squashed PR is gc-eligible after ~90 days.
 - **Open decision deferred to harness data:** whether `Cv2.MatchTemplate(SqDiffNormed, mask)` produces peaks close enough to current `CCoeffNormed`-with-mask. If not, keep `NccTemplateMatch` hand-rolled and migrate only the unmasked-template detectors.
 
-The follow-up issue should reference this spec for the architectural starting point and link back here.
+See [#1030](https://github.com/moumantai-gg/mithril/issues/1030) for the working-proposal parity thresholds and per-op PR sequencing.
