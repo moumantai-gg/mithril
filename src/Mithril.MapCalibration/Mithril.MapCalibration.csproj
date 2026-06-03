@@ -10,6 +10,10 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Mithril.MapCalibration.Tests" />
+    <!-- mithril#1041: Legolas integration test exercises the real
+         BundledBaselineLoader + UserRefinementStore + SceneAssetCache pieces
+         to verify the cascade end-to-end without bootstrapping a host. -->
+    <InternalsVisibleTo Include="Legolas.Tests" />
   </ItemGroup>
   <ItemGroup>
     <!-- Deliberately no ProjectReference to Mithril.Shared: this assembly is
