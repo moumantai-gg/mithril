@@ -34,6 +34,24 @@ internal sealed class UserRefinementStore
         Load();
     }
 
+    /// <summary>
+    /// Test-only factory. Creates a store backed by a throw-away temp file and
+    /// optionally pre-seeds it with <paramref name="seed"/> entries. The backing
+    /// file is written into <see cref="Path.GetTempPath"/> and is left for
+    /// normal OS temp-dir reaping.
+    /// </summary>
+    internal static UserRefinementStore ForTests(IDictionary<string, AreaCalibration>? seed = null)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"mithril-mapcal-fortests-{Guid.NewGuid():N}");
+        var store = new UserRefinementStore(dir);
+        if (seed is not null)
+        {
+            foreach (var kvp in seed)
+                store.Save(kvp.Key, kvp.Value);
+        }
+        return store;
+    }
+
     public IReadOnlyDictionary<string, AreaCalibration> All
     {
         get
