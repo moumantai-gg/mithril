@@ -8,8 +8,8 @@ internal static class PngFixtureLoader
     /// <summary>
     /// Load an 8-bit grayscale PNG into a <see cref="GrayImage"/>.
     /// Uses OpenCvSharp's PNG reader (the test project already depends on
-    /// OpenCvSharp via FeatureMatchingRefiner / TextureRegistrationRefiner
-    /// transitively through the Capture project's package reference).
+    /// OpenCvSharp via FeatureMatchingRefiner transitively through the
+    /// Capture project's package reference).
     /// </summary>
     public static GrayImage LoadGray(string path)
     {

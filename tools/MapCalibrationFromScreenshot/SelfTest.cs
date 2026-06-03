@@ -119,7 +119,8 @@ internal static class SelfTest
         // ---------------------------------------------------------------------
         // 6. Build a "screenshot" by padding the composited texture with a
         //    constant border (simulates UI chrome around the in-game map view).
-        //    MapRectLocator's auto-detect should find the texture inside.
+        //    The self-test feeds the known padding back in as --map-rect (the
+        //    NCC-ladder auto-detect was retired in the PR-4 cutover).
         // ---------------------------------------------------------------------
         const int padLeft = 50;
         const int padTop = 80;
@@ -154,7 +155,10 @@ internal static class SelfTest
             Area: "AreaSelfTest",
             Zoom: 1.0,
             PlayerCoord: (playerWorld.X, playerWorld.Z),
-            MapRectOverride: null,
+            // Known padding from step 6; the NCC auto-detect that used to find
+            // this synthetic rect was retired in the PR-4 cutover, so the self
+            // test now feeds the padding back as an explicit --map-rect.
+            MapRectOverride: (padLeft, padTop, textureW, textureH),
             DetectionThreshold: 0.5,
             IconRenderSizeOverride: 0,
             IconSizeOverrides: new Dictionary<string, (int, int)>(),

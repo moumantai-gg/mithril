@@ -241,11 +241,9 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
     }
 
     // LocatorBest is emitted only when BOTH the raw fit rect AND the FM metrics are
-    // present on the context. Under the in-tree NCC refiner (TextureRegistrationRefiner)
-    // Metrics is always null — NCC doesn't produce LocateMetrics — so this if-block
-    // is false on every NCC accept, leaving LocatorBest as null in the bundle. That's
-    // the correct transitional behavior: NCC bundles carry no FM metrics. PR-4 swaps
-    // in the FM refiner which DOES produce Metrics.
+    // present on the context. The production FeatureMatchingRefiner populates both
+    // on accept; legacy/test contexts may omit Metrics, in which case LocatorBest
+    // stays null in the bundle.
     private static LocatorBestJson? ToLocatorBestJson(CalibrationAttemptContext ctx)
     {
         if (ctx.LocatorRawFit is not { } rect || ctx.LocatorMetrics is not { } metrics)

@@ -10,7 +10,7 @@ Pipeline:
 
 1. **Extract icon templates** from `WindowsPlayer_Data/sharedassets0.assets` (landmark pins, with per-icon `Sprite.m_Pivot` sidecars).
 2. **Extract the area's map texture** from `StreamingAssets/aa/StandaloneWindows64/maps_assets_*.bundle`.
-3. **Locate the map rect** inside the screenshot (manual `--map-rect` recommended over the NCC auto-detect — eyeball the visible map's bbox in any image viewer, takes 30 seconds in Gimp).
+3. **Locate the map rect** inside the screenshot (`--map-rect` required — eyeball the visible map's bbox in any image viewer, takes 30 seconds in Gimp; the NCC scale-ladder auto-detect was retired with the in-game feature-matching cutover).
 4. **Detect icons** in the screenshot via single-scale NCC with sub-pixel parabolic peak refinement.
 5. **Apply pivot offset** to recover each icon's world-anchor pixel.
 6. **RANSAC assignment** over the cross-product of (detection, ref) pairs, with spatial-diversity + refit-residual tiebreaker to avoid degenerate local optima.
@@ -170,7 +170,7 @@ Add `--dry-run` to preview without writing to the baseline JSON. Open `verify.pn
 | `--detection-threshold <0..1>` | Default 0.5. Push to 0.7-0.9 when there are too many false-positive NCC matches; lower when recall is poor on a sparse area. |
 | `--icon-size <name>=<W>x<H>` | Force a specific template to exact pixel dimensions, bypassing the aspect-preserving resize. Use when a sprite renders at an aspect ratio the source asset doesn't match (verified for `landmark_npc` on Serbule — source 236×256, PG renders 17×16). |
 | `--exclude-type <Type>` | Drop a landmark Type from the RANSAC pool entirely. Useful when a template fundamentally doesn't match PG's actual sprite. |
-| `--map-rect <x,y,w,h>` | Bypass auto-detect with an exact bbox measured in Gimp. Recommended for all real runs. |
+| `--map-rect <x,y,w,h>` | Required: exact bbox measured in Gimp. The NCC scale-ladder auto-detect was retired with the in-game feature-matching cutover. |
 | `--detections-csv <path>` | Load the detection pool from a CSV (`screenshotX,screenshotY,type,iconName,score`) instead of running whole-image template NCC. Pairs with blob-typed detections (type-aware template NCC within icon blobs) — the lever that cold-solves sparse areas (Eltibule, Kur) where whole-image NCC starves correspondence. The blob-detection front-end now lives in the engine (`Mithril.MapCalibration.Detection.DeviationBlobDetector`); the throwaway `MapTextureDeviationProbe` prototype that originally emitted these CSVs was retired in #914 once its logic was lifted. |
 | `--seed <rot,scale,ox,oy,mirror>` | Bypass RANSAC; run a guided ICP from a known-orientation seed (the frame-invariant {0,π} rotation). For sparse areas with a transferable orientation prior. |
 | `--debug [--outdir <dir>]` | Dump every intermediate-stage visualization (`<area>_detections.png`, `<area>_mask.png`, `<area>_projection.png`) in one switch. `--mask-debug <path>` is the border-mask diagnostic alone (masked rim tinted red, detections green=kept / red=dropped). |
@@ -269,7 +269,6 @@ Flags specific to this phase: `--truth-cal`, `--ransac-seeds-csv`, `--trace-cons
 | [`MapTextureExtractor.cs`](MapTextureExtractor.cs) | Per-area bundle → map PNG (vertical-flipped to match in-game render orientation) |
 | [`ImageIo.cs`](ImageIo.cs) | PNG ↔ `GrayImage`, bilinear resize, drawing primitives |
 | [`NccTemplateMatch.cs`](NccTemplateMatch.cs) | Hand-rolled normalised cross-correlation (mask-aware, sub-pixel parabolic refinement, `Parallel.For` outer loop) |
-| [`MapRectLocator.cs`](MapRectLocator.cs) | NCC scale-ladder → map-in-screenshot bbox (auto-detect; `--map-rect` override recommended) |
 | [`LandmarksReader.cs`](LandmarksReader.cs) | Slim `landmarks.json` reader |
 | [`NpcsReader.cs`](NpcsReader.cs) | Slim `npcs.json` reader (positions only) |
 | [`PlayerLogScanner.cs`](PlayerLogScanner.cs) | Most-recent `[Status]` line for the area |

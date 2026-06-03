@@ -6,8 +6,8 @@ namespace Mithril.MapCalibration.Capture.Tests.Fixtures;
 /// <summary>
 /// Tiny synthetic-image helpers for the capture tests: a high-variance noise
 /// texture (so NCC is well-defined) and a "paste a texture into a larger gray
-/// canvas" blitter (the padding trick the Phase-1 <c>MapRectLocatorTests</c>
-/// uses to give <c>AutoDetect</c> a recoverable origin).
+/// canvas" blitter — the same padding trick the retired NCC-ladder tests used
+/// for recoverable-origin fixtures.
 /// </summary>
 internal static class SyntheticMap
 {

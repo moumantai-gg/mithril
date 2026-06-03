@@ -53,6 +53,10 @@ internal static class ScreenshotCalibrator
         Console.WriteLine($"[refs] {landmarks.Count} landmarks + {npcs.Count} NPCs for {inputs.Area} from {Path.GetFileName(inputs.LandmarksJsonPath)} / {Path.GetFileName(inputs.NpcsJsonPath)}");
 
         // Phase: locate the map rect inside the screenshot.
+        // The NCC-ladder `MapRectLocator.AutoDetect` fallback was deleted in the
+        // PR-4 cutover to the feature-matching production locator — the in-game
+        // refiner is now ORB+RANSAC, and the README has long recommended the
+        // `--map-rect` override anyway (sub-30s eyeball in any image viewer).
         MapRect mapRect;
         if (inputs.MapRectOverride is { } o)
         {
@@ -61,29 +65,10 @@ internal static class ScreenshotCalibrator
         }
         else
         {
-            // Coarse pass at half-resolution to keep NCC sub-second per scale, then
-            // scale the result back. Fractional downsample factors on the texture
-            // side cover the "map fills the whole screenshot" case that integer
-            // factors miss badly.
-            var screenshotDown = ImageOps.Downsample(screenshotGray, 2);
-            var textureDown = ImageOps.Downsample(textureGray, 2);
-            Console.WriteLine($"[locate] coarse NCC scale-ladder (screenshot {screenshotDown.Width}x{screenshotDown.Height}, texture {textureDown.Width}x{textureDown.Height})");
-            var rectDown = MapRectLocator.AutoDetect(screenshotDown, textureDown, minScore: 0.4);
-            if (rectDown is null)
-            {
-                return new CalibrationResult(
-                    Calibration: null,
-                    AssignedReferences: [],
-                    FailureReason: "map rect auto-detect found no match >= 0.4. Pass --map-rect <x,y,w,h> to skip auto-detect (read the bbox of the visible map area off the screenshot in any image viewer).");
-            }
-            mapRect = new MapRect(
-                OriginX: rectDown.OriginX * 2,
-                OriginY: rectDown.OriginY * 2,
-                Width: rectDown.Width * 2,
-                Height: rectDown.Height * 2,
-                TextureWidth: textureGray.Width,
-                TextureHeight: textureGray.Height);
-            Console.WriteLine($"[locate] map at screenshot ({mapRect.OriginX},{mapRect.OriginY}) size {mapRect.Width}x{mapRect.Height}");
+            return new CalibrationResult(
+                Calibration: null,
+                AssignedReferences: [],
+                FailureReason: "--map-rect <x,y,w,h> is now required (the NCC-ladder auto-detect was retired with the feature-matching cutover). Read the visible map area's bbox off the screenshot in any image viewer.");
         }
 
         // Restrict NCC search to the visible map area. Without this the search

@@ -58,7 +58,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private const double TypeFloor = 0.80;
     private static readonly BlobOptions BlobOpts = new(
         MinArea: 12, MaxIconArea: 900, MinSolidity: 0.35, MaxAspect: 2.5, MinPeak: 0.7);
-    private const double RefineMinScore = 0.5;
 
     // #988 monotonicity gate: when a stored calibration exists for the area,
     // a new fit must not regress quality by more than these tolerances.
@@ -190,8 +189,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // Per-attempt trace span (#914). Null when no listener is attached (no OTLP
         // export / no perf-recording), so this is zero-overhead when off. Child
         // capture/refine/solve spans nest under it → a Seq waterfall showing which
-        // step is slow (the brute-force refine, until #966). Per-candidate refine
-        // spans live deeper (MapRectLocator, in the Shared-free core) — deferred to #966.
+        // step is slow.
         using var actSpan = MithrilActivitySources.MapCalibration.StartActivity("calibration.attempt");
 
         var area = attempt.Area;
@@ -252,23 +250,36 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return Fail(area, "preparing map assets… (base texture unavailable — no detections possible)");
         }
 
-        // Texture-registration refine — a synchronous NCC pass over the base
-        // texture that can take a noticeable moment on a cold call. Bracket it
-        // with before/after + timing so a slow or stalled refine is visible (the
-        // attempt previously went dark after "Loaded base texture …").
+        // Locate the map within the captured frame. Under the production refiner
+        // (FeatureMatchingRefiner, PR-4 Task 17) this is ORB + RANSAC; under the
+        // legacy NCC refiner it's an NCC scale ladder. Both are synchronous and
+        // can take a noticeable moment on a cold call — bracket with before/after
+        // + timing so a slow or stalled refine is visible (the attempt previously
+        // went dark after "Loaded base texture …").
         _logger?.LogInformation(
-            "Auto-calibration {Area}: locating the map within the captured frame (texture registration)…", area);
+            "Auto-calibration {Area}: locating the map within the captured frame…", area);
         var refineStart = Stopwatch.GetTimestamp();
         MapRegionRefineResult refineResult;
+        // PR-4 Task 17: the FM refiner reads/writes a per-area ORB descriptor
+        // cache keyed on the area name. SetAreaKey isn't on IMapRegionRefiner
+        // (the interface stays narrow — no cache-key arg on every call); it's a
+        // runtime cast because there's exactly one production refiner type, and
+        // any other IMapRegionRefiner (test fakes, legacy NCC) safely skips the
+        // cache pre-warm.
+        if (_refiner is FeatureMatchingRefiner fmRefiner)
+        {
+            fmRefiner.SetAreaKey(area);
+        }
         using (var refineAct = MithrilActivitySources.MapCalibration.StartActivity("calibration.refine"))
         {
             refineResult = _refiner.Refine(gray, baseTexture);
             refineAct?.SetTag("map.located", refineResult.AcceptedRect is not null);
         }
         // Surface the raw fit rect + metrics on EITHER branch — the diagnostic bundle
-        // reads these so a future rejected-map-not-located is self-triaging. Metrics
-        // is null under the in-tree NCC refiner (TextureRegistrationRefiner doesn't
-        // produce LocateMetrics); PR-4 swaps in the FM refiner which DOES populate it.
+        // reads these so a rejected-map-not-located is self-triaging. The production
+        // FeatureMatchingRefiner populates Metrics on both accept + reject paths
+        // (PR-4 Task 17 cutover). Metrics may still be null under a non-FM refiner
+        // (test fakes / direct unit-test wiring).
         attempt.LocatorRawFit = refineResult.RawFitRect;
         attempt.LocatorMetrics = refineResult.Metrics;
         var mapRect = refineResult.AcceptedRect;
