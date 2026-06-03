@@ -233,9 +233,7 @@ public static partial class CaptureServiceCollectionExtensions
     /// threshold the manual path uses — PR-0 relocated it to GameConfig; spec §9),
     /// with the shipped <see cref="CalibrationConfidenceGate.DefaultInlierFloor"/>.
     /// </summary>
-#pragma warning disable CS0618 // Picker stopped consuming this in mithril#1046; round-tripping only until the next release cycle drops the property.
     internal static ICalibrationConfidenceGate BuildConfidenceGate(GameConfig cfg) =>
         new CalibrationConfidenceGate(cfg.CalibrationGoodResidualPx, CalibrationConfidenceGate.DefaultInlierFloor);
-#pragma warning restore CS0618
 
 }

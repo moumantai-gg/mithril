@@ -80,9 +80,7 @@ internal static class SelfCheck
             {
                 GameRoot = shellSettings.GameRoot,
                 GameProcessName = shellSettings.GameProcessName,
-#pragma warning disable CS0618 // Picker stopped consuming this in mithril#1046; round-tripping only until the next release cycle drops the property.
                 CalibrationGoodResidualPx = shellSettings.CalibrationGoodResidualPx,
-#pragma warning restore CS0618
             };
 
             var options = new ShellCompositionOptions(

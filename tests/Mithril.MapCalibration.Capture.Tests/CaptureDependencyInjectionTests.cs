@@ -1,6 +1,3 @@
-// Picker stopped consuming CalibrationGoodResidualPx in mithril#1046; this test
-// uses it to configure the confidence gate wiring via GameConfig.
-#pragma warning disable CS0618
 using System.IO;
 using System.Reflection;
 using Arda.Contracts;

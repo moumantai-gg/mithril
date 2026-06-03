@@ -64,9 +64,7 @@ public sealed class GameConfig : INotifyPropertyChanged
     /// value (bad input resets to 12.0). Mirrors the long-standing default in
     /// Mithril.MapCalibration (DefaultGoodResidualThresholdPx = 12.0).
     /// </summary>
-    [Obsolete("Removed by mithril#1046 — the picker uses ReferenceCount + ResidualPixels ordering instead of a threshold. Field stays one cycle so on-disk JSON round-trips; remove in the next release cycle.")]
     private double _calibrationGoodResidualPx = 12.0;
-    [Obsolete("Removed by mithril#1046 — the picker uses ReferenceCount + ResidualPixels ordering instead of a threshold. Field stays one cycle so on-disk JSON round-trips; remove in the next release cycle.")]
     public double CalibrationGoodResidualPx
     {
         get => _calibrationGoodResidualPx;
