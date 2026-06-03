@@ -127,7 +127,7 @@ public sealed class IconTemplateBootstrap : IHostedService, IDisposable
                 InstallRoot: _gameConfig.InstallRoot,
                 OutDir: _assetCacheDir,
                 Kind: ExtractKind.Icons,
-                AreaKey: null,
+                MapAssetName: null,
                 ExpectPgVersion: _pgVersion,
                 TpkPath: ResolveTpkPath());
             var result = await _extractor.ExtractAsync(request, ct).ConfigureAwait(false);

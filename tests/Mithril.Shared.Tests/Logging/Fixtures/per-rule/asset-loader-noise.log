@@ -18,3 +18,7 @@ UnloadTime: 5.891400 ms
 UnloadTime: 0.486400 ms
 Downloading Map [0e88b64bdd834cc41a23b8357802f254] GUID 0e88b64bdd834cc41a23b8357802f254 for area Kur Mountains runtime key 0e88b64bdd834cc41a23b8357802f254[Map_AreaKurMountains]
 Completed load of [0e88b64bdd834cc41a23b8357802f254]: ChainOperation<IList`1> - Dependencies [Assets/Art/Maps/Map_AreaKurMountains.png, Assets/Art/Maps/Map_AreaKurMountains.png]. Succeeded. 
+Downloading Map [44d50fb35fa65dd4cbb84e3af49ca0a4] GUID 44d50fb35fa65dd4cbb84e3af49ca0a4 for area Hogan's Basement runtime key 44d50fb35fa65dd4cbb84e3af49ca0a4[Map_HogansKeepBasement]
+Completed load of [44d50fb35fa65dd4cbb84e3af49ca0a4]: ChainOperation<IList`1> - Dependencies [Assets/Art/Maps/Map_HogansKeepBasement.png, Assets/Art/Maps/Map_HogansKeepBasement.png]. Succeeded.
+UnloadTime: 0.123400 ms
+>> Map_HogansKeepBasement (UnityEngine.Texture2D) UnityEngine.Texture2D

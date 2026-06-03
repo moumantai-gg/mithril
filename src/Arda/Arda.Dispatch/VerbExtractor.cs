@@ -60,6 +60,10 @@ internal static class VerbExtractor
         if (log.StartsWith("!!! Initializing area!"))
             return new ParsedVerb(Verbs.InitializingArea, ReadOnlySpan<char>.Empty);
 
+        // Asset loader: "Downloading Map [hash] GUID hash for area X runtime key hash[Map_<X>]"
+        if (log.StartsWith("Downloading Map "))
+            return new ParsedVerb(Verbs.DownloadingMap, log["Downloading Map ".Length..]);
+
         // Chat: login banner — "**** Logged In As ..."
         if (log.StartsWith(ChatLoginBannerPrefix))
             return new ParsedVerb(Verbs.ChatLoginBanner, log);

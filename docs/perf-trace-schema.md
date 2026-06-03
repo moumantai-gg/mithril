@@ -306,6 +306,16 @@ Companion `Mithril.MapCalibration.Detection` meter instruments emitted in `meter
 
 Scaffold-only — fires only after Task 16 wires the producer. A clean scaffold-only build emits zero calibration-synthesis records.
 
+The canonical map-calibration *attempt-outcome* string vocabulary lives in [`OutcomeVocabulary`](../src/Mithril.MapCalibration.Capture/Diagnostics/OutcomeVocabulary.cs) — it's the per-attempt diagnostic-bundle subdir suffix today, and is the value set any future `mithril.map_calibration.attempts` counter's `outcome` tag will draw from (fixed-vocabulary string, Safe / no scrubbing). Known values:
+
+- `accepted` — solve persisted a transform.
+- `rejected-no-area` / `rejected-pg-not-foreground` / `rejected-no-bbox` — pre-capture refusals; no bundle written.
+- `rejected-capture-failed` / `rejected-no-base-texture` / `rejected-map-not-located` / `rejected-clamp-degenerate` — capture / locate / clamp stage refusals.
+- `rejected-solve` / `rejected-solve-no-detections` / `rejected-solve-insufficient-inliers` / `rejected-solve-residual` — solver-stage refusals (free-form `RejectReason` is mapped to a fixed sub-category by `OutcomeVocabulary.RejectSolveSubcategory`).
+- `rejected-not-monotonic` — post-solve monotonicity gate refusal.
+- `map_asset_not_known` — autocal invoked before any `Downloading Map` line was observed in this session (no per-scene asset key known). Added with #1021's per-scene keying; the user-facing hint is "change zones once or restart while in this scene."
+- `error` — unexpected exception in the attempt pipeline.
+
 ### `meter_counter`
 
 Aggregated `System.Diagnostics.Metrics.Meter` counter sum, flushed once per second per (instrument, tag-set). Covers PR B's counters: Arda lines/verb-unmatched/grammar-break/verb-unhandled/domain-event-published, reference fetch-outcome, Mithril.Overlay projection latency + frame markers (#835), Mithril.MapCalibration synthesis-J histograms + disagree counter (synthesis-rerank plan Task 10), and any future counters added via the `Mithril.*` Meter prefix.

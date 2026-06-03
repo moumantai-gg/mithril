@@ -48,33 +48,33 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
         _logger = logger;
     }
 
-    public GrayImage? TryGetBaseTexture(string areaKey)
+    public GrayImage? TryGetBaseTexture(string mapAssetKey)
     {
-        if (string.IsNullOrWhiteSpace(areaKey))
+        if (string.IsNullOrWhiteSpace(mapAssetKey))
             return null;
         if (string.IsNullOrWhiteSpace(_cacheDir) || !Directory.Exists(_cacheDir))
         {
             _logger?.LogInformation(
-                "Base-texture cache dir {CacheDir} absent — no base texture for {Area} (safe-degrade).",
-                _cacheDir, areaKey);
+                "Base-texture cache dir {CacheDir} absent — no base texture for {MapAsset} (safe-degrade).",
+                _cacheDir, mapAssetKey);
             return null;
         }
 
-        var manifestPath = Path.Combine(_cacheDir, $"map-texture-{areaKey}.json");
-        var blobPath = Path.Combine(_cacheDir, $"map-texture-{areaKey}.bin");
+        var manifestPath = Path.Combine(_cacheDir, $"map-texture-{mapAssetKey}.json");
+        var blobPath = Path.Combine(_cacheDir, $"map-texture-{mapAssetKey}.bin");
 
-        var manifest = ReadManifest(manifestPath, areaKey);
+        var manifest = ReadManifest(manifestPath, mapAssetKey);
         if (manifest is null) return null;
 
-        var pixels = ReadDecompressedPixels(blobPath, areaKey);
+        var pixels = ReadDecompressedPixels(blobPath, mapAssetKey);
         if (pixels is null) return null;
 
         var actualHash = Convert.ToHexStringLower(SHA256.HashData(pixels));
         if (!string.Equals(actualHash, manifest.PixelSha256, StringComparison.OrdinalIgnoreCase))
         {
             _logger?.LogWarning(
-                "Base-texture pixel hash mismatch for {Area} (manifest {Expected}, blob {Actual}) — base texture rejected (safe-degrade).",
-                areaKey, manifest.PixelSha256, actualHash);
+                "Base-texture pixel hash mismatch for {MapAsset} (manifest {Expected}, blob {Actual}) — base texture rejected (safe-degrade).",
+                mapAssetKey, manifest.PixelSha256, actualHash);
             return null;
         }
 
@@ -82,8 +82,8 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
         if (count <= 0 || pixels.Length != count)
         {
             _logger?.LogWarning(
-                "Base-texture blob length {Len} != width*height={Expected} for {Area} — base texture rejected (safe-degrade).",
-                pixels.Length, count, areaKey);
+                "Base-texture blob length {Len} != width*height={Expected} for {MapAsset} — base texture rejected (safe-degrade).",
+                pixels.Length, count, mapAssetKey);
             return null;
         }
 
@@ -91,26 +91,26 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
         // the within-cache integrity check above + lean on the confidence gate.
         if (_hashGate is not null)
         {
-            var verdict = _hashGate.Check(_pgVersion, areaKey, manifest.PixelSha256);
+            var verdict = _hashGate.Check(_pgVersion, mapAssetKey, manifest.PixelSha256);
             if (!verdict.Accepted)
             {
                 _logger?.LogWarning(
-                    "Base-texture for {Area} rejected by canonical-hash gate: {Reason} — base texture rejected (safe-degrade).",
-                    areaKey, verdict.Reason);
+                    "Base-texture for {MapAsset} rejected by canonical-hash gate: {Reason} — base texture rejected (safe-degrade).",
+                    mapAssetKey, verdict.Reason);
                 return null;
             }
         }
 
-        _logger?.LogInformation("Loaded base texture for {Area} ({W}x{H}) from {CacheDir} (pixelSha256 verified).",
-            areaKey, manifest.Width, manifest.Height, _cacheDir);
+        _logger?.LogInformation("Loaded base texture for {MapAsset} ({W}x{H}) from {CacheDir} (pixelSha256 verified).",
+            mapAssetKey, manifest.Width, manifest.Height, _cacheDir);
         return new GrayImage(manifest.Width, manifest.Height, pixels);
     }
 
-    private MapTextureManifest? ReadManifest(string manifestPath, string areaKey)
+    private MapTextureManifest? ReadManifest(string manifestPath, string mapAssetKey)
     {
         if (!File.Exists(manifestPath))
         {
-            _logger?.LogInformation("Base-texture manifest {Path} not found — no base texture for {Area} (safe-degrade).", manifestPath, areaKey);
+            _logger?.LogInformation("Base-texture manifest {Path} not found — no base texture for {MapAsset} (safe-degrade).", manifestPath, mapAssetKey);
             return null;
         }
         try
@@ -119,28 +119,28 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
             var manifest = JsonSerializer.Deserialize(stream, DetectionJsonContext.Default.MapTextureManifest);
             if (manifest is null || string.IsNullOrEmpty(manifest.PixelSha256) || manifest.Width <= 0 || manifest.Height <= 0)
             {
-                _logger?.LogWarning("Base-texture manifest {Path} empty/malformed — no base texture for {Area} (safe-degrade).", manifestPath, areaKey);
+                _logger?.LogWarning("Base-texture manifest {Path} empty/malformed — no base texture for {MapAsset} (safe-degrade).", manifestPath, mapAssetKey);
                 return null;
             }
             return manifest;
         }
         catch (JsonException ex)
         {
-            _logger?.LogWarning(ex, "Base-texture manifest {Path} failed to parse — no base texture for {Area} (safe-degrade).", manifestPath, areaKey);
+            _logger?.LogWarning(ex, "Base-texture manifest {Path} failed to parse — no base texture for {MapAsset} (safe-degrade).", manifestPath, mapAssetKey);
             return null;
         }
         catch (IOException ex)
         {
-            _logger?.LogWarning(ex, "Base-texture manifest {Path} failed to read — no base texture for {Area} (safe-degrade).", manifestPath, areaKey);
+            _logger?.LogWarning(ex, "Base-texture manifest {Path} failed to read — no base texture for {MapAsset} (safe-degrade).", manifestPath, mapAssetKey);
             return null;
         }
     }
 
-    private byte[]? ReadDecompressedPixels(string blobPath, string areaKey)
+    private byte[]? ReadDecompressedPixels(string blobPath, string mapAssetKey)
     {
         if (!File.Exists(blobPath))
         {
-            _logger?.LogInformation("Base-texture blob {Path} not found — no base texture for {Area} (safe-degrade).", blobPath, areaKey);
+            _logger?.LogInformation("Base-texture blob {Path} not found — no base texture for {MapAsset} (safe-degrade).", blobPath, mapAssetKey);
             return null;
         }
         try
@@ -153,12 +153,12 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
         }
         catch (InvalidDataException ex)
         {
-            _logger?.LogWarning(ex, "Base-texture blob {Path} failed to decompress — no base texture for {Area} (safe-degrade).", blobPath, areaKey);
+            _logger?.LogWarning(ex, "Base-texture blob {Path} failed to decompress — no base texture for {MapAsset} (safe-degrade).", blobPath, mapAssetKey);
             return null;
         }
         catch (IOException ex)
         {
-            _logger?.LogWarning(ex, "Base-texture blob {Path} failed to read — no base texture for {Area} (safe-degrade).", blobPath, areaKey);
+            _logger?.LogWarning(ex, "Base-texture blob {Path} failed to read — no base texture for {MapAsset} (safe-degrade).", blobPath, mapAssetKey);
             return null;
         }
     }

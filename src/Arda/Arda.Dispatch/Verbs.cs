@@ -12,6 +12,9 @@ public static class Verbs
     /// <summary>Synthetic verb for "!!! Initializing area! (id): AreaKey" system lines.</summary>
     public const string InitializingArea = "InitializingArea";
 
+    /// <summary>Synthetic verb for the unbracketed "Downloading Map [GUID] ... runtime key GUID[Map_&lt;X&gt;]" asset-loader line.</summary>
+    public const string DownloadingMap = "DownloadingMap";
+
     // Standard LocalPlayer: Process* verbs (literal text from log)
     public const string ProcessAddItem = "ProcessAddItem";
     public const string ProcessDeleteItem = "ProcessDeleteItem";

@@ -22,6 +22,13 @@ public static class OutcomeVocabulary
     public const string RejectedSolveInsufficientInliers = "rejected-solve-insufficient-inliers";
     public const string RejectedSolveResidual = "rejected-solve-residual";
     public const string RejectedNotMonotonic = "rejected-not-monotonic";
+
+    /// <summary>
+    /// Refusal: autocal was invoked before any Downloading Map line was observed
+    /// in this session, so the per-scene Map_&lt;X&gt; asset name is unknown. The user
+    /// hint surfaces in the toast + Palantir debug surface.
+    /// </summary>
+    public const string MapAssetNotYetKnown = "map_asset_not_known";
     public const string Error = "error";
 
     private static readonly FrozenSet<string> NoBundleOutcomes = FrozenSet.Create(

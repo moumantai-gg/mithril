@@ -46,8 +46,9 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
         _logger = logger;
     }
 
-    public IReadOnlyList<LandmarkReference> ForArea(string areaKey)
+    public IReadOnlyList<LandmarkReference> ForArea(MapSceneRef sceneRef)
     {
+        var areaKey = sceneRef.ParentAreaKey;
         if (string.IsNullOrWhiteSpace(areaKey)) return Array.Empty<LandmarkReference>();
 
         var result = new List<LandmarkReference>();
@@ -59,6 +60,10 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
         // never a calibration reference and is not a shape regression.
         var malformedCoords = 0;
 
+        // Landmarks: area-only filter (no sub-zone field on landmarks.json — partial
+        // coverage for aggregator scenes is documented in spec mithril#1021;
+        // the RANSAC solver tolerates the cross-scene noise via type-constrained
+        // pairing + the inlier ratio gate).
         if (_refData.Landmarks.TryGetValue(areaKey, out var landmarks))
         {
             foreach (var lm in landmarks)
@@ -88,10 +93,15 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
             }
         }
 
+        // NPCs: (AreaName, AreaFriendlyName) pair when SceneFriendlyName is set
+        // (aggregator scene narrowed to one sub-zone — mithril#1021), else
+        // area-only (back-compat for directly-registered areas).
         foreach (var npc in _refData.NpcsByInternalName.Values)
         {
             if (npc is null) continue;
             if (!string.Equals(npc.AreaName, areaKey, StringComparison.Ordinal)) continue;
+            if (sceneRef.SceneFriendlyName is { } sub
+                && !string.Equals(npc.AreaFriendlyName, sub, StringComparison.Ordinal)) continue;
             if (string.IsNullOrWhiteSpace(npc.Pos)) continue; // positionless entry — skip, not a shape change
             if (TryParseWorld(npc.Pos, out var world))
             {

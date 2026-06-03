@@ -34,6 +34,21 @@ internal sealed class FakeAreaReferenceData : IReferenceDataService
         return this;
     }
 
+    /// <summary>Seed an NPC with both <see cref="Npc.AreaName"/> (parent aggregator key) and
+    /// <see cref="Npc.AreaFriendlyName"/> (sub-zone label) — used by the per-scene-keying
+    /// tests (mithril#1021) to scope NPCs to the right sub-zone of an aggregator scene.</summary>
+    public FakeAreaReferenceData WithNpc(string areaKey, string areaFriendlyName, string name, string pos)
+    {
+        _npcsByInternalName["NPC_" + name] = new Npc
+        {
+            Name = name,
+            AreaName = areaKey,
+            AreaFriendlyName = areaFriendlyName,
+            Pos = pos,
+        };
+        return this;
+    }
+
     /// <summary>Seed a positionless table entry (no <see cref="Npc.Pos"/>) — e.g. the
     /// "Work Orders" sign / "Sacrificial Bowl" pedestal that live in npcs.json without
     /// a map position. These must be skipped silently, not counted as a coord-shape change.</summary>

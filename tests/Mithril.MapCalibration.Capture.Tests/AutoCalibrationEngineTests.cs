@@ -20,6 +20,11 @@ namespace Mithril.MapCalibration.Capture.Tests;
 public sealed class AutoCalibrationEngineTests
 {
     private const string Area = EngineHarness.DefaultArea;
+    // #1021: the engine persists + looks up calibration under the per-scene
+    // asset key (Map_<X>), not the bare area key. Tests that read/write the
+    // calibration store use this constant; tests that read CurrentArea, error
+    // strings, or AreaKey on the outcome still use Area.
+    private const string AssetKey = EngineHarness.DefaultAssetKey;
 
     [Fact]
     public async Task Persists_with_AutoCapture_source_on_accept()
@@ -31,22 +36,22 @@ public sealed class AutoCalibrationEngineTests
 
         outcome.Persisted.Should().BeTrue();
         outcome.AreaKey.Should().Be(Area);
-        svc.Saved.Should().ContainKey(Area);
-        svc.Saved[Area].Source.Should().Be(CalibrationSource.AutoCapture);
+        svc.Saved.Should().ContainKey(AssetKey);
+        svc.Saved[AssetKey].Source.Should().Be(CalibrationSource.AutoCapture);
     }
 
     [Fact]
     public async Task Keeps_prior_calibration_when_the_gate_rejects()
     {
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, SomeBaseline());
+        svc.Seed(AssetKey, SomeBaseline());
         var h = new EngineHarness { Solve = Rejected("residual 25.00 px exceeds threshold 12.00 px"), Service = svc };
 
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
         outcome.Persisted.Should().BeFalse();
         outcome.RejectReason.Should().Contain("residual");
-        svc.Saved.Should().NotContainKey(Area); // prior untouched (no Save call)
+        svc.Saved.Should().NotContainKey(AssetKey); // prior untouched (no Save call)
     }
 
     [Fact]
@@ -161,7 +166,7 @@ public sealed class AutoCalibrationEngineTests
         // Build an engine with a throwing extractor directly to prove fail-soft.
         var solver = new SpySolver(new CalibrationSolveResult(new AreaCalibration(1, 0, 0, 0, 6, 0.5), 6, null));
         var engine = new AutoCalibrationEngine(
-            new FakeAreaState(Area),
+            new FakeMapState { CurrentArea = Area, CurrentMapAsset = "Map_" + Area },
             new FakeWindowLocator(new GameWindow(1, new CaptureRect(0, 0, 1920, 1080))),
             new FakeRegionProvider(new CaptureRect(0, 0, 64, 64)),
             new SpyCapture(new GrayImage(64, 64, new byte[64 * 64])),
@@ -214,7 +219,7 @@ public sealed class AutoCalibrationEngineTests
         var captureSpy = new SpyCapture(capture);
         var solver = new SpySolver(h.Solve);
         var engine = new AutoCalibrationEngine(
-            new FakeAreaState(Area),
+            new FakeMapState { CurrentArea = Area, CurrentMapAsset = "Map_" + Area },
             new FakeWindowLocator(h.GameWindow),
             new FakeRegionProvider(h.Bbox),
             captureSpy,
@@ -314,7 +319,7 @@ public sealed class AutoCalibrationEngineTests
         var captureSpy = new SpyCapture(null);
         var solver = new SpySolver(Accepted(0.5, 4));
         var engine = new AutoCalibrationEngine(
-            new FakeAreaState(Area),
+            new FakeMapState { CurrentArea = Area, CurrentMapAsset = "Map_" + Area },
             new FakeWindowLocator(h.GameWindow),
             new FakeRegionProvider(h.Bbox),
             captureSpy,
@@ -455,14 +460,14 @@ public sealed class AutoCalibrationEngineTests
     public async Task Replaces_existing_when_new_fit_is_better()
     {
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, MakeCal(residual: 3.0, refs: 6));
+        svc.Seed(AssetKey, MakeCal(residual: 3.0, refs: 6));
         var h = new EngineHarness { Solve = Accepted(residual: 0.65, inliers: 8), Service = svc };
 
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
         outcome.Persisted.Should().BeTrue();
-        svc.Saved.Should().ContainKey(Area);
-        svc.Saved[Area].ResidualPixels.Should().Be(0.65);
+        svc.Saved.Should().ContainKey(AssetKey);
+        svc.Saved[AssetKey].ResidualPixels.Should().Be(0.65);
     }
 
     [Fact]
@@ -472,7 +477,7 @@ public sealed class AutoCalibrationEngineTests
         // Both sides must be at the same LocatorScale regime (#1005) for the
         // monotonicity gate to fire — same in-game zoom is the original #988 case.
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, MakeCal(residual: 0.79, refs: 10) with { LocatorScale = 0.408 });
+        svc.Seed(AssetKey, MakeCal(residual: 0.79, refs: 10) with { LocatorScale = 0.408 });
         var h = new EngineHarness
         {
             Solve = Accepted(residual: 4.03, inliers: 4),
@@ -486,7 +491,7 @@ public sealed class AutoCalibrationEngineTests
 
         outcome.Persisted.Should().BeFalse();
         outcome.RejectReason.Should().Contain("residual");
-        svc.Saved.Should().NotContainKey(Area); // existing untouched
+        svc.Saved.Should().NotContainKey(AssetKey); // existing untouched
     }
 
     [Fact]
@@ -495,7 +500,7 @@ public sealed class AutoCalibrationEngineTests
         // Same in-game zoom (matching LocatorScale) so the #1005 regime predicate
         // does NOT skip the gate; the inlier-delta arm is then free to fire.
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, MakeCal(residual: 1.0, refs: 10) with { LocatorScale = 0.408 });
+        svc.Seed(AssetKey, MakeCal(residual: 1.0, refs: 10) with { LocatorScale = 0.408 });
         var h = new EngineHarness
         {
             Solve = Accepted(residual: 1.0, inliers: 4),
@@ -509,7 +514,7 @@ public sealed class AutoCalibrationEngineTests
 
         outcome.Persisted.Should().BeFalse();
         outcome.RejectReason.Should().Contain("inlier");
-        svc.Saved.Should().NotContainKey(Area);
+        svc.Saved.Should().NotContainKey(AssetKey);
     }
 
     // ── #988 monotonicity gate (helper-level) ────────────────────────────────
@@ -571,7 +576,7 @@ public sealed class AutoCalibrationEngineTests
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
         outcome.Persisted.Should().BeTrue();
-        svc.Saved[Area].LocatorScale.Should().Be(0.408);
+        svc.Saved[AssetKey].LocatorScale.Should().Be(0.408);
     }
 
     [Fact]
@@ -579,7 +584,7 @@ public sealed class AutoCalibrationEngineTests
     {
         var svc = new FakeCalibrationService();
         // Seed an EXISTING calibration at scale 0.408 with high quality.
-        svc.Seed(Area, SomeBaseline() with { LocatorScale = 0.408, ResidualPixels = 0.5, ReferenceCount = 10 });
+        svc.Seed(AssetKey, SomeBaseline() with { LocatorScale = 0.408, ResidualPixels = 0.5, ReferenceCount = 10 });
 
         // Capture at scale 0.800 (different regime) with a WORSE-looking fit
         // (would trip both monotonicity arms: residual much higher, inliers much lower).
@@ -597,7 +602,7 @@ public sealed class AutoCalibrationEngineTests
 
         outcome.Persisted.Should().BeTrue();
         outcome.RejectReason.Should().BeNull();
-        svc.Saved[Area].LocatorScale.Should().Be(0.800);
+        svc.Saved[AssetKey].LocatorScale.Should().Be(0.800);
     }
 
     [Fact]
@@ -607,7 +612,7 @@ public sealed class AutoCalibrationEngineTests
         // attempt seconds later. LocatorScale values match within tolerance,
         // gate fires, prior calibration kept.
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, SomeBaseline() with { LocatorScale = 0.408, ResidualPixels = 0.79, ReferenceCount = 10 });
+        svc.Seed(AssetKey, SomeBaseline() with { LocatorScale = 0.408, ResidualPixels = 0.79, ReferenceCount = 10 });
 
         var h = new EngineHarness
         {
@@ -627,7 +632,7 @@ public sealed class AutoCalibrationEngineTests
         // arm first (checked before inlier-delta), but either arm is the same
         // monotonicity-reject outcome from a router POV.
         outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.RejectedNotMonotonic);
-        svc.Saved.Should().NotContainKey(Area); // prior preserved (no Save call)
+        svc.Saved.Should().NotContainKey(AssetKey); // prior preserved (no Save call)
     }
 
     [Fact]
@@ -637,7 +642,7 @@ public sealed class AutoCalibrationEngineTests
         // candidate has a value. IsSameScaleRegime(null, _) → false → gate skipped.
         // First re-capture stamps a value and subsequent comparisons can gate normally.
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, SomeBaseline() with { LocatorScale = null, ResidualPixels = 0.5, ReferenceCount = 10 });
+        svc.Seed(AssetKey, SomeBaseline() with { LocatorScale = null, ResidualPixels = 0.5, ReferenceCount = 10 });
 
         var h = new EngineHarness
         {
@@ -651,7 +656,7 @@ public sealed class AutoCalibrationEngineTests
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
         outcome.Persisted.Should().BeTrue();
-        svc.Saved[Area].LocatorScale.Should().Be(0.408); // legacy null replaced with stamped value
+        svc.Saved[AssetKey].LocatorScale.Should().Be(0.408); // legacy null replaced with stamped value
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
@@ -684,5 +689,74 @@ public sealed class AutoCalibrationEngineTests
     private static AreaCalibration MakeCal(double residual, int refs) => new(
         Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
         ReferenceCount: refs, ResidualPixels: residual);
+
+    // ── mithril#1021 strict gate + per-scene keying ─────────────────────────
+
+    /// <summary>
+    /// #1021 D3 (ratified): when <see cref="IMapState.CurrentMapAsset"/> is null
+    /// — autocal fired before any <c>Downloading Map</c> line was observed in
+    /// this session — the engine refuses outright. No fallback to a synthesised
+    /// <c>Map_&lt;area&gt;</c> guess; no texture/solver invocation. The outcome
+    /// surfaces <see cref="OutcomeVocabulary.MapAssetNotYetKnown"/> on BOTH
+    /// <see cref="AutoCalibrationOutcome.RejectReason"/> (legacy substring router)
+    /// AND <see cref="AutoCalibrationOutcome.OutcomeCategory"/> (structural router,
+    /// Task 14), so the status formatter routes the zone-change hint
+    /// deterministically.
+    /// </summary>
+    [Fact]
+    public async Task TryCalibrate_NoCurrentMapAsset_ReturnsRejectWithMapAssetNotYetKnown()
+    {
+        var h = new EngineHarness
+        {
+            CurrentArea = "AreaCave1",     // areas.json key is set…
+            CurrentMapAsset = null,        // …but no Downloading Map line yet
+            CurrentSceneFriendlyName = null,
+        };
+
+        var engine = h.Engine();
+        var outcome = await engine.TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeFalse();
+        outcome.RejectReason.Should().Be(OutcomeVocabulary.MapAssetNotYetKnown);
+        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.MapAssetNotYetKnown);
+        outcome.AreaKey.Should().Be("AreaCave1"); // context for logs, not a lookup key
+
+        // No side effects: the gate fires before texture resolution or solving.
+        h.BaseTextureProvider.Calls.Should().BeEmpty(
+            "the strict gate refuses outright — no Map_<X> fallback texture lookup");
+        h.Solver.SolveCalls.Should().Be(0,
+            "no detector input → no solve call");
+        h.Capture.Called.Should().BeFalse(
+            "the strict gate fires BEFORE any capture or downstream collaborator");
+    }
+
+    /// <summary>
+    /// #1021: when <see cref="IMapState.CurrentMapAsset"/> + <see cref="IMapState.CurrentSceneFriendlyName"/>
+    /// are set, the literal asset key flows verbatim to <see cref="IBaseTextureProvider.TryGetBaseTexture"/>
+    /// (no Map_-prefix synthesis) and the composite <see cref="MapSceneRef"/>
+    /// (ParentArea + sub-zone) flows to <see cref="IAreaReferenceProvider.ForArea"/>.
+    /// This is the aggregator-sub-zone case the spec calls out
+    /// (<c>AreaCave1</c> + <c>"Hogan's Basement"</c> → <c>Map_HogansKeepBasement</c>).
+    /// </summary>
+    [Fact]
+    public async Task TryCalibrate_CurrentMapAssetSet_PassesLiteralAssetKeyAndSceneRefDownstream()
+    {
+        var h = new EngineHarness
+        {
+            CurrentArea = "AreaCave1",
+            CurrentMapAsset = "Map_HogansKeepBasement",
+            CurrentSceneFriendlyName = "Hogan's Basement",
+            Solve = Accepted(residual: 0.65, inliers: 5),
+        };
+
+        var engine = h.Engine();
+        await engine.TryCalibrateCurrentAreaAsync(default);
+
+        h.BaseTextureProvider.Calls.Should().ContainSingle()
+            .Which.Should().Be("Map_HogansKeepBasement",
+                "the engine MUST pass the literal Unity Texture2D name from IMapState — no Map_<area> synthesis");
+        h.AreaRefs.LastSceneRef.Should().Be(new MapSceneRef("AreaCave1", "Hogan's Basement"),
+            "ParentAreaKey sources from IMapState.CurrentArea; SceneFriendlyName from IMapState.CurrentSceneFriendlyName");
+    }
 
 }

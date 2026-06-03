@@ -92,4 +92,20 @@ public sealed class CalibrationStatusFormatterTests
 
         CalibrationStatusFormatter.ForOutcome(outcome).Should().BeNull();
     }
+
+    // ── #1021: per-scene calibration keying — pre-Downloading-Map refusal ──
+
+    [Fact]
+    public void Format_MapAssetNotYetKnown_ReturnsZoneChangeHint()
+    {
+        var outcome = new AutoCalibrationOutcome(
+            Persisted: false,
+            AreaKey: "AreaCave1",
+            RejectReason: OutcomeVocabulary.MapAssetNotYetKnown,
+            OutcomeCategory: OutcomeVocabulary.MapAssetNotYetKnown);
+
+        CalibrationStatusFormatter.ForOutcome(outcome)
+            .Should().Contain("Map asset not yet known")
+            .And.Contain("change zones once or restart while in this scene");
+    }
 }

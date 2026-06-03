@@ -28,7 +28,7 @@ public sealed class AreaReferenceProviderTests
                 new Landmark { Name = "Teleport Circle", Loc = "x:1 y:0 z:2", Type = "TeleportationPlatform" })
             .WithNpc("AreaSerbule", "Marna", pos: "x:30 y:0 z:40");
 
-        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea("AreaSerbule");
+        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null));
 
         // mithril#974: Type carries the raw PG vocabulary (the same the detector
         // keys IconTemplate.LandmarkType by); the landmark_* sprite strings are
@@ -48,7 +48,7 @@ public sealed class AreaReferenceProviderTests
                 new Landmark { Name = "NoLoc", Loc = null, Type = "Portal" },
                 new Landmark { Name = "Garbage", Loc = "not a position", Type = "Portal" });
 
-        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea("AreaSerbule");
+        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null));
 
         refs.Should().ContainSingle(r => r.Type == "Portal");
         refs.Should().OnlyContain(r => r.Name == "Good");
@@ -67,7 +67,7 @@ public sealed class AreaReferenceProviderTests
             .WithPositionlessNpc("AreaEltibule", "Sacrificial Bowl");
 
         var logger = new ListLogger();
-        var refs = new ReferenceDataAreaReferenceProvider(refData, logger).ForArea("AreaEltibule");
+        var refs = new ReferenceDataAreaReferenceProvider(refData, logger).ForArea(new MapSceneRef("AreaEltibule", null));
 
         refs.Should().ContainSingle(r => r.Type == "Npc" && r.Name == "Braigon");
         logger.Warnings.Should().NotContain(m => m.Contains("coord", StringComparison.OrdinalIgnoreCase));
@@ -84,7 +84,7 @@ public sealed class AreaReferenceProviderTests
                 new Landmark { Name = "Garbage", Loc = "not a position", Type = "Portal" });
 
         var logger = new ListLogger();
-        new ReferenceDataAreaReferenceProvider(refData, logger).ForArea("AreaSerbule");
+        new ReferenceDataAreaReferenceProvider(refData, logger).ForArea(new MapSceneRef("AreaSerbule", null));
 
         logger.Warnings.Should().ContainSingle(m =>
             m.Contains("malformed coords") && m.Contains("1"));
@@ -100,12 +100,12 @@ public sealed class AreaReferenceProviderTests
             .WithLandmarks("AreaSerbule",
                 new Landmark { Name = "Mystery", Loc = "x:1 y:0 z:1", Type = "SomeFutureLandmark" });
 
-        new ReferenceDataAreaReferenceProvider(refData).ForArea("AreaSerbule").Should().BeEmpty();
+        new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null)).Should().BeEmpty();
     }
 
     [Fact]
     public void Unknown_area_yields_empty()
-        => new ReferenceDataAreaReferenceProvider(new FakeAreaReferenceData()).ForArea("AreaNope").Should().BeEmpty();
+        => new ReferenceDataAreaReferenceProvider(new FakeAreaReferenceData()).ForArea(new MapSceneRef("AreaNope", null)).Should().BeEmpty();
 
     [Fact]
     public void Emitted_types_are_a_subset_of_the_canonical_vocabulary()
@@ -121,10 +121,57 @@ public sealed class AreaReferenceProviderTests
                 new Landmark { Name = "T", Loc = "x:3 y:0 z:3", Type = "TeleportationPlatform" })
             .WithNpc("AreaSerbule", "Marna", pos: "x:4 y:0 z:4");
 
-        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea("AreaSerbule");
+        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null));
 
         refs.Select(r => r.Type).Distinct().Should().OnlyContain(t => CanonicalLandmarkTypes.All.Contains(t));
         refs.Should().NotBeEmpty();
+    }
+
+    // ── mithril#1021 per-scene keying: composite (ParentAreaKey, SceneFriendlyName?) ──
+
+    [Fact]
+    public void ForArea_AggregatorSceneFriendlyName_NarrowsNpcsToThatSubzone()
+    {
+        // AreaCave1 is an aggregator under which multiple sub-zones live; the
+        // SceneFriendlyName narrows NPCs to the matching AreaFriendlyName only.
+        var refData = new FakeAreaReferenceData()
+            .WithNpc("AreaCave1", "Hogan's Basement", "Gorvessa", pos: "x:100 y:0 z:200")
+            .WithNpc("AreaCave1", "Goblin Dungeon", "Goblin", pos: "x:300 y:0 z:400");
+
+        var refs = new ReferenceDataAreaReferenceProvider(refData)
+            .ForArea(new MapSceneRef("AreaCave1", "Hogan's Basement"));
+
+        refs.Should().ContainSingle(r => r.Name == "Gorvessa");
+        refs.Should().NotContain(r => r.Name == "Goblin");
+    }
+
+    [Fact]
+    public void ForArea_NullSceneFriendlyName_CollapsesToAreaOnlyFilter()
+    {
+        // Back-compat: a directly-registered area passes SceneFriendlyName = null,
+        // so the filter collapses to AreaName-only (pre-#1021 behaviour).
+        var refData = new FakeAreaReferenceData()
+            .WithNpc("AreaSerbule", "Serbule", "A", pos: "x:1 y:0 z:1")
+            .WithNpc("AreaSerbule", "Serbule", "B", pos: "x:2 y:0 z:2");
+
+        var refs = new ReferenceDataAreaReferenceProvider(refData)
+            .ForArea(new MapSceneRef("AreaSerbule", SceneFriendlyName: null));
+
+        refs.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void ForArea_AggregatorWithoutMatchingFriendlyName_ReturnsEmpty()
+    {
+        // Aggregator scene whose SceneFriendlyName matches no NPC's
+        // AreaFriendlyName → empty NPC set (the gate then rejects on no inliers).
+        var refData = new FakeAreaReferenceData()
+            .WithNpc("AreaCave1", "Goblin Dungeon", "X", pos: "x:1 y:0 z:1");
+
+        var refs = new ReferenceDataAreaReferenceProvider(refData)
+            .ForArea(new MapSceneRef("AreaCave1", "Hogan's Basement"));
+
+        refs.Should().BeEmpty();
     }
 
     /// <summary>Minimal <see cref="ILogger"/> that collects Warning messages for assertions.</summary>

@@ -127,12 +127,20 @@ public static class PlayerWorldExtensions
         });
         builder.Services.AddSingleton<IMapPinState>(sp => sp.GetRequiredService<MapPins>());
 
+        // --- Map asset loader handler (Downloading Map line) ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            return new MapAssetLoader(bus);
+        });
+
         // --- Map scope composite (flat IMapState over all map-scoped handlers) ---
         builder.Services.AddSingleton<IMapState>(sp => new MapScope(
             sp.GetRequiredService<Map>(),
             sp.GetRequiredService<Position>(),
             sp.GetRequiredService<Weather>(),
-            sp.GetRequiredService<MapPins>()));
+            sp.GetRequiredService<MapPins>(),
+            sp.GetRequiredService<MapAssetLoader>()));
 
         // --- Effects handler ---
         builder.Services.AddSingleton(sp =>
@@ -184,6 +192,9 @@ public static class PlayerWorldExtensions
             var map = sp.GetRequiredService<Map>();
             RegisterHandler(registry, Verbs.LoadingLevel, map);
             RegisterHandler(registry, Verbs.InitializingArea, map);
+
+            var mapAsset = sp.GetRequiredService<MapAssetLoader>();
+            RegisterHandler(registry, Verbs.DownloadingMap, mapAsset);
 
             var inventory = sp.GetRequiredService<Inventory>();
             var player = sp.GetRequiredService<Internal.Player>();

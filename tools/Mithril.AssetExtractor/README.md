@@ -38,15 +38,22 @@ doesn't run.
 ## CLI
 
 ```
-mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <AreaKey>) [--expect-pg-version <v>]
+mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --asset <Map_<AssetName>>) [--expect-pg-version <v>]
 ```
 
 - `--icons` — extract the landmark icon templates from `sharedassets0.assets`
   (needs `classdata.tpk` beside the exe or at the Tools default) and write
   `icon-templates.{json,bin}` into `<cacheDir>`.
-- `--area <AreaKey>` — extract that area's `Map_<AreaKey>` base texture from its
-  Addressables bundle and write the gray-only `map-texture-<AreaKey>.{json,bin}`
-  into `<cacheDir>`.
+- `--asset <Map_<AssetName>>` — extract the literal Unity Texture2D named
+  `Map_<AssetName>` (e.g. `Map_AreaSerbule`, `Map_HogansKeepBasement` — the
+  verbatim name from the Player.log "Downloading Map" line — see
+  [mithril#1021](https://github.com/moumantai-gg/mithril/issues/1021))
+  from its Addressables bundle and write the gray-only
+  `map-texture-Map_<AssetName>.{json,bin}` into `<cacheDir>`. Renamed from
+  `--area` in mithril#1021; the prior flag's value was a bare areas.json key
+  (e.g. `AreaSerbule`), which couldn't address aggregator sub-zones whose
+  scenes don't appear in `areas.json` (the ~51 dungeons fronted by an
+  `AreaCave*` parent).
 
 ## Known limitation (v1)
 
@@ -58,8 +65,8 @@ without it). That file is **neither bundled in the csproj nor staged by
 → the app fail-softs (icon templates stay empty → no detections → the confidence
 gate rejects → safe-degrade, never a wrong calibration).
 
-`--area` texture extraction is **unaffected** — area Addressables bundles ship
-inline type trees, so no `classdata.tpk` is required.
+`--asset` texture extraction is **unaffected** — per-scene Addressables bundles
+ship inline type trees, so no `classdata.tpk` is required.
 
 This is an accepted v1 limitation: icon provisioning (staging `classdata.tpk`
 beside the published sidecar, or bundling it) rides with the
@@ -74,8 +81,12 @@ sits beside the exe (or at the Tools default path).
 # icons
 mithril-asset-extract --install "C:\...\Project Gorgon" --out C:\tmp\cache --icons
 
-# one area
-mithril-asset-extract --install "C:\...\Project Gorgon" --out C:\tmp\cache --area AreaSerbule
+# one scene's map texture (direct-area)
+mithril-asset-extract --install "C:\...\Project Gorgon" --out C:\tmp\cache --asset Map_AreaSerbule
+
+# one scene's map texture (aggregator sub-zone — pre-#1021 the bare AreaCave1
+# parent key couldn't address this)
+mithril-asset-extract --install "C:\...\Project Gorgon" --out C:\tmp\cache --asset Map_HogansKeepBasement
 ```
 
 Each run writes the cache files + emits **one JSON result line** on stdout:
@@ -94,10 +105,11 @@ Both reuse the existing deflate manifest+blob shape the runtime loaders verify:
 
 - **icons** (`icon-templates.{json,bin}`): per icon, `w*h` gray bytes then `w*h`
   alpha bytes, Deflate-compressed; `pixelSha256` over the decompressed stream.
-- **texture** (`map-texture-<area>.{json,bin}`): single-entry manifest
+- **texture** (`map-texture-Map_<AssetName>.{json,bin}`): single-entry manifest
   (width, height, pixelSha256) + `w*h` **gray** bytes Deflate-compressed (no
   alpha). The base texture is a single channel the detector diffs the screenshot
-  against.
+  against. Cache key is the literal Unity Texture2D name (with the `Map_`
+  prefix) — see [mithril#1021](https://github.com/moumantai-gg/mithril/issues/1021).
 
 `pgVersion` + `extractorVersion` are stamped into every manifest (the
 cache-invalidation + canonical-hash-gate keys).

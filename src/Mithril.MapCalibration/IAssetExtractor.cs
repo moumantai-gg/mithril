@@ -27,7 +27,7 @@ public interface IAssetExtractor
 /// <param name="InstallRoot">PG install root passed to the sidecar's <c>--install</c>.</param>
 /// <param name="OutDir">Cache directory passed to the sidecar's <c>--out</c>.</param>
 /// <param name="Kind">Icons or a single area's base texture.</param>
-/// <param name="AreaKey">Required when <see cref="Kind"/> is <see cref="ExtractKind.Texture"/>.</param>
+/// <param name="MapAssetName">Required when <see cref="Kind"/> is <see cref="ExtractKind.Texture"/>.</param>
 /// <param name="ExpectPgVersion">Optional <c>--expect-pg-version</c> assertion.</param>
 /// <param name="TpkPath">Optional explicit <c>--tpk</c> path to the UABEA
 /// <c>classdata.tpk</c> the icon decoder needs (#960). When set, the sidecar
@@ -37,7 +37,7 @@ public sealed record ExtractRequest(
     string InstallRoot,
     string OutDir,
     ExtractKind Kind,
-    string? AreaKey,
+    string? MapAssetName,
     string? ExpectPgVersion,
     string? TpkPath = null);
 

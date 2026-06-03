@@ -136,6 +136,14 @@ public sealed class CaptureDependencyInjectionTests
         services.AddSingleton<IOverlayWindow>(new FakeOverlayWindow());
         services.AddSingleton<IDomainEventSubscriber>(new FakeDomainEventSubscriber());
         services.AddSingleton<IAreaState>(new FakeAreaState("AreaSerbule"));
+        // #1021: the engine now resolves IMapState (per-scene asset + sub-zone)
+        // instead of IAreaState. AutoCalibrationTrigger still consumes IAreaState
+        // (zone-change subscription), so both registrations remain.
+        services.AddSingleton<IMapState>(new FakeMapState
+        {
+            CurrentArea = "AreaSerbule",
+            CurrentMapAsset = "Map_AreaSerbule",
+        });
         services.AddSingleton<IReferenceDataService>(new FakeAreaReferenceData());
         services.AddSingleton<IMapCalibrationService>(new FakeCalibrationService());
 

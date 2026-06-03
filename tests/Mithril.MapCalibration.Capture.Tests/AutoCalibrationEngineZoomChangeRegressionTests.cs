@@ -19,6 +19,9 @@ namespace Mithril.MapCalibration.Capture.Tests;
 public sealed class AutoCalibrationEngineZoomChangeRegressionTests
 {
     private const string Area = EngineHarness.DefaultArea;
+    // #1021: the calibration store is keyed by per-scene asset key (Map_<X>),
+    // not the bare area key.
+    private const string AssetKey = EngineHarness.DefaultAssetKey;
 
     [Fact]
     public async Task User_recalibrates_at_a_different_zoom_and_lands_without_being_told_to_zoom_out()
@@ -39,7 +42,7 @@ public sealed class AutoCalibrationEngineZoomChangeRegressionTests
         first.Persisted.Should().BeTrue();
         first.OutcomeCategory.Should().Be(OutcomeVocabulary.Accepted);
         CalibrationStatusFormatter.ForOutcome(first).Should().BeNull();
-        svc.Saved[Area].LocatorScale.Should().Be(0.408);
+        svc.Saved[AssetKey].LocatorScale.Should().Be(0.408);
 
         // Step 2: user changes the in-game zoom, redraws the bbox, re-captures.
         // The new regime is scale 0.800 — outside the ±2% tolerance. Even though
@@ -61,8 +64,8 @@ public sealed class AutoCalibrationEngineZoomChangeRegressionTests
         CalibrationStatusFormatter.ForOutcome(second).Should().BeNull(); // chip clears
 
         // Saved cal is the NEW one (single-slot storage per #1005; per-scale is #1006).
-        svc.Saved[Area].LocatorScale.Should().Be(0.800);
-        svc.Saved[Area].ResidualPixels.Should().Be(1.2);
+        svc.Saved[AssetKey].LocatorScale.Should().Be(0.800);
+        svc.Saved[AssetKey].ResidualPixels.Should().Be(1.2);
     }
 
     [Fact]
@@ -100,6 +103,6 @@ public sealed class AutoCalibrationEngineZoomChangeRegressionTests
         msg.Should().NotContain("zoom the in-game map all the way out");
 
         // Good first calibration preserved.
-        svc.Saved[Area].ResidualPixels.Should().Be(0.79);
+        svc.Saved[AssetKey].ResidualPixels.Should().Be(0.79);
     }
 }

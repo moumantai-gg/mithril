@@ -78,7 +78,7 @@ public sealed class ProcessAssetExtractorTests : IDisposable
             new ExtractRequest("C:/PG", "C:/cache", ExtractKind.Texture, "AreaSerbule", "1.2.3"), CancellationToken.None);
 
         var args = captured!.ArgumentList;
-        args.Should().ContainInOrder("--area", "AreaSerbule");
+        args.Should().ContainInOrder("--asset", "AreaSerbule");
         args.Should().ContainInOrder("--expect-pg-version", "1.2.3");
         args.Should().NotContain("--icons");
     }

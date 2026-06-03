@@ -67,7 +67,7 @@ public sealed class ReferenceProviderSolverSeamTests
                      $"z:{npc.Z.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         }
 
-        var refs = new ReferenceDataAreaReferenceProvider(fake).ForArea("AreaSerbule");
+        var refs = new ReferenceDataAreaReferenceProvider(fake).ForArea(new MapSceneRef("AreaSerbule", null));
         refs.Should().HaveCount(Points.Length);
         // Provider speaks the canonical vocabulary…
         refs.Select(r => r.Type).Distinct().Should().OnlyContain(t => CanonicalLandmarkTypes.All.Contains(t));

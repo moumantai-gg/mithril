@@ -63,7 +63,7 @@ public sealed class IconTemplateBootstrapTests : IDisposable
         call.Kind.Should().Be(ExtractKind.Icons);
         call.InstallRoot.Should().Be(@"C:\Games\PG");
         call.OutDir.Should().Be(_cacheDir);
-        call.AreaKey.Should().BeNull();
+        call.MapAssetName.Should().BeNull();
     }
 
     [Fact]

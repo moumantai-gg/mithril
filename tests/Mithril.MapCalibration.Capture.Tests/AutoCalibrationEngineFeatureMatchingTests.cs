@@ -93,8 +93,12 @@ public sealed class AutoCalibrationEngineFeatureMatchingTests
         // origin is arbitrary (capture is faked).
         var bbox = new CaptureRect(0, 0, capture.Width, capture.Height);
 
+        // #1021: the engine now reads IMapState. The Kur fixture's texture is
+        // keyed on the area name (legacy fixture naming), so we set
+        // CurrentMapAsset = Area to match — both pre- and post-#1021 the lookup
+        // key for this fixture is "AreaKurMountains".
         var engine = new AutoCalibrationEngine(
-            new FakeAreaState(Area),
+            new FakeMapState { CurrentArea = Area, CurrentMapAsset = Area },
             new FakeWindowLocator(new GameWindow(1, new CaptureRect(0, 0, 1920, 1080))),
             new FakeRegionProvider(bbox),
             new SpyCapture(capture),

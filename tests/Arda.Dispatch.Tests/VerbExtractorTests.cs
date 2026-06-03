@@ -30,6 +30,25 @@ public class VerbExtractorTests
         result.Verb.ToString().Should().Be(Verbs.InitializingArea);
     }
 
+    [Fact]
+    public void Parse_DownloadingMap_ReturnsSyntheticKey()
+    {
+        var line = "Downloading Map [0e88b64bdd834cc41a23b8357802f254] GUID 0e88b64bdd834cc41a23b8357802f254 for area Kur Mountains runtime key 0e88b64bdd834cc41a23b8357802f254[Map_AreaKurMountains]";
+        var result = VerbExtractor.Parse(line.AsSpan());
+        result.Verb.ToString().Should().Be(Verbs.DownloadingMap);
+        result.Args.ToString().Should().Be(
+            "[0e88b64bdd834cc41a23b8357802f254] GUID 0e88b64bdd834cc41a23b8357802f254 for area Kur Mountains runtime key 0e88b64bdd834cc41a23b8357802f254[Map_AreaKurMountains]");
+    }
+
+    [Fact]
+    public void Parse_DownloadingMapAlone_ReturnsEmpty()
+    {
+        // Defensive: bare "Downloading Map" without a space-prefixed body should not match;
+        // it's a line shape we've never observed and shouldn't synthesize.
+        var result = VerbExtractor.Parse("Downloading Map".AsSpan());
+        result.IsEmpty.Should().BeTrue();
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("some random text")]

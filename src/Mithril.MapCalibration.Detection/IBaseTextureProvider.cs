@@ -23,8 +23,14 @@ namespace Mithril.MapCalibration;
 public interface IBaseTextureProvider
 {
     /// <summary>
-    /// The base texture for <paramref name="areaKey"/> (e.g. <c>"AreaSerbule"</c>),
+    /// The base texture for <paramref name="mapAssetKey"/> (e.g. <c>"Map_AreaSerbule"</c>),
     /// or <c>null</c> if it can't be loaded + verified.
+    ///
+    /// <para>The key is the <b>literal Unity Texture2D name</b> (with the
+    /// <c>Map_</c> prefix), as observed in the Player.log
+    /// <c>Downloading Map ... runtime key ...[Map_&lt;X&gt;]</c> line. See
+    /// <see href="https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#map-asset-loads-per-scene-map-textures">
+    /// Player-Log-Signals § Map asset loads</see>.</para>
     /// </summary>
-    GrayImage? TryGetBaseTexture(string areaKey);
+    GrayImage? TryGetBaseTexture(string mapAssetKey);
 }
