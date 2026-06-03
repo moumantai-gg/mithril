@@ -1,21 +1,31 @@
 namespace Mithril.MapCalibration;
 
 /// <summary>
-/// Composite identifier for a single Unity scene's calibration scope.
-/// <see cref="ParentAreaKey"/> is the areas.json key (always non-null in
+/// Composite identifier for a single Unity scene's calibration scope — the universal
+/// calibration identity south of <see cref="Arda.World.Player.IMapState"/>.
+///
+/// <para><see cref="ParentAreaKey"/> is the areas.json key (always non-null in
 /// practice — Arda surfaces it from <c>!!! Initializing area! </c>).
 /// <see cref="SceneFriendlyName"/> is the sub-zone-level npcs.json
-/// <c>AreaFriendlyName</c>; <c>null</c> for directly-registered areas,
-/// set for aggregator-area sub-zones (e.g. for the Hogan's Keep basement
-/// scene under <c>AreaCave1</c>, <c>SceneFriendlyName</c> is
-/// <c>"Hogan's Basement"</c>).
+/// <c>AreaFriendlyName</c>; <c>null</c> for directly-registered areas, set for
+/// aggregator-area sub-zones (e.g. for the Hogan's Keep basement scene under
+/// <c>AreaCave1</c>, <c>SceneFriendlyName</c> is <c>"Hogan's Basement"</c>).
+/// <see cref="MapAssetKey"/> is the literal Unity Texture2D name (e.g.
+/// <c>"Map_HogansKeepBasement"</c>) — verbatim from the runtime-key bracket in
+/// the Player.log <c>Downloading Map</c> line. This is the calibration store
+/// key everywhere south of <see cref="Arda.World.Player.IMapState"/>:
+/// <see cref="IMapCalibrationService"/>'s persistence is keyed on it.</para>
 /// </summary>
 /// <remarks>
-/// Used by <c>Mithril.MapCalibration.Capture.IAreaReferenceProvider.ForArea</c> to scope
-/// NPC lookups to the right sub-zone. Landmarks.json has no sub-zone field,
-/// so the landmark filter uses <see cref="ParentAreaKey"/> alone — partial
-/// coverage for aggregator scenes is documented in the spec (mithril#1021).
+/// Used by <c>Mithril.MapCalibration.Capture.IAreaReferenceProvider.ForArea</c>
+/// to scope NPC lookups to the right sub-zone (consumer uses
+/// <see cref="ParentAreaKey"/> + <see cref="SceneFriendlyName"/>; ignores
+/// <see cref="MapAssetKey"/>). And by <see cref="IMapCalibrationService"/>'s
+/// every public method as the typed lookup parameter
+/// (mithril#1041 — promotes the type from projection identifier to universal
+/// calibration identity).
 /// </remarks>
 public readonly record struct MapSceneRef(
     string ParentAreaKey,
-    string? SceneFriendlyName);
+    string? SceneFriendlyName,
+    string MapAssetKey);
