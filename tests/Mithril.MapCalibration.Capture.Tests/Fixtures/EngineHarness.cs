@@ -90,14 +90,21 @@ internal sealed class EngineHarness
         Solver = new SpySolver(Solve);
         BaseTextureProvider = new FakeBaseTextureProvider(BaseTexture);
         AreaRefs = new FakeAreaRefs(new[] { new LandmarkReference("landmark_npc", "x", new WorldCoord(1, 0, 1)) });
+        // Build the scene only when both CurrentArea and CurrentMapAsset are present;
+        // either being null models "no scene resolved yet" (the strict-gate test path).
+        // The scene-resolution helper returns null in that case, driving the engine's
+        // not-in-world short-circuit.
         var mapState = new FakeMapState
         {
             CurrentArea = CurrentArea,
-            CurrentMapAsset = CurrentMapAsset,
-            CurrentSceneFriendlyName = CurrentSceneFriendlyName,
+            CurrentMapScene = (CurrentArea is null || CurrentMapAsset is null)
+                ? null
+                : new MapSceneRef(CurrentArea, CurrentSceneFriendlyName, CurrentMapAsset),
         };
+        var sceneCache = new FakeSceneAssetCache();
         return new AutoCalibrationEngine(
             mapState,
+            sceneCache,
             new FakeWindowLocator(GameWindow),
             new FakeRegionProvider(Bbox),
             Capture,

@@ -69,11 +69,15 @@ public sealed class AutoCalibrationEngineTests
     [Fact]
     public async Task No_current_area_short_circuits()
     {
+        // mithril#1041: the outer guard now coalesces "no area" and "no scene"
+        // into MapAssetNotYetKnown via SceneResolution.ResolveCurrentScene —
+        // when CurrentArea is null, neither live nor cache can produce a scene
+        // and the engine refuses outright before any capture.
         var h = new EngineHarness { CurrentArea = null };
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
         outcome.Persisted.Should().BeFalse();
-        outcome.RejectReason.Should().Contain("not in-world");
+        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.MapAssetNotYetKnown);
         h.Capture.Called.Should().BeFalse();
     }
 
@@ -166,7 +170,8 @@ public sealed class AutoCalibrationEngineTests
         // Build an engine with a throwing extractor directly to prove fail-soft.
         var solver = new SpySolver(new CalibrationSolveResult(new AreaCalibration(1, 0, 0, 0, 6, 0.5), 6, null));
         var engine = new AutoCalibrationEngine(
-            new FakeMapState { CurrentArea = Area, CurrentMapAsset = "Map_" + Area },
+            new FakeMapState { CurrentArea = Area, CurrentMapScene = new MapSceneRef(Area, null, "Map_" + Area) },
+            new FakeSceneAssetCache(),
             new FakeWindowLocator(new GameWindow(1, new CaptureRect(0, 0, 1920, 1080))),
             new FakeRegionProvider(new CaptureRect(0, 0, 64, 64)),
             new SpyCapture(new GrayImage(64, 64, new byte[64 * 64])),
@@ -219,7 +224,8 @@ public sealed class AutoCalibrationEngineTests
         var captureSpy = new SpyCapture(capture);
         var solver = new SpySolver(h.Solve);
         var engine = new AutoCalibrationEngine(
-            new FakeMapState { CurrentArea = Area, CurrentMapAsset = "Map_" + Area },
+            new FakeMapState { CurrentArea = Area, CurrentMapScene = new MapSceneRef(Area, null, "Map_" + Area) },
+            new FakeSceneAssetCache(),
             new FakeWindowLocator(h.GameWindow),
             new FakeRegionProvider(h.Bbox),
             captureSpy,
@@ -270,16 +276,24 @@ public sealed class AutoCalibrationEngineTests
     }
 
     [Fact]
-    public async Task TryCalibrate_sink_receives_no_area_outcome()
+    public async Task TryCalibrate_no_area_returns_MapAssetNotYetKnown_outright()
     {
+        // mithril#1041: the outer guard (SceneResolution.ResolveCurrentScene)
+        // refuses when neither live IMapState.CurrentMapScene nor the
+        // SceneAssetCache can supply a scene. It fires BEFORE the attempt
+        // context + sink path are entered — no bundle is written for the
+        // null-area cell (the engine's "preparing map assets…" path covers
+        // this with status-chip surfacing rather than diagnostic-bundle output).
         var captured = new List<CalibrationAttemptContext>();
         var selector = MakeSinkSelector(new CapturingSink(captured));
         var h = new EngineHarness { CurrentArea = null, SinkSelector = selector };
 
-        await h.Engine().TryCalibrateCurrentAreaAsync(default);
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
-        captured.Should().HaveCount(1);
-        captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedNoArea);
+        outcome.Persisted.Should().BeFalse();
+        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.MapAssetNotYetKnown);
+        captured.Should().BeEmpty(
+            "the outer-guard refusal returns before opening an attempt context — no bundle written");
     }
 
     [Fact]
@@ -319,7 +333,8 @@ public sealed class AutoCalibrationEngineTests
         var captureSpy = new SpyCapture(null);
         var solver = new SpySolver(Accepted(0.5, 4));
         var engine = new AutoCalibrationEngine(
-            new FakeMapState { CurrentArea = Area, CurrentMapAsset = "Map_" + Area },
+            new FakeMapState { CurrentArea = Area, CurrentMapScene = new MapSceneRef(Area, null, "Map_" + Area) },
+            new FakeSceneAssetCache(),
             new FakeWindowLocator(h.GameWindow),
             new FakeRegionProvider(h.Bbox),
             captureSpy,
@@ -755,7 +770,7 @@ public sealed class AutoCalibrationEngineTests
         h.BaseTextureProvider.Calls.Should().ContainSingle()
             .Which.Should().Be("Map_HogansKeepBasement",
                 "the engine MUST pass the literal Unity Texture2D name from IMapState — no Map_<area> synthesis");
-        h.AreaRefs.LastSceneRef.Should().Be(new MapSceneRef("AreaCave1", "Hogan's Basement"),
+        h.AreaRefs.LastSceneRef.Should().Be(new MapSceneRef("AreaCave1", "Hogan's Basement", "Map_HogansKeepBasement"),
             "ParentAreaKey sources from IMapState.CurrentArea; SceneFriendlyName from IMapState.CurrentSceneFriendlyName");
     }
 
