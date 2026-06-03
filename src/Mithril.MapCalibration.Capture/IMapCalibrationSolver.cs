@@ -37,5 +37,5 @@ public sealed class MapCalibrationSolveEngineAdapter : IMapCalibrationSolver
 
     /// <inheritdoc/>
     public IReadOnlyList<TypedDetection> DetectOnly(DetectionRequest request) =>
-        throw new NotImplementedException("Implemented in Task B4.");
+        _engine.DetectOnly(request);
 }

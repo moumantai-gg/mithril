@@ -159,6 +159,18 @@ public sealed class MapCalibrationSolveEngine
         return finalResult;
     }
 
+    /// <summary>
+    /// Run the detector phase only (no geometric solve). Returns all typed
+    /// detections from the non-rotated orientation as a flat list, suitable for
+    /// the drift-check path (mithril#1046 §6.2) which needs to compare predicted
+    /// positions to detections without paying for RANSAC.
+    /// </summary>
+    public IReadOnlyList<TypedDetection> DetectOnly(DetectionRequest request)
+    {
+        var detections = _detector.Detect(request);
+        return FlattenDetections(detections);
+    }
+
     private void EmitSynthesisRerankTelemetry(
         SynthesisRerankMode mode, SynthesisOrientationWinner? winner, CalibrationSolveResult finalResult)
     {

@@ -69,6 +69,12 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private const double MonotonicResidualRatio = 2.0;
     private const int MonotonicInlierDelta = 2;
 
+    // mithril#1046 §6.3: drift-check thresholds.
+    private const double DriftToleranceFactor = 3.0;
+    private const double DriftMatchGatePx = 20.0;
+    private const int DriftMinMatchedReferences = 3;
+    internal const int DriftArmingSeconds = 10;
+
     /// <summary>
     /// Relative tolerance for <see cref="IsSameScaleRegime"/>: a new candidate's
     /// <c>LocatorScale</c> must be within ±2% of the stored one to count as the
@@ -154,8 +160,208 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     }
 
     /// <inheritdoc/>
-    public Task<DriftCheckOutcome> CheckDriftAsync(CancellationToken ct) =>
-        throw new NotImplementedException("Implemented in Task B4.");
+    public async Task<DriftCheckOutcome> CheckDriftAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        using var span = MithrilActivitySources.MapCalibration.StartActivity("calibration.drift_check");
+
+        // Step 1: resolve scene.
+        var resolvedScene = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache);
+        if (resolvedScene is null)
+        {
+            span?.SetTag("outcome", "NoStoredCalibration");
+            return new DriftCheckOutcome.NoStoredCalibration();
+        }
+        var sceneRef = resolvedScene.Value;
+
+        // Step 2: resolve stored calibration.
+        var stored = _calibrationService.GetCalibration(sceneRef);
+        if (stored is null)
+        {
+            span?.SetTag("outcome", "NoStoredCalibration");
+            return new DriftCheckOutcome.NoStoredCalibration();
+        }
+
+        // Step 3a: bbox gate.
+        var bbox = _region.Current;
+        if (bbox is null)
+        {
+            var capReason = "no map bbox set — use the draw-map-bbox hotkey first";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "capture-failed", capReason);
+            span?.SetTag("outcome", "CaptureFailed");
+            return new DriftCheckOutcome.CaptureFailed(capReason);
+        }
+
+        // Step 3b: PG-foreground gate.
+        if (_windowLocator.Locate() is null)
+        {
+            var capReason = "Project Gorgon is not the foreground window";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "capture-failed", capReason);
+            span?.SetTag("outcome", "CaptureFailed");
+            return new DriftCheckOutcome.CaptureFailed(capReason);
+        }
+
+        // Step 5: resolve references (logged with starting message below).
+        var references = _references.ForArea(sceneRef);
+        _logger?.LogInformation(
+            "Drift check starting for {MapAssetKey}: {Refs} references, tolerance factor {Factor}× of stored {Residual:0.00}px.",
+            sceneRef.MapAssetKey, references.Count, DriftToleranceFactor, stored.ResidualPixels);
+
+        // Step 3c: capture gate.
+        var captureResult = await _capture.CaptureMapAsync(bbox.Value, ct).ConfigureAwait(false);
+        if (captureResult.Gray is null)
+        {
+            var capReason = "map capture failed (black/wrong-size frame)";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "capture-failed", capReason);
+            span?.SetTag("outcome", "CaptureFailed");
+            return new DriftCheckOutcome.CaptureFailed(capReason);
+        }
+        var gray = captureResult.Gray;
+
+        // Base-texture gate.
+        var baseTexture = await ResolveBaseTextureAsync(sceneRef.MapAssetKey, ct).ConfigureAwait(false);
+        if (baseTexture is null)
+        {
+            var texReason = "base texture unavailable";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "map-not-located", texReason);
+            span?.SetTag("outcome", "MapNotLocated");
+            return new DriftCheckOutcome.MapNotLocated(texReason);
+        }
+
+        // Step 4: run locator/refiner.
+        if (_refiner is FeatureMatchingRefiner fmDrift)
+            fmDrift.SetAreaKey(sceneRef.ParentAreaKey);
+        var refineResult = _refiner.Refine(gray, baseTexture);
+        if (refineResult.AcceptedRect is null || refineResult.Metrics is null)
+        {
+            var locReason = refineResult.Metrics is { } failM
+                ? $"locator inliers={failM.InlierCount}/{failM.CandidateCount} scale={failM.Scale:0.00}"
+                : "no fit";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "map-not-located", locReason);
+            span?.SetTag("outcome", "MapNotLocated");
+            return new DriftCheckOutcome.MapNotLocated(locReason);
+        }
+        var loc = refineResult.Metrics;
+        _logger?.LogInformation(
+            "Drift check {MapAssetKey}: locator scale={Scale:0.000}, rotation={Rot:0.00}°, inliers={Inliers}/{Cand}, locator residual={LocResid:0.00}px.",
+            sceneRef.MapAssetKey, loc.Scale, loc.RotationDegrees, loc.InlierCount, loc.CandidateCount, loc.ResidualPixels);
+
+        // Build aligned detection inputs (mirrors RunAttemptCoreAsync §978).
+        var templates = await EnsureIconTemplatesAsync(ct).ConfigureAwait(false);
+        var clamped = ClampToFrame(refineResult.AcceptedRect, gray.Width, gray.Height);
+        if (clamped is null)
+        {
+            var clampReason = "the located map rect fell outside the captured frame";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "map-not-located", clampReason);
+            span?.SetTag("outcome", "MapNotLocated");
+            return new DriftCheckOutcome.MapNotLocated(clampReason);
+        }
+        var crop = ImageOps.Crop(gray, clamped.OriginX, clamped.OriginY, clamped.Width, clamped.Height);
+        var alignedTexture = ImageOps.Resize(baseTexture, clamped.Width, clamped.Height);
+        var alignedRect = new MapRect(0, 0, clamped.Width, clamped.Height, clamped.TextureWidth, clamped.TextureHeight);
+        var detectionRequest = new DetectionRequest(
+            Screenshot: crop,
+            BaseTexture: alignedTexture,
+            MapRect: alignedRect,
+            Templates: templates,
+            RimMask: RimMaskMode.DeviationFlood,
+            LowNcc: LowNcc,
+            TypeFloor: TypeFloor,
+            BlobOptions: BlobOpts)
+        {
+            RenderSizePx = RenderSizePx,
+        };
+
+        // Step 6: run typed icon detector only (no geometric solve).
+        var detections = _solver.DetectOnly(detectionRequest);
+        if (detections.Count == 0)
+        {
+            span?.SetTag("outcome", "NoIconDetections");
+            return new DriftCheckOutcome.NoIconDetections();
+        }
+
+        // Step 7: pair each reference against nearest detection within the gate.
+        // Each detection may claim at most one reference (greedy nearest-first
+        // prevents a single detection from boosting the matched count artificially
+        // when references are close together).
+        var usedDetectionIndices = new HashSet<int>(detections.Count);
+        var residuals = new List<double>(references.Count);
+        foreach (var r in references)
+        {
+            var predTex = stored.WorldToWindow(r.World, currentZoom: 1.0);
+            var predScreenX = predTex.X * loc.Scale + loc.Tx;
+            var predScreenY = predTex.Y * loc.Scale + loc.Ty;
+            double? best = null;
+            double bestDx = 0, bestDy = 0;
+            int bestIdx = -1;
+            for (int di = 0; di < detections.Count; di++)
+            {
+                if (usedDetectionIndices.Contains(di)) continue;
+                var d = detections[di];
+                var dist = Math.Sqrt(
+                    (d.AnchorX - predScreenX) * (d.AnchorX - predScreenX) +
+                    (d.AnchorY - predScreenY) * (d.AnchorY - predScreenY));
+                if (dist < (best ?? double.MaxValue))
+                {
+                    best = dist;
+                    bestDx = d.AnchorX;
+                    bestDy = d.AnchorY;
+                    bestIdx = di;
+                }
+            }
+            if (best is null || best.Value > DriftMatchGatePx) continue;
+            usedDetectionIndices.Add(bestIdx);
+            residuals.Add(best.Value);
+            _logger?.LogTrace(
+                "Drift check {MapAssetKey}: ref '{Name}' predicted=({Px:0.0},{Py:0.0}), nearest detection=({Dx:0.0},{Dy:0.0}) at {Dist:0.00}px.",
+                sceneRef.MapAssetKey, r.Name, predScreenX, predScreenY, bestDx, bestDy, best.Value);
+        }
+
+        span?.SetTag("map.area", sceneRef.MapAssetKey);
+        span?.SetTag("refs.matched", residuals.Count);
+
+        // Step 8: aggregate.
+        if (residuals.Count < DriftMinMatchedReferences)
+        {
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: inconclusive — {Reason} ({Matched} refs matched, need ≥{Min}). No arming.",
+                sceneRef.MapAssetKey, "too few visible landmarks", residuals.Count, DriftMinMatchedReferences);
+            span?.SetTag("outcome", "Inconclusive");
+            return new DriftCheckOutcome.Inconclusive("too few visible landmarks", residuals.Count);
+        }
+
+        var maxResidual = residuals.Max();
+        var threshold = DriftToleranceFactor * stored.ResidualPixels;
+        span?.SetTag("max_residual_px", maxResidual);
+        span?.SetTag("threshold_px", threshold);
+
+        if (maxResidual > threshold)
+        {
+            _logger?.LogWarning(
+                "Drift check {MapAssetKey}: DRIFT detected ({Matched} refs matched, max residual {MaxResid:0.00}px exceeds threshold {Threshold:0.00}px). Hotkey armed for {Arm}s — re-press to recalibrate.",
+                sceneRef.MapAssetKey, residuals.Count, maxResidual, threshold, DriftArmingSeconds);
+            span?.SetTag("outcome", "Drift");
+            return new DriftCheckOutcome.Drift(maxResidual, residuals.Count, threshold);
+        }
+
+        _logger?.LogInformation(
+            "Drift check {MapAssetKey}: OK ({Matched} refs matched, max residual {MaxResid:0.00}px, threshold {Threshold:0.00}px). No recalibration needed.",
+            sceneRef.MapAssetKey, residuals.Count, maxResidual, threshold);
+        span?.SetTag("outcome", "Ok");
+        return new DriftCheckOutcome.Ok(maxResidual, residuals.Count);
+    }
 
     /// <summary>
     /// Thin public entry point. Wraps <see cref="RunAttemptCoreAsync"/> in a
