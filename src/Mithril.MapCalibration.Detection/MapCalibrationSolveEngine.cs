@@ -91,7 +91,9 @@ public sealed class MapCalibrationSolveEngine
             // === Synthesis track (skipped when mode == Off) ===
             if (mode == SynthesisRerankMode.Off) continue;
 
-            var fields = BuildLikelihoodFieldsFromDeviation(req.Screenshot, req.BaseTexture, req.Templates);
+            var fields = BuildLikelihoodFieldsFromDeviation(
+                req.Screenshot, req.BaseTexture, req.Templates,
+                req.TypeFloor, req.RenderSizePx);
             var winner = ScoreOrientationCandidates(rotate180, topKList, fields, references, req.MapRect);
             if (winner is null) continue;
             if (bestSynthesis is null || winner.J > bestSynthesis.J)
@@ -348,10 +350,12 @@ public sealed class MapCalibrationSolveEngine
     /// masked deviation. Cached by orientation: built once per orientation, reused
     /// across all top-K candidates the re-rank scores.
     /// </summary>
-    private static IReadOnlyDictionary<string, double[,]> BuildLikelihoodFieldsFromDeviation(
+    internal static IReadOnlyDictionary<string, double[,]> BuildLikelihoodFieldsFromDeviation(
         GrayImage screenshot,
         GrayImage baseTexture,
-        IconTemplateSet templates)
+        IconTemplateSet templates,
+        double typeFloor,
+        int? renderSizePx)
     {
         if (screenshot.Width != baseTexture.Width || screenshot.Height != baseTexture.Height)
             throw new ArgumentException("screenshot and base texture must have matching dimensions");
