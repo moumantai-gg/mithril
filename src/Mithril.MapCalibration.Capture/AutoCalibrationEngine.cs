@@ -480,7 +480,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 InstallRoot: _gameConfig.InstallRoot,
                 OutDir: _assetCacheDir!,
                 Kind: ExtractKind.Texture,
-                AreaKey: area,
+                MapAssetName: area,
                 ExpectPgVersion: _pgVersion,
                 TpkPath: ResolveTpkPath());
             var extract = await _assetExtractor.ExtractAsync(request, ct).ConfigureAwait(false);
@@ -542,7 +542,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 InstallRoot: _gameConfig.InstallRoot,
                 OutDir: _assetCacheDir!,
                 Kind: ExtractKind.Icons,
-                AreaKey: null,
+                MapAssetName: null,
                 ExpectPgVersion: _pgVersion,
                 TpkPath: ResolveTpkPath());
             var extract = await _assetExtractor.ExtractAsync(request, ct).ConfigureAwait(false);

@@ -83,17 +83,17 @@ public sealed class ProcessAssetExtractor : IAssetExtractor
         {
             _logger?.LogWarning(
                 "Asset-extractor sidecar timed out after {Timeout} ({Kind} {Area}) — child killed (safe-degrade).",
-                _timeout, request.Kind, request.AreaKey);
+                _timeout, request.Kind, request.MapAssetName);
             return ExtractResult.Failure(ExitTimeout, $"sidecar timed out after {_timeout}");
         }
         catch (OperationCanceledException)
         {
-            _logger?.LogInformation("Asset-extractor sidecar cancelled by caller ({Kind} {Area}).", request.Kind, request.AreaKey);
+            _logger?.LogInformation("Asset-extractor sidecar cancelled by caller ({Kind} {Area}).", request.Kind, request.MapAssetName);
             throw;
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Asset-extractor sidecar failed to launch ({Kind} {Area}) — safe-degrade.", request.Kind, request.AreaKey);
+            _logger?.LogWarning(ex, "Asset-extractor sidecar failed to launch ({Kind} {Area}) — safe-degrade.", request.Kind, request.MapAssetName);
             return ExtractResult.Failure(ExitLaunchFailed, $"sidecar launch failed: {ex.Message}");
         }
 
@@ -157,8 +157,8 @@ public sealed class ProcessAssetExtractor : IAssetExtractor
         }
         else
         {
-            psi.ArgumentList.Add("--area");
-            psi.ArgumentList.Add(request.AreaKey ?? string.Empty);
+            psi.ArgumentList.Add("--asset");
+            psi.ArgumentList.Add(request.MapAssetName ?? string.Empty);
         }
         if (!string.IsNullOrWhiteSpace(request.ExpectPgVersion))
         {
@@ -176,7 +176,7 @@ public sealed class ProcessAssetExtractor : IAssetExtractor
     private static string MapExitCode(int exitCode, ExtractRequest request) => exitCode switch
     {
         2 => $"PG install not found at '{request.InstallRoot}'",
-        3 => $"map bundle missing for area '{request.AreaKey}'",
+        3 => $"map bundle missing for area '{request.MapAssetName}'",
         4 => "asset decode failed",
         5 => $"output dir not writable '{request.OutDir}'",
         _ => $"sidecar exited with code {exitCode}",
