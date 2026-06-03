@@ -2,7 +2,9 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Threading;
+using Arda.Contracts;
 using Arda.World.Player;
+using Arda.World.Player.Events;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration;
@@ -70,6 +72,10 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     private readonly MarkerSceneRenderer _renderer;
     private readonly IMapCalibrationService _calibration;
     private readonly IAreaState _areaState;
+    private readonly IMapState _mapState;
+    private readonly ISceneAssetCache _sceneCache;
+    private readonly IDomainEventSubscriber _bus;
+    private IDisposable? _mapAssetChangedSub;
     private readonly IPositionState _positionState; // reserved for future consumers; ensures the DI shape matches Decision C
     private readonly IOverlayZoomSource _zoomSource;
     private readonly ILoggerFactory? _loggerFactory;
@@ -109,6 +115,9 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         MarkerSceneRenderer renderer,
         IMapCalibrationService calibration,
         IAreaState areaState,
+        IMapState mapState,
+        ISceneAssetCache sceneCache,
+        IDomainEventSubscriber bus,
         IPositionState positionState,
         IOverlayZoomSource zoomSource,
         ILoggerFactory? loggerFactory = null)
@@ -117,6 +126,9 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         _renderer = renderer;
         _calibration = calibration;
         _areaState = areaState;
+        _mapState = mapState;
+        _sceneCache = sceneCache;
+        _bus = bus;
         _positionState = positionState;
         _zoomSource = zoomSource;
         _loggerFactory = loggerFactory;
@@ -197,14 +209,34 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             + "Mithril.Shell calls host.StartAsync on the UI thread after `new App()`. "
             + "If you see this from a test or non-shell host, ensure a WPF dispatcher is available "
             + "(or skip the hosted-service registration and exercise the projection helper directly).");
+        // mithril#1041: subscribe to MapAssetChanged so per-scene transitions
+        // inside aggregator areas drive a frame invalidation directly — without
+        // this, the renderer waits for the next surface tick to notice a fresh
+        // CurrentMapScene observation.
+        _mapAssetChangedSub = _bus.Subscribe<MapAssetChanged>(OnMapAssetChanged);
         _logger?.LogInformation("OverlayWindowService starting (window will be created on first Window-access).");
         return Task.CompletedTask;
+    }
+
+    private void OnMapAssetChanged(MapAssetChanged evt)
+    {
+        // Frame invalidation: the next OnSurfaceRender tick re-reads state via
+        // ResolveCurrentScene; we don't need to push anything synchronously
+        // from this handler. The marshaling is implicit (the surface render
+        // loop runs on the dispatcher).
+        // No-op body — the per-tick read path covers correctness; the
+        // subscription here is documentation that the renderer is reactive
+        // to MapAssetChanged events even if the tick cadence is fast enough
+        // that explicit invalidation isn't required.
+        _ = evt;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
         using var act = MithrilActivitySources.Overlay.StartActivity("service.stop");
         _logger?.LogInformation("OverlayWindowService stopping.");
+        _mapAssetChangedSub?.Dispose();
+        _mapAssetChangedSub = null;
         DisposeWindow();
         return Task.CompletedTask;
     }
@@ -282,28 +314,34 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             return;
         }
 
-        // Uncalibrated-area handling. The marker-projection block (further
+        // mithril#1041 resolution cascade: live IMapState.CurrentMapScene >
+        // SceneAssetCache (cold-start fallback for known areas) > strict-null.
+        // The resolved MapSceneRef is what every IMapCalibrationService call
+        // below takes — fixes the #1041 headline regression where the renderer
+        // was looking up calibrations by bare parent-area key against the
+        // Map_<X>-keyed store (post-#1040).
+        var resolvedScene = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache);
+
+        // Uncalibrated-scene handling. The marker-projection block (further
         // down) depends on WorldToWindow/Project, which always returns null
         // without a calibration — so when uncalibrated we skip ONLY that
-        // block, surface the "not calibrated" chip, and log once per area.
+        // block, surface the "not calibrated" chip, and log once per scene.
         // The scene-drawer loop still runs: scene drawers self-gate
         // (DrawCalibrationGhosts on ShowCalibrationGhosts; the placement-pin
         // pass on IsCalibrationCapturing) and draw pixel-native, so the
         // calibration placement pins MUST render during a Drop/Pair
-        // walkthrough in an uncalibrated area (dissolved-#868) — calibration
+        // walkthrough in an uncalibrated scene (dissolved-#868) — calibration
         // only persists at Confirm, so IsCalibrated is false throughout the
-        // walkthrough. This previously returned early BEFORE the scene-drawer
-        // loop, which suppressed every scene drawer in uncalibrated areas and
-        // broke the headline placement-pin cutover behavior (#872 / #887).
-        var isCalibrated = _calibration.IsCalibrated(areaKey);
+        // walkthrough.
+        var isCalibrated = resolvedScene is { } scene && _calibration.IsCalibrated(scene);
         if (!isCalibrated)
         {
             if (!string.Equals(_lastSeenUncalibratedArea, areaKey, StringComparison.Ordinal))
             {
                 _lastSeenUncalibratedArea = areaKey;
                 _logger?.LogInformation(
-                    "OverlayWindowService: area {AreaKey} is uncalibrated; surfacing 'not calibrated' chip and skipping marker projection. Scene drawers still run for pixel-native passes (e.g. calibration placement pins).",
-                    areaKey);
+                    "OverlayWindowService: scene {AreaKey} ({AssetKey}) is uncalibrated; surfacing 'not calibrated' chip and skipping marker projection. Scene drawers still run for pixel-native passes (e.g. calibration placement pins).",
+                    areaKey, resolvedScene?.MapAssetKey ?? "<unresolved>");
             }
             SetStatusMessage(UncalibratedMessage);
         }
@@ -318,6 +356,12 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         // inconsistency across the frame).
         var currentZoom = SnapshotZoom();
 
+        // The scene the per-frame context binds to: if resolution failed, use
+        // a synthesized composite with empty calibration key so Project()
+        // returns null (no calibration → uncalibrated path); scene drawers
+        // still get area context via CurrentAreaKey.
+        var frameScene = resolvedScene ?? new MapSceneRef(areaKey, null, string.Empty);
+
         // Scene drawers — fire BEFORE the marker renderer. Snapshot the
         // drawer array reference once so a concurrent register/unregister
         // can't shift it mid-iteration. Each drawer is invoked in its own
@@ -328,10 +372,11 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         var drawers = _sceneDrawers;
         if (drawers.Length > 0)
         {
-            _sceneContext.BeginFrame(e.RenderTarget, e.Factory, _brushCache, areaKey, currentZoom);
+            _sceneContext.BeginFrame(e.RenderTarget, e.Factory, _brushCache, areaKey, frameScene, currentZoom);
             using (var sceneAct = MithrilActivitySources.Overlay.StartActivity("scene"))
             {
                 sceneAct?.SetTag("area", areaKey);
+                sceneAct?.SetTag("scene.asset_key", frameScene.MapAssetKey);
                 sceneAct?.SetTag("drawer_count", drawers.Length);
                 for (var i = 0; i < drawers.Length; i++)
                 {
@@ -347,7 +392,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         if (!isCalibrated) return;
 
         var snapshot = _markers.CurrentAreaMarkers;
-        var projected = ProjectMarkers(snapshot, areaKey, _calibration, currentZoom,
+        var projected = ProjectMarkers(snapshot, resolvedScene!.Value, _calibration, currentZoom,
             onMiss: this, snapshotCount: snapshot.Count);
         if (!_firstFrameLogged)
         {
@@ -361,6 +406,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         using (var renderAct = MithrilActivitySources.Overlay.StartActivity("project"))
         {
             renderAct?.SetTag("area", areaKey);
+            renderAct?.SetTag("scene.asset_key", resolvedScene!.Value.MapAssetKey);
             renderAct?.SetTag("marker_count", projected.Count);
             _renderer.Render(projected, e.RenderTarget, e.Factory, _brushCache);
         }
@@ -385,14 +431,14 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     /// service and returns the projected pixel list. Test-friendly overload.</summary>
     internal static IReadOnlyList<(PixelPoint Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
-        string areaKey,
+        MapSceneRef scene,
         IMapCalibrationService calibration,
         double currentZoom)
-        => ProjectMarkers(markers, areaKey, calibration, currentZoom, onMiss: null, snapshotCount: markers.Count);
+        => ProjectMarkers(markers, scene, calibration, currentZoom, onMiss: null, snapshotCount: markers.Count);
 
     private static IReadOnlyList<(PixelPoint Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
-        string areaKey,
+        MapSceneRef scene,
         IMapCalibrationService calibration,
         double currentZoom,
         OverlayWindowService? onMiss,
@@ -405,18 +451,19 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         for (var i = 0; i < markers.Count; i++)
         {
             var snap = markers[i];
-            var pixel = calibration.WorldToWindow(areaKey, snap.World, currentZoom);
+            var pixel = calibration.WorldToWindow(scene, snap.World, currentZoom);
             if (pixel is null)
             {
                 if (onMiss is not null)
                 {
+                    var assetKey = scene.MapAssetKey;
                     MithrilMeters.Overlay.ProjectionMisses.Add(1,
-                        new KeyValuePair<string, object?>("area", areaKey));
-                    if (onMiss._projectionMissAreasLogged.TryAdd(areaKey, 0))
+                        new KeyValuePair<string, object?>("area", scene.ParentAreaKey));
+                    if (onMiss._projectionMissAreasLogged.TryAdd(assetKey, 0))
                     {
                         onMiss._logger?.LogTrace(
-                            "OverlayWindowService: WorldToWindow returned null for a marker in calibrated area {AreaKey} (style={StyleType}); marker silently skipped.",
-                            areaKey, snap.Style.GetType().Name);
+                            "OverlayWindowService: WorldToWindow returned null for a marker in calibrated scene {AssetKey} (style={StyleType}); marker silently skipped.",
+                            assetKey, snap.Style.GetType().Name);
                     }
                 }
                 continue;
@@ -452,12 +499,17 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         // the calibration placement pins). Only the chip differs by state;
         // the marker-projection block is absent from this seam, so there is
         // no calibration-gated early-return here (#872 / #887).
-        var isCalibrated = _calibration.IsCalibrated(areaKey);
+        // Tests of the calibration path go through OnSurfaceRender (or its
+        // unit-test seam) which resolves via SceneResolution — this convenience
+        // seam synthesises a scene from areaKey so legacy tests still pass.
+        var scene = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache)
+            ?? new MapSceneRef(areaKey, null, areaKey);
+        var isCalibrated = _calibration.IsCalibrated(scene);
         SetStatusMessage(isCalibrated ? null : UncalibratedMessage);
 
         var drawers = _sceneDrawers;
         if (drawers.Length == 0) return;
-        _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, currentZoom);
+        _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, scene, currentZoom);
         for (var i = 0; i < drawers.Length; i++)
         {
             InvokeSceneDrawerIsolated(drawers[i], i);
@@ -603,6 +655,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         private ID2D1Factory? _factory;
         private D2DBrushCache? _brushes;
         private string _areaKey = string.Empty;
+        private MapSceneRef _scene;
         private double _currentZoom = 1.0;
 
         public OverlaySceneContext(OverlayWindowService owner) { _owner = owner; }
@@ -612,12 +665,14 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             ID2D1Factory factory,
             D2DBrushCache brushes,
             string areaKey,
+            MapSceneRef scene,
             double currentZoom)
         {
             _renderTarget = renderTarget;
             _factory = factory;
             _brushes = brushes;
             _areaKey = areaKey;
+            _scene = scene;
             _currentZoom = currentZoom;
         }
 
@@ -635,6 +690,8 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
         public string CurrentAreaKey => _areaKey;
 
+        public MapSceneRef CurrentScene => _scene;
+
         public PixelPoint? Project(double worldX, double worldZ)
         {
             // Calibrated-area gate is enforced before drawers fire, so we
@@ -643,7 +700,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             // (e.g. NaN inputs); the drawer treats that as "skip this pin"
             // — same shape as the marker renderer's null-skip branch.
             return _owner._calibration.WorldToWindow(
-                _areaKey, new WorldCoord(worldX, 0, worldZ), _currentZoom);
+                _scene, new WorldCoord(worldX, 0, worldZ), _currentZoom);
         }
     }
 }

@@ -60,8 +60,18 @@ public interface IOverlaySceneContext
     /// <summary>The Arda internal area key for the current frame's player
     /// area (e.g. <c>"AreaEltibule"</c>). Empty / unknown areas are filtered
     /// out before scene drawers fire, so this is always non-null and
-    /// non-empty when a drawer is invoked.</summary>
+    /// non-empty when a drawer is invoked. This is the PARENT AREA — for
+    /// the calibration-store key (Unity asset name, post-mithril#1021),
+    /// see <see cref="CurrentScene"/>.</summary>
     string CurrentAreaKey { get; }
+
+    /// <summary>Composite scene identity for the current frame: parent area,
+    /// sub-zone friendly name, and Unity Texture2D asset key. Resolved via
+    /// <see cref="SceneResolution.ResolveCurrentScene"/> at frame top.
+    /// Scene drawers that need to talk to <see cref="IMapCalibrationService"/>
+    /// directly (e.g. for an inverse projection) use this composite — the
+    /// MapAssetKey is the calibration-store key (mithril#1041).</summary>
+    MapSceneRef CurrentScene { get; }
 
     /// <summary>Project a world coord to a pixel via the current area's
     /// calibration, accounting for the live in-game zoom (read per call
