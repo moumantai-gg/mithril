@@ -74,6 +74,30 @@ public sealed class SceneAssetCacheStoreTests : IDisposable
     }
 
     [Fact]
+    public void Load_FutureSchemaVersion_StartsEmpty()
+    {
+        // mithril#1054: stamp-on-write was wired in #1041, but Load never
+        // recognised the field. When a future v>1 lands, a v1-aware build
+        // must refuse the whole file rather than half-parse a shape it
+        // can't validate (silent data loss on downgrade). Per-entry resilient
+        // parse would otherwise skip every v2-shaped entry as unparseable.
+        var filePath = Path.Combine(_tempDir, "scene-asset-cache.json");
+        File.WriteAllText(filePath, """
+            {
+                "schemaVersion": 99,
+                "entries": [
+                    { "parentArea": "AreaSerbule", "sceneFriendlyName": null, "mapAssetKey": "Map_AreaSerbule", "lastObservedAt": "2026-06-03T20:01:17+00:00" }
+                ]
+            }
+            """);
+
+        var store = new SceneAssetCacheStore(_tempDir, NullLogger.Instance);
+
+        // Fail-closed: the otherwise-valid v1-shaped entry is NOT loaded.
+        store.TryGet("AreaSerbule", null, out _).Should().BeFalse();
+    }
+
+    [Fact]
     public void Record_RollsBack_InMemoryState_When_Persist_Throws()
     {
         var store = new SceneAssetCacheStore(_tempDir, NullLogger.Instance);
