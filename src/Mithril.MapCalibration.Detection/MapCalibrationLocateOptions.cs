@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 
-namespace Mithril.MapCalibration.Capture;
+namespace Mithril.MapCalibration.Detection;
 
 /// <summary>
 /// Runtime-flippable knobs for <see cref="FeatureMatchingRefiner"/>

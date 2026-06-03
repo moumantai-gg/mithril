@@ -1,4 +1,6 @@
-namespace Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Detection;
+
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// Supplies the aligned base map texture (a single-channel <see cref="GrayImage"/>)

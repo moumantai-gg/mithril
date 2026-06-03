@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
 using Mithril.MapCalibration.Detection;
 using Xunit;

@@ -3,7 +3,8 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
-using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration;
+using Mithril.MapCalibration.Internal;
 using Mithril.Shared.Game;
 using Xunit;
 

@@ -1,10 +1,9 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
-using Mithril.MapCalibration.Capture.Internal;
-using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Detection.Internal;
 using OpenCvSharp;
 
-namespace Mithril.MapCalibration.Capture;
+namespace Mithril.MapCalibration.Detection;
 
 /// <summary>
 /// <see cref="IMapRegionRefiner"/> using ORB + BFMatcher + Lowe-ratio +

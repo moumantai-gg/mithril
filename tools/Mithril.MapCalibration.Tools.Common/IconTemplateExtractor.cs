@@ -5,7 +5,7 @@ using System.Text.Json;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
-using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration;
 
 namespace Mithril.Tools.MapCalibration.Common;
 

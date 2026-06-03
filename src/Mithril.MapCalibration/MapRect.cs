@@ -1,4 +1,4 @@
-namespace Mithril.MapCalibration.Detection;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// Visible map's bounding box in the screenshot, plus the source texture's

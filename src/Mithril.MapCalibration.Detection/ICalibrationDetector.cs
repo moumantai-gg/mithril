@@ -1,6 +1,7 @@
 using System.Collections.Generic;
+using Mithril.MapCalibration.Detection;
 
-namespace Mithril.MapCalibration.Detection;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// Turns a captured map frame (already cropped to its <see cref="MapRect"/>) plus

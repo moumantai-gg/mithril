@@ -5,7 +5,6 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Mithril.MapCalibration.Internal;
 
 namespace Mithril.MapCalibration.Detection.Internal;
 
@@ -129,7 +128,7 @@ internal static class BundledIconTemplateLoader
         try
         {
             using var stream = File.OpenRead(manifestPath);
-            var manifest = JsonSerializer.Deserialize(stream, MapCalibrationJsonContext.Default.IconTemplateManifest);
+            var manifest = JsonSerializer.Deserialize(stream, DetectionJsonContext.Default.IconTemplateManifest);
             if (manifest is null || manifest.Icons is null || manifest.Icons.Count == 0 || string.IsNullOrEmpty(manifest.PixelSha256))
             {
                 logger?.LogWarning("Icon-template manifest {Path} empty/malformed — icon templates disabled (safe-degrade).", manifestPath);

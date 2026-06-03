@@ -5,8 +5,8 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Mithril.MapCalibration.Capture.Diagnostics;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
-using Mithril.MapCalibration.DependencyInjection;
 using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Detection.DependencyInjection;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -63,7 +63,7 @@ public sealed class AutoCalibrationEngineFeatureMatchingTests
         // pattern the refiner-in-isolation replay tests use. Real on-disk decode,
         // no fakes.
         var baseTextureProvider = new ServiceCollection()
-            .AddMithrilMapCalibrationEngine(bundleDir)
+            .AddMithrilMapCalibrationDetection(bundleDir)
             .BuildServiceProvider()
             .GetRequiredService<IBaseTextureProvider>();
         var baseTexture = baseTextureProvider.TryGetBaseTexture(Area)

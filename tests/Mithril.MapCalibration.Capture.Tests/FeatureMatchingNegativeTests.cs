@@ -1,10 +1,9 @@
 using System.IO;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
 using Mithril.MapCalibration.Detection;
-using Mithril.MapCalibration.DependencyInjection;
+using Mithril.MapCalibration.Detection.DependencyInjection;
 using Xunit;
 
 namespace Mithril.MapCalibration.Capture.Tests;
@@ -25,7 +24,7 @@ public sealed class FeatureMatchingNegativeTests
 
         var textureDir = Path.Combine(FixturesRoot, wrongTextureFolder);
         var provider = new ServiceCollection()
-            .AddMithrilMapCalibrationEngine(textureDir)
+            .AddMithrilMapCalibrationDetection(textureDir)
             .BuildServiceProvider()
             .GetRequiredService<IBaseTextureProvider>();
         var wrongTexture = provider.TryGetBaseTexture(wrongAreaKey)

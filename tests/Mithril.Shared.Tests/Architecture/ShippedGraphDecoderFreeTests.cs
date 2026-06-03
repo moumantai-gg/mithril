@@ -31,17 +31,21 @@ namespace Mithril.Shared.Tests.Architecture;
 /// the extractor in-process via reflection to dodge this scan is explicitly
 /// forbidden — the value is the process boundary, not a green check.</para>
 ///
-/// <para><b>Sanctioned in-process OpenCv exception (issue #978):</b> screenshot↔
-/// texture registration (<c>Cv2.FindTransformECC</c>) runs IN-PROCESS in the
-/// calibration capture assembly (<c>Mithril.MapCalibration.Capture</c>). Maintainer
-/// decision: OpenCvSharp is an <i>alignment</i> library, not an asset decoder; Mithril
-/// is Windows-only WPF (not trimmed / not AOT) and registration is occasional, so an
+/// <para><b>Sanctioned in-process OpenCv exception (issue #978, spec
+/// map-calibration-detection-project-split):</b> screenshot↔texture feature-matching
+/// locate (ORB + RANSAC via <see cref="Mithril.MapCalibration.Detection.FeatureMatchingRefiner"/>) runs IN-PROCESS in
+/// the dedicated calibration detection assembly
+/// (<c>Mithril.MapCalibration.Detection</c>). Maintainer decision: OpenCvSharp is an
+/// <i>alignment</i> library, not an asset decoder; Mithril is Windows-only WPF (not
+/// trimmed / not AOT) and detection runs per-attempt at user-perceived latency, so an
 /// in-process call beats an out-of-process sidecar round-trip and its native-runtime
-/// staging cost. To keep that exception EXPLICIT and stop OpenCv silently spreading,
-/// <c>OpenCvSharp</c> is added to <see cref="ForbiddenPackages"/> across <c>src/**</c>
-/// and re-permitted ONLY for the named project in
-/// <see cref="PackageAllowlistByProject"/> — the #921 decoder-free split is relaxed via
-/// a named allowlist, never removed and never replaced with a sidecar.</para>
+/// staging cost. The detection project is the SINGLE named OpenCv home; the capture
+/// project is OpenCv-free (Win32 / WPF capture only). To keep that exception EXPLICIT
+/// and stop OpenCv silently spreading, <c>OpenCvSharp</c> is in
+/// <see cref="ForbiddenPackages"/> across <c>src/**</c> and re-permitted ONLY for the
+/// named project in <see cref="PackageAllowlistByProject"/>. The #921 decoder-free
+/// split is relaxed via that named allowlist, never removed and never replaced with a
+/// sidecar.</para>
 /// </summary>
 public class ShippedGraphDecoderFreeTests
 {
@@ -53,18 +57,19 @@ public class ShippedGraphDecoderFreeTests
         "OpenCvSharp",              // #978: covers OpenCvSharp4 + OpenCvSharp4.runtime.win
     ];
 
-    // #978: OpenCvSharp is permitted IN-PROCESS only in these explicitly named
-    // shipped assemblies — the calibration capture project that owns the ECC
-    // screenshot->texture registration refine (Cv2.FindTransformECC). OpenCvSharp is
+    // #978: OpenCvSharp is permitted IN-PROCESS only in the explicitly named
+    // shipped assembly — the dedicated calibration detection project. OpenCvSharp is
     // an alignment library, not an asset decoder; Mithril is Windows-only WPF (not
-    // trimmed/AOT) and registration is occasional, so in-process beats an
-    // out-of-process sidecar. The #921 split is RELAXED via this named allowlist, not
-    // removed: any OTHER src/** project taking an OpenCvSharp reference is a violation.
-    // Keyed by csproj file name so the exception is unambiguous and cannot widen
-    // silently. (AssetsTools.NET / System.Drawing.Common are NOT allowlisted anywhere.)
+    // trimmed/AOT) and detection runs per-attempt at user-perceived latency, so
+    // in-process beats an out-of-process sidecar. The capture project is OpenCv-free
+    // (Win32 / WPF capture only). The #921 split is RELAXED via this named allowlist,
+    // not removed: any OTHER src/** project taking an OpenCvSharp reference is a
+    // violation. Keyed by csproj file name so the exception is unambiguous and cannot
+    // widen silently. (AssetsTools.NET / System.Drawing.Common are NOT allowlisted
+    // anywhere.)
     private static readonly Dictionary<string, string[]> PackageAllowlistByProject = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["Mithril.MapCalibration.Capture.csproj"] = ["OpenCvSharp"],
+        ["Mithril.MapCalibration.Detection.csproj"] = ["OpenCvSharp"],
     };
 
     private static readonly string[] ForbiddenProjects =

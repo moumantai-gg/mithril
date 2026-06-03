@@ -1,4 +1,4 @@
-namespace Mithril.MapCalibration.Detection;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// A known landmark/NPC reference for the area being calibrated: its

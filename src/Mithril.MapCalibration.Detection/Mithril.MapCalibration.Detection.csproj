@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Mithril.MapCalibration.Detection</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <!-- #978 / spec.md: OpenCv is permitted in the single dedicated CV math
+         project. Allowlisted by ShippedGraphDecoderFreeTests.
+         OpenCv is an alignment library, not an asset decoder; Mithril is
+         Windows-only WPF (not trimmed/AOT) so an in-process call beats an
+         out-of-process sidecar. Any OTHER src/** project taking an
+         OpenCvSharp reference is a violation. -->
+    <PackageReference Include="OpenCvSharp4" />
+    <PackageReference Include="OpenCvSharp4.runtime.win" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Mithril.MapCalibration.Capture.Tests" />
+    <InternalsVisibleTo Include="Mithril.MapCalibration.Tests" />
+  </ItemGroup>
+</Project>

@@ -5,7 +5,7 @@ namespace Mithril.MapCalibration.Detection.Internal;
 /// <summary>
 /// The single JSON line the asset-extractor sidecar writes to stdout on success
 /// (issue #931). Mirrors the sidecar's emitter; parsed reflection-free via
-/// <see cref="Mithril.MapCalibration.Internal.MapCalibrationJsonContext"/>.
+/// <see cref="DetectionJsonContext"/>.
 /// </summary>
 internal sealed record SidecarResult(
     string Status,

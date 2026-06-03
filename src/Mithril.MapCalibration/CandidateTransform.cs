@@ -1,4 +1,4 @@
-namespace Mithril.MapCalibration.Detection;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// World-coord → aligned-pair-pixel transform — the input to <see cref="JEvaluator"/>.

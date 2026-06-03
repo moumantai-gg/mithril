@@ -14,5 +14,6 @@
     <!-- Cross-boundary ProjectReference into the isolated harness lib is fine:
          the lib's PM/targets opt-out is build-local (issue #884 decision). -->
     <ProjectReference Include="..\..\tools\Mithril.MapCalibration.Harness\Mithril.MapCalibration.Harness.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.MapCalibration.Detection\Mithril.MapCalibration.Detection.csproj" />
   </ItemGroup>
 </Project>

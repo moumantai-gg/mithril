@@ -1,4 +1,6 @@
-namespace Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Detection;
+
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// Supplies the decoded <see cref="IconTemplateSet"/> the detector matches against,

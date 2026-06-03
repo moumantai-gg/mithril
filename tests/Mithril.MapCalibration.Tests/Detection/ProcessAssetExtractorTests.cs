@@ -1,7 +1,8 @@
 using System.Diagnostics;
 using System.IO;
 using FluentAssertions;
-using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration;
+using Mithril.MapCalibration.Internal;
 using Xunit;
 
 namespace Mithril.MapCalibration.Tests.Detection;

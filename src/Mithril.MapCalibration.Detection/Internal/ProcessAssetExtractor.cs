@@ -8,9 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection.Internal;
-using Mithril.MapCalibration.Internal;
 
-namespace Mithril.MapCalibration.Detection;
+namespace Mithril.MapCalibration.Internal;
 
 /// <summary>
 /// Runs the out-of-process asset-extractor sidecar via
@@ -195,7 +194,7 @@ public sealed class ProcessAssetExtractor : IAssetExtractor
             if (trimmed.Length == 0 || trimmed[0] != '{') continue;
             try
             {
-                var result = JsonSerializer.Deserialize(trimmed, MapCalibrationJsonContext.Default.SidecarResult);
+                var result = JsonSerializer.Deserialize(trimmed, DetectionJsonContext.Default.SidecarResult);
                 if (result is not null && !string.IsNullOrEmpty(result.Status))
                     return result;
             }

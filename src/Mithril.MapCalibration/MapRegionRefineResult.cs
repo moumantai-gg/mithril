@@ -1,6 +1,4 @@
-using Mithril.MapCalibration.Detection;
-
-namespace Mithril.MapCalibration.Capture;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// Outcome of <see cref="IMapRegionRefiner.Refine"/>.

@@ -13,6 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mithril.MapCalibration.Capture\Mithril.MapCalibration.Capture.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.MapCalibration.Detection\Mithril.MapCalibration.Detection.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Update="Fixtures/CalibrationBundles/**/*.*" CopyToOutputDirectory="PreserveNewest" />

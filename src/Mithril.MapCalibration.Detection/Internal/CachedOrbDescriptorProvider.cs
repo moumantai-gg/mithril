@@ -6,7 +6,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 
-namespace Mithril.MapCalibration.Capture.Internal;
+namespace Mithril.MapCalibration.Detection.Internal;
 
 /// <summary>
 /// Reads cached ORB descriptors for a per-area base texture. Returns null
@@ -38,7 +38,7 @@ internal sealed class CachedOrbDescriptorProvider
         try
         {
             using var s = File.OpenRead(manifestPath);
-            manifest = JsonSerializer.Deserialize(s, CaptureJsonContext.Default.OrbDescriptorManifest);
+            manifest = JsonSerializer.Deserialize(s, DetectionJsonContext.Default.OrbDescriptorManifest);
         }
         catch (JsonException ex)
         {
