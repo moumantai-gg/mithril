@@ -21,6 +21,12 @@ public sealed class PalantirModule : IMithrilModule
 
     public void Register(IServiceCollection services)
     {
+        services.AddSingleton<Arda.Wpf.IUiEventSubscriber>(sp => new Arda.Wpf.WpfUiEventSubscriber(
+            sp.GetRequiredService<Arda.Contracts.IDomainEventSubscriber>(),
+            System.Windows.Application.Current.Dispatcher,
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<Arda.Wpf.WpfUiEventSubscriber>>()));
+        services.AddSingleton<Arda.Wpf.WpfMapPinPresenter>();
+
         services.AddSingleton<LiveInventoryViewModel>();
         services.AddSingleton<WorldStateViewModel>();
         services.AddSingleton<WorldHealthViewModel>();

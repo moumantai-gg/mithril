@@ -143,32 +143,22 @@
                                   Visibility="{Binding HasPins, Converter={StaticResource BoolToVis}}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border Background="#FF2E2E2E" CornerRadius="3"
-                                        Padding="10,7" Margin="0,0,0,5">
-                                    <StackPanel>
-                                        <DockPanel>
-                                            <TextBlock HorizontalAlignment="Right"
-                                                       Text="{Binding Appearance}"
-                                                       Foreground="#CCFFFFFF"
-                                                       FontSize="{DynamicResource AppFontSizeHint}"
-                                                       VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding Label}"
-                                                       Foreground="#FFFFFFFF"
-                                                       FontWeight="SemiBold"
-                                                       TextTrimming="CharacterEllipsis"/>
-                                        </DockPanel>
-                                        <DockPanel Margin="0,3,0,0">
-                                            <TextBlock HorizontalAlignment="Right"
-                                                       Text="{Binding Detail}"
-                                                       Foreground="#66FFFFFF"
-                                                       FontSize="{DynamicResource AppFontSizeHint}"
-                                                       VerticalAlignment="Center"/>
-                                            <TextBlock Text="{Binding Coords}"
-                                                       FontFamily="{DynamicResource AppMonoFontFamily}"
-                                                       Foreground="#88FFFFFF"/>
-                                        </DockPanel>
-                                    </StackPanel>
-                                </Border>
+                                <StackPanel Orientation="Horizontal" Margin="0,2">
+                                    <TextBlock Text="{Binding Label, Converter={StaticResource EmptyStringFallback}, ConverterParameter='Unnamed pin'}"
+                                               FontWeight="SemiBold" Margin="0,0,8,0"/>
+                                    <TextBlock>
+                                        <Run Text="X "/>
+                                        <Run Text="{Binding X, StringFormat={}{0:0.00}, Mode=OneWay}"/>
+                                        <Run Text="   Z "/>
+                                        <Run Text="{Binding Z, StringFormat={}{0:0.00}, Mode=OneWay}"/>
+                                    </TextBlock>
+                                    <TextBlock Margin="8,0,0,0" Opacity="0.6">
+                                        <Run Text="Color "/>
+                                        <Run Text="{Binding Color, Mode=OneWay}"/>
+                                        <Run Text=" · Shape "/>
+                                        <Run Text="{Binding Shape, Mode=OneWay}"/>
+                                    </TextBlock>
+                                </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
