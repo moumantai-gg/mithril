@@ -57,6 +57,11 @@ public sealed class AutoCaptureCalibrationSourceTests
             // name the converter can't parse (stands in for a future/unknown source
             // name as seen by a build that predates it). The poisoned entry must be
             // dropped while the valid entry survives — NOT a whole-store wipe.
+            //
+            // Note: the file is v1 shape (bare area keys) intentionally — this
+            // exercises BOTH the per-entry resilience (the original fix) AND the
+            // v1→v2 prefix migrator (#1021 Task 18) at once. The survivor is
+            // looked up under its migrated "Map_<X>" key.
             File.WriteAllText(path,
                 "{\"schemaVersion\":1,\"calibrations\":{" +
                 "\"AreaSerbule\":{" +
@@ -73,12 +78,21 @@ public sealed class AutoCaptureCalibrationSourceTests
 
             // The poisoned entry (originX=10) is dropped: never served as a user
             // refinement (a bundled baseline may win, but never the bad transform).
-            var poisoned = service.GetCalibration("AreaSerbule");
-            (poisoned is null || poisoned.OriginX != 10 || poisoned.Source != CalibrationSource.UserRefinement)
-                .Should().BeTrue("the unparseable user-store refinement must not be served");
+            // Check under BOTH the bare v1 key and the migrated v2 key so the
+            // assertion is robust regardless of whether per-entry resilience
+            // skipped it before or after key transformation.
+            foreach (var lookupKey in new[] { "AreaSerbule", "Map_AreaSerbule" })
+            {
+                var poisoned = service.GetCalibration(lookupKey);
+                (poisoned is null || poisoned.OriginX != 10 || poisoned.Source != CalibrationSource.UserRefinement)
+                    .Should().BeTrue($"the unparseable user-store refinement must not be served (key={lookupKey})");
+            }
 
-            // The valid sibling entry SURVIVES — this is the resilience the fix adds.
-            var survivor = service.GetCalibration("AreaEltibule");
+            // The valid sibling entry SURVIVES — this is the resilience the fix
+            // adds. Looked up under the migrated "Map_AreaEltibule" key per the
+            // v1→v2 prefix migrator. Bare "AreaEltibule" is intentionally NOT
+            // resolvable post-migration — that's the new keying contract.
+            var survivor = service.GetCalibration("Map_AreaEltibule");
             survivor.Should().NotBeNull("a poisoned sibling entry must not wipe the whole store");
             survivor!.OriginX.Should().Be(42, "the valid entry's transform is preserved verbatim");
             survivor.OriginY.Should().Be(99);

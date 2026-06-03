@@ -176,47 +176,101 @@ internal sealed class UserRefinementStore
             // individually so a single poisoned entry is skipped+warned while every
             // other area survives. Durable against any future additive enum/field
             // change, not just AutoCapture.
-            using var stream = File.OpenRead(_filePath);
-            using var doc = JsonDocument.Parse(stream);
             var loaded = new Dictionary<string, AreaCalibration>(StringComparer.Ordinal);
+            bool needsMigration;
 
-            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
-                !doc.RootElement.TryGetProperty("calibrations", out var calibrations) ||
-                calibrations.ValueKind != JsonValueKind.Object)
+            // Open + parse + walk the JSON inside a tight scope so the read
+            // stream is released BEFORE any migration Persist() runs — otherwise
+            // the File.Replace in Persist hits a sharing violation on the
+            // destination and the outer catch wipes the store. The doc/stream
+            // are not needed past the dictionary population.
+            using (var stream = File.OpenRead(_filePath))
+            using (var doc = JsonDocument.Parse(stream))
             {
-                // No (or malformed) calibrations object → nothing to load. An empty
-                // store is the correct result; a structurally-broken file is caught
-                // below by JsonDocument.Parse throwing.
-                _refinements = loaded;
-                return;
-            }
-
-            foreach (var entry in calibrations.EnumerateObject())
-            {
-                try
+                // Detect file-level schema version. Absent → v1 (legacy shape that
+                // predates this field, written by builds before #1021). v1 keyed
+                // refinements by bare area name (e.g. "AreaSerbule"); v2+ uses the
+                // per-scene Map_<X> grammar from the asset-load log (e.g.
+                // "Map_AreaSerbule"). See docs/planning/per-scene-calibration-keying/.
+                var schemaVersion = 1;
+                if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                    doc.RootElement.TryGetProperty("schemaVersion", out var verProp) &&
+                    verProp.ValueKind == JsonValueKind.Number &&
+                    verProp.TryGetInt32(out var v))
                 {
-                    var cal = entry.Value.Deserialize(MapCalibrationJsonContext.Default.AreaCalibration);
-                    if (cal is null) continue;
-                    // Stamp Source on every surviving entry; lifted records from
-                    // older shapes may not carry it explicitly and the default on
-                    // the record is UserRefinement, which matches this store's
-                    // contents — but be defensive in case a future shape change
-                    // reorders defaults.
-                    loaded[entry.Name] = cal with { Source = CalibrationSource.UserRefinement };
+                    schemaVersion = v;
                 }
-                catch (JsonException ex)
+                needsMigration = schemaVersion < 2;
+
+                if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                    !doc.RootElement.TryGetProperty("calibrations", out var calibrations) ||
+                    calibrations.ValueKind != JsonValueKind.Object)
                 {
-                    // One unparseable entry (unknown future enum NAME / added field
-                    // an older build can't read) — skip it, keep the rest. This is
-                    // the durable downgrade-window degrade: the area re-runs
-                    // calibration; no other area's data is touched.
-                    _logger?.LogWarning(ex,
-                        "Skipping unparseable user refinement entry {Area} in {Path} — {Reason}.",
-                        entry.Name, _filePath, ex.Message);
+                    // No (or malformed) calibrations object → nothing to load. An empty
+                    // store is the correct result; a structurally-broken file is caught
+                    // below by JsonDocument.Parse throwing. Do NOT persist here — an
+                    // empty migration writes nothing back (idempotence + no spurious
+                    // rewrite of a malformed-but-readable file).
+                    _refinements = loaded;
+                    return;
+                }
+
+                foreach (var entry in calibrations.EnumerateObject())
+                {
+                    try
+                    {
+                        var cal = entry.Value.Deserialize(MapCalibrationJsonContext.Default.AreaCalibration);
+                        if (cal is null) continue;
+                        // v1→v2 key migration: prefix bare area keys with "Map_". A
+                        // pathological v1 file whose key ALREADY starts with "Map_"
+                        // is kept verbatim (defensive — never double-prefix).
+                        var key = entry.Name;
+                        if (needsMigration && !key.StartsWith("Map_", StringComparison.Ordinal))
+                        {
+                            key = "Map_" + key;
+                        }
+                        // Stamp Source on every surviving entry; lifted records from
+                        // older shapes may not carry it explicitly and the default on
+                        // the record is UserRefinement, which matches this store's
+                        // contents — but be defensive in case a future shape change
+                        // reorders defaults.
+                        loaded[key] = cal with { Source = CalibrationSource.UserRefinement };
+                    }
+                    catch (JsonException ex)
+                    {
+                        // One unparseable entry (unknown future enum NAME / added field
+                        // an older build can't read) — skip it, keep the rest. This is
+                        // the durable downgrade-window degrade: the area re-runs
+                        // calibration; no other area's data is touched.
+                        _logger?.LogWarning(ex,
+                            "Skipping unparseable user refinement entry {Area} in {Path} — {Reason}.",
+                            entry.Name, _filePath, ex.Message);
+                    }
                 }
             }
 
             _refinements = loaded;
+
+            // Persist immediately on a v1→v2 migration so subsequent boots are
+            // no-op loads (idempotence) and so the file on disk reflects the
+            // new key grammar before any consumer mutates the store. Use the
+            // existing transactional Persist; if it throws, roll the in-memory
+            // state back to empty (i.e. behave as though the load failed) so
+            // we never end up with v2 keys in memory while v1 keys remain on
+            // disk — that asymmetry is the silent data-loss path Save() guards
+            // against, and the same invariant applies here.
+            if (needsMigration && _refinements.Count > 0)
+            {
+                _logger?.LogInformation(
+                    "Migrated {Count} user refinement(s) at {Path} to v2 (Map_<X> keying).",
+                    _refinements.Count, _filePath);
+                try { Persist(); }
+                catch
+                {
+                    _refinements = new Dictionary<string, AreaCalibration>(StringComparer.Ordinal);
+                    throw;
+                }
+            }
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
@@ -242,7 +296,7 @@ internal sealed class UserRefinementStore
     /// </summary>
     private void Persist()
     {
-        var file = new UserRefinementFile(SchemaVersion: 1, Calibrations: _refinements);
+        var file = new UserRefinementFile(SchemaVersion: 2, Calibrations: _refinements);
         var json = JsonSerializer.Serialize(file, MapCalibrationJsonContext.Default.UserRefinementFile);
         // Atomic-ish write: temp file then move. Defends against a crash
         // mid-write turning the store into garbage.
