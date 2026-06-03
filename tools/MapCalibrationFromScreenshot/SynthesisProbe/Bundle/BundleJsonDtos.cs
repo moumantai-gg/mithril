@@ -36,9 +36,7 @@ internal sealed record MapRectJson(
     int Width,
     int Height,
     int TextureWidth,
-    int TextureHeight,
-    double? AutoDetectScore,
-    double? SourceScaleFactor);
+    int TextureHeight);
 
 internal sealed record DetectionJson(
     string LandmarkType,

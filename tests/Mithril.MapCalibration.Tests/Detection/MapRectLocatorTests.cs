@@ -167,55 +167,7 @@ public sealed class MapRectLocatorTests
         downsampled!.OriginX.Should().Be(native!.OriginX);
         downsampled.OriginY.Should().Be(native.OriginY);
         downsampled.TextureWidth.Should().Be(native.TextureWidth);
-        downsampled.SourceScaleFactor.Should().Be(native.SourceScaleFactor);
-    }
-
-    /// <summary>
-    /// Task 2: the continuous <see cref="MapRect.SourceScaleFactor"/> should land
-    /// between the bracketing ladder rungs (not snapped to a discrete rung) when the
-    /// true render scale falls between rungs — proving the parabolic refinement runs.
-    /// </summary>
-    [Fact]
-    public void AutoDetect_refines_source_scale_factor_off_the_discrete_ladder()
-    {
-        // The ladder's discrete rungs (a constant in MapRectLocator). Used only to
-        // assert the refined factor is OFF the grid — i.e. the parabola engaged.
-        double[] ladderRungs =
-        {
-            1.0, 1.1, 1.2, 1.35, 1.5, 1.75, 2.0, 2.1, 2.2, 2.4, 2.6, 2.8,
-            3.0, 3.25, 3.5, 4.0, 4.5, 5.0, 6.0, 8.0, 10.0,
-        };
-
-        const int tw = 240, th = 200;
-        var texture = StructuredTexture(tw, th, 99);
-
-        // Render at factor 1.3 — strictly between ladder rungs 1.2 and 1.35, so the
-        // discrete ladder cannot represent the true scale and the parabola must move
-        // the recovered factor off the grid.
-        const double factor = 1.3;
-        int rw = (int)Math.Round(tw / factor), rh = (int)Math.Round(th / factor);
-        var rendered = ImageOps.Resize(texture, rw, rh);
-        int sw = rw + 50, sh = rh + 40;
-        var shot = new byte[sw * sh];
-        Array.Fill(shot, (byte)40);
-        for (int y = 0; y < rh; y++)
-            Buffer.BlockCopy(rendered.Pixels, y * rw, shot, (y + 18) * sw + 22, rw);
-        var screenshot = new GrayImage(sw, sh, shot);
-
-        var rect = MapRectLocator.AutoDetect(screenshot, texture, minScore: 0.3);
-
-        rect.Should().NotBeNull();
-        rect!.SourceScaleFactor.Should().NotBeNull();
-        double f = rect.SourceScaleFactor!.Value;
-
-        // Continuous + sensible: a finite factor inside the plausible bracket around
-        // the true 1.3 (NCC score-curve noise can bias the parabola vertex toward a
-        // neighbour, so allow the full 1.2–1.5 bracket rather than over-fitting).
-        f.Should().BeInRange(1.15, 1.5);
-        // Off the discrete grid — proves the parabolic refinement actually ran rather
-        // than snapping to a rung.
-        ladderRungs.Should().NotContain(r => Math.Abs(r - f) < 1e-6,
-            "the refined factor must be continuous, not a discrete ladder rung");
+        downsampled.TextureHeight.Should().Be(native.TextureHeight);
     }
 
     /// <summary>
@@ -282,13 +234,14 @@ public sealed class MapRectLocatorTests
 
     /// <summary>
     /// Observability seam: the threshold-applying <see cref="MapRectLocator.AutoDetect(GrayImage, GrayImage, double)"/>
-    /// returns <c>null</c> on a sub-threshold match, throwing away the score we'd need
-    /// to triage close-miss-vs-catastrophic. <see cref="MapRectLocator.AutoDetectBest(GrayImage, GrayImage)"/>
-    /// always returns the best rung's rect with <see cref="MapRect.AutoDetectScore"/>
-    /// populated so the engine can log it and the bundle can record it.
+    /// returns <c>null</c> on a sub-threshold match, throwing away the rect we'd
+    /// need to triage close-miss-vs-catastrophic. <see cref="MapRectLocator.AutoDetectBest(GrayImage, GrayImage)"/>
+    /// always returns the best rung's rect so the engine can log its origin and the
+    /// bundle can record it. (Pre-Task-13 the rect carried an AutoDetectScore field;
+    /// that's gone now — score metadata re-surfaces via LocatorMetrics under Task 15.)
     /// </summary>
     [Fact]
-    public void AutoDetectBest_returns_rect_with_score_even_when_below_typical_threshold()
+    public void AutoDetectBest_returns_rect_even_when_thresholded_overload_rejects()
     {
         // The embedded-texture pair scores ~1.0 on the matching rung; using a
         // minScore > 1.0 on the threshold-applying overload guarantees rejection
@@ -303,19 +256,14 @@ public sealed class MapRectLocatorTests
             Buffer.BlockCopy(texture.Pixels, y * tw, shot, (y + padY) * sw + padX, tw);
         var screenshot = new GrayImage(sw, sh, shot);
 
-        // Thresholded overload rejects (no rect returned — score is hidden).
+        // Thresholded overload rejects (no rect returned — caller can't tell why).
         MapRectLocator.AutoDetect(screenshot, texture, minScore: 1.5).Should().BeNull();
 
-        // Best-rect overload surfaces the score regardless of threshold.
+        // Best-rect overload surfaces the rect regardless of threshold.
         var best = MapRectLocator.AutoDetectBest(screenshot, texture);
 
         best.Should().NotBeNull();
-        best!.AutoDetectScore.Should().NotBeNull();
-        best.AutoDetectScore!.Value.Should().BeInRange(0.0, 1.0);
-        // The match really did succeed — score is meaningfully high; threshold gate
-        // is the *only* reason AutoDetect dropped it.
-        best.AutoDetectScore!.Value.Should().BeGreaterThan(0.5);
-        best.OriginX.Should().BeCloseTo(padX, 3);
+        best!.OriginX.Should().BeCloseTo(padX, 3);
         best.OriginY.Should().BeCloseTo(padY, 3);
     }
 }

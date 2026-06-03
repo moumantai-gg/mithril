@@ -26,13 +26,20 @@ public sealed class CalibrationAttemptContext
     public GrayImage? BaseTextureResampled { get; set; }
     public MapRect? MapRect { get; set; }
     /// <summary>
-    /// The locator's coarse best-rung rect (with <see cref="MapRect.AutoDetectScore"/>
-    /// + <see cref="MapRect.SourceScaleFactor"/> populated) regardless of whether
-    /// it cleared the engine's accept threshold. Set on both accept and
-    /// <c>rejected-map-not-located</c> outcomes so the bundle/log makes future
-    /// close-miss vs catastrophic-mismatch self-triaging.
+    /// The locator's raw fit rect — populated whenever the refiner produced any fit
+    /// (gate-pass-or-not). Set on both accept and <c>rejected-map-not-located</c>
+    /// outcomes so the bundle/log makes future close-miss vs catastrophic-mismatch
+    /// self-triaging. Replaces the pre-PR-3 <c>LocatorBestRect</c>.
     /// </summary>
-    public MapRect? LocatorBestRect { get; set; }
+    public MapRect? LocatorRawFit { get; set; }
+
+    /// <summary>
+    /// The locator's FM-style metrics — populated whenever the refiner produced any
+    /// fit (gate-pass-or-not). Carries inlier count/ratio + recovered similarity
+    /// transform parameters + median residual. Null under the in-tree NCC refiner
+    /// (which doesn't produce these); populated once PR-4 swaps to the FM refiner.
+    /// </summary>
+    public LocateMetrics? LocatorMetrics { get; set; }
     public GrayImage? AlignedCrop { get; set; }
     public GrayImage? AlignedTexture { get; set; }
     public IReadOnlyList<LandmarkReference>? References { get; set; }

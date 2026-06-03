@@ -82,10 +82,8 @@ internal static class ScreenshotCalibrator
                 Width: rectDown.Width * 2,
                 Height: rectDown.Height * 2,
                 TextureWidth: textureGray.Width,
-                TextureHeight: textureGray.Height,
-                AutoDetectScore: rectDown.AutoDetectScore,
-                SourceScaleFactor: rectDown.SourceScaleFactor);
-            Console.WriteLine($"[locate] map at screenshot ({mapRect.OriginX},{mapRect.OriginY}) size {mapRect.Width}x{mapRect.Height} (score={mapRect.AutoDetectScore:0.000}, downsample={mapRect.SourceScaleFactor:0.00})");
+                TextureHeight: textureGray.Height);
+            Console.WriteLine($"[locate] map at screenshot ({mapRect.OriginX},{mapRect.OriginY}) size {mapRect.Width}x{mapRect.Height}");
         }
 
         // Restrict NCC search to the visible map area. Without this the search

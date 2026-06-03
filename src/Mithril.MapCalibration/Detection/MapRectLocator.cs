@@ -36,7 +36,7 @@ public static class MapRectLocator
     /// enough structure for the gradient/landmark layout to register. The recovered
     /// origin/size carry sub-pixel error after the unscale, which is well inside the
     /// 15px RANSAC inlier gate (the sole <see cref="MapRect"/> consumer), and the
-    /// scale quantisation is removed by the parabolic <see cref="MapRect.SourceScaleFactor"/>
+    /// scale quantisation is removed by the parabolic source-scale-factor
     /// refinement (Task 2). Lower values start to lose the layout; higher values
     /// re-introduce the cost without precision the inlier gate can use.</para>
     /// </summary>
@@ -56,27 +56,30 @@ public static class MapRectLocator
     /// </summary>
     public static MapRect? AutoDetect(GrayImage screenshot, GrayImage texture, double minScore)
     {
-        var best = AutoDetectBest(screenshot, texture);
-        if (best is null || best.AutoDetectScore is null || best.AutoDetectScore < minScore) return null;
-        return best;
+        var (rect, score) = AutoDetectBestCore(screenshot, texture);
+        if (rect is null || score < minScore) return null;
+        return rect;
     }
 
     /// <summary>
     /// Threshold-free sibling of <see cref="AutoDetect(GrayImage, GrayImage, double)"/>:
-    /// runs the same scale ladder and returns the best-rung rect with
-    /// <see cref="MapRect.AutoDetectScore"/> + <see cref="MapRect.SourceScaleFactor"/>
-    /// populated, regardless of how low the score is. Returns null only when the ladder
-    /// itself has no valid rung (every candidate fails the size filter — a degenerate
-    /// input).
+    /// runs the same scale ladder and returns the best-rung rect regardless of how
+    /// low the score is. Returns null only when the ladder itself has no valid rung
+    /// (every candidate fails the size filter — a degenerate input).
     ///
-    /// <para><b>Why a separate method.</b> The thresholded overload discards the score
-    /// on rejection, so the caller can't tell a close miss (score 0.47) from a
-    /// catastrophic mismatch (score 0.05) — both look like <c>null</c>. The auto-
-    /// calibration engine and its diagnostic bundle want the score in both branches
-    /// (accept logs it; reject logs it AND writes it to <c>01-attempt.json</c>) so a
-    /// future "map-not-located" outcome is self-triaging.</para>
+    /// <para><b>Why a separate method.</b> The thresholded overload discards the rect
+    /// on rejection, so the caller can't tell a close miss from a catastrophic
+    /// mismatch — both look like <c>null</c>. The auto-calibration engine and its
+    /// diagnostic bundle want the rect in both branches so a future "map-not-located"
+    /// outcome is self-triaging. (Score metadata used to ride on the rect itself;
+    /// under FM it'll come back via the locator-metrics result.)</para>
     /// </summary>
     public static MapRect? AutoDetectBest(GrayImage screenshot, GrayImage texture)
+    {
+        return AutoDetectBestCore(screenshot, texture).Rect;
+    }
+
+    private static (MapRect? Rect, double Score) AutoDetectBestCore(GrayImage screenshot, GrayImage texture)
     {
         // Candidate downsample factors for the texture — each gives a different
         // "rendered map size" hypothesis. The match's score peak picks the
@@ -85,7 +88,7 @@ public static class MapRectLocator
         // exactly in the visible window — the right factor is ~texture/screen
         // and integer-only resampling skips past it.
         var candidates = BuildCandidateScales(screenshot, texture);
-        if (candidates.Count == 0) return null;
+        if (candidates.Count == 0) return (null, double.NegativeInfinity);
 
         // Per-rung peak NCC score, aligned with the candidate index, so the Task-2
         // parabola can read the best rung's neighbours without re-scoring. NaN marks
@@ -97,7 +100,7 @@ public static class MapRectLocator
         double bestScore = double.NegativeInfinity;
         for (int i = 0; i < candidates.Count; i++)
         {
-            var (factor, downsampledTexture) = candidates[i];
+            var (_, downsampledTexture) = candidates[i];
             var hit = NccTemplateMatch.FindBest(screenshot, downsampledTexture, templateMask: null, minScore: -1.0);
             if (hit is null)
             {
@@ -115,20 +118,19 @@ public static class MapRectLocator
                     Width: downsampledTexture.Width,
                     Height: downsampledTexture.Height,
                     TextureWidth: texture.Width,
-                    TextureHeight: texture.Height,
-                    AutoDetectScore: hit.Value.Score,
-                    SourceScaleFactor: factor);
+                    TextureHeight: texture.Height);
             }
         }
 
-        if (bestRect is null) return null;
+        if (bestRect is null) return (null, double.NegativeInfinity);
 
-        // Task 2 (#966): the discrete ladder quantises SourceScaleFactor to ±2.5–5%.
-        // Fit a parabola through the best rung and its two ladder neighbours on the
-        // NCC-score curve to recover a continuous peak scale, removing the rung
-        // snapping. Guarded for ladder ends + a degenerate/flat fit (keep discrete).
-        double refinedFactor = RefineScaleFactor(candidates, rungScores, bestIndex);
-        return bestRect with { SourceScaleFactor = refinedFactor };
+        // Task 2 (#966): the discrete ladder quantises the source scale factor to
+        // ±2.5–5%. The parabolic refinement that recovered a continuous peak scale
+        // used to live here on MapRect.SourceScaleFactor; under the FM-based locate
+        // (Task 13 cleanup) the field is gone, so we no longer carry the refined
+        // factor through the rect. Call the refinement only if a future caller needs
+        // it — the rect itself is unaffected.
+        return (bestRect, bestScore);
     }
 
     /// <summary>
@@ -149,9 +151,9 @@ public static class MapRectLocator
     public static MapRect? AutoDetect(
         GrayImage screenshot, GrayImage texture, double minScore, int workingLongEdgePx)
     {
-        var best = AutoDetectBest(screenshot, texture, workingLongEdgePx);
-        if (best is null || best.AutoDetectScore is null || best.AutoDetectScore < minScore) return null;
-        return best;
+        var (rect, score) = AutoDetectBestCore(screenshot, texture, workingLongEdgePx);
+        if (rect is null || score < minScore) return null;
+        return rect;
     }
 
     /// <summary>
@@ -159,9 +161,16 @@ public static class MapRectLocator
     /// <see cref="AutoDetectBest(GrayImage, GrayImage)"/> the way the four-arg
     /// <see cref="AutoDetect(GrayImage, GrayImage, double, int)"/> pairs with the
     /// native three-arg form. Live callers use this so the auto-calibration engine
-    /// can always observe the score, even when it's below the production threshold.
+    /// can always observe the locator's best fit, even when its score is below the
+    /// production threshold.
     /// </summary>
     public static MapRect? AutoDetectBest(
+        GrayImage screenshot, GrayImage texture, int workingLongEdgePx)
+    {
+        return AutoDetectBestCore(screenshot, texture, workingLongEdgePx).Rect;
+    }
+
+    private static (MapRect? Rect, double Score) AutoDetectBestCore(
         GrayImage screenshot, GrayImage texture, int workingLongEdgePx)
     {
         if (workingLongEdgePx <= 0) throw new ArgumentOutOfRangeException(nameof(workingLongEdgePx));
@@ -169,14 +178,14 @@ public static class MapRectLocator
         var (workScreenshot, captureRatio) = DownsampleToLongEdge(screenshot, workingLongEdgePx);
         var (workTexture, _) = DownsampleToLongEdge(texture, workingLongEdgePx);
 
-        var rect = AutoDetectBest(workScreenshot, workTexture);
-        if (rect is null) return null;
+        var (rect, score) = AutoDetectBestCore(workScreenshot, workTexture);
+        if (rect is null) return (null, double.NegativeInfinity);
 
         // Unscale origin/size from working-capture pixels back to full-capture
         // pixels. TextureWidth/Height must remain the FULL texture dimensions so the
         // ScreenshotToTexture transform maps into native texture space — restore them
         // explicitly (the ladder filled them with the *working* texture dims).
-        return rect with
+        var unscaled = rect with
         {
             OriginX = (int)Math.Round(rect.OriginX * captureRatio),
             OriginY = (int)Math.Round(rect.OriginY * captureRatio),
@@ -185,6 +194,7 @@ public static class MapRectLocator
             TextureWidth = texture.Width,
             TextureHeight = texture.Height,
         };
+        return (unscaled, score);
     }
 
     /// <summary>
@@ -207,83 +217,6 @@ public static class MapRectLocator
         // from the actual produced width rather than the nominal factor).
         double ratio = (double)src.Width / down.Width;
         return (down, ratio);
-    }
-
-    /// <summary>
-    /// Fits a 1D parabola through the NCC peak scores of the best ladder rung and its
-    /// two neighbours and returns the continuous scale factor at the parabola's vertex,
-    /// clamped to the neighbouring rungs. Falls back to the discrete rung factor when
-    /// the best rung is at a ladder end or the parabola is degenerate/flat (the vertex
-    /// would diverge or sit outside the bracket).
-    /// </summary>
-    private static double RefineScaleFactor(
-        IReadOnlyList<(double Factor, double Score)> rungs, int bestIndex)
-    {
-        if (bestIndex <= 0 || bestIndex >= rungs.Count - 1)
-        {
-            return rungs[Math.Max(0, bestIndex)].Factor; // ladder end → keep discrete
-        }
-
-        // Parameterise the parabola over rung INDEX (-1, 0, +1) where the scores are
-        // sampled, then map the sub-index vertex back through the (possibly uneven)
-        // factor spacing. y = a·x² + b·x + c with x ∈ {-1, 0, 1}:
-        //   a = (y_{-1} + y_{+1})/2 − y_0 ,  b = (y_{+1} − y_{-1})/2
-        // vertex at x* = −b / (2a).
-        double yL = rungs[bestIndex - 1].Score;
-        double y0 = rungs[bestIndex].Score;
-        double yR = rungs[bestIndex + 1].Score;
-
-        double a = (yL + yR) * 0.5 - y0;
-        double b = (yR - yL) * 0.5;
-
-        // Flat / non-concave peak (a ≈ 0, or a > 0 ⇒ the bracket is a trough, not a
-        // peak): the parabola gives no usable vertex → keep the discrete rung.
-        if (a >= -1e-9) return rungs[bestIndex].Factor;
-
-        double xStar = -b / (2.0 * a);
-        // The true peak must lie within the bracketing rungs; outside means the fit
-        // is unreliable (noise) → keep discrete.
-        if (xStar < -1.0 || xStar > 1.0 || double.IsNaN(xStar) || double.IsInfinity(xStar))
-        {
-            return rungs[bestIndex].Factor;
-        }
-
-        double fL = rungs[bestIndex - 1].Factor;
-        double f0 = rungs[bestIndex].Factor;
-        double fR = rungs[bestIndex + 1].Factor;
-        // Linearly interpolate the factor at the sub-index vertex using the relevant
-        // (uneven) rung spacing on whichever side of the centre the vertex falls.
-        return xStar >= 0 ? f0 + xStar * (fR - f0) : f0 + xStar * (f0 - fL);
-    }
-
-    /// <summary>
-    /// Maps the candidate ladder + its captured per-rung scores onto the index-space
-    /// parabola fit. A neighbour rung with no hit (NaN score) makes the fit
-    /// unreliable → keep the discrete best rung.
-    /// </summary>
-    private static double RefineScaleFactor(
-        List<(double Factor, GrayImage Downsampled)> candidates, double[] rungScores, int bestIndex)
-    {
-        if (bestIndex <= 0 || bestIndex >= candidates.Count - 1)
-        {
-            return candidates[Math.Max(0, bestIndex)].Factor; // ladder end → keep discrete
-        }
-
-        double sL = rungScores[bestIndex - 1];
-        double s0 = rungScores[bestIndex];
-        double sR = rungScores[bestIndex + 1];
-        if (double.IsNaN(sL) || double.IsNaN(s0) || double.IsNaN(sR))
-        {
-            return candidates[bestIndex].Factor; // a neighbour didn't score → keep discrete
-        }
-
-        var trio = new (double Factor, double Score)[]
-        {
-            (candidates[bestIndex - 1].Factor, sL),
-            (candidates[bestIndex].Factor, s0),
-            (candidates[bestIndex + 1].Factor, sR),
-        };
-        return RefineScaleFactor(trio, 1);
     }
 
     private static List<(double Factor, GrayImage Downsampled)> BuildCandidateScales(
@@ -334,9 +267,7 @@ public sealed record MapRect(
     int Width,
     int Height,
     int TextureWidth,
-    int TextureHeight,
-    double? AutoDetectScore = null,
-    double? SourceScaleFactor = null)
+    int TextureHeight)
 {
     public (double Tx, double Ty) ScreenshotToTexture(double sx, double sy)
     {

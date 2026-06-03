@@ -12,11 +12,37 @@ public sealed record AttemptJson(
     string? RejectReason,
     string EngineVersion,
     AttemptFilesJson Files,
-    // Coarse locator's best-rung rect (score, factor, origin, size). Populated on both
-    // accept and rejected-map-not-located so the bundle is self-triaging for future
-    // close-miss-vs-catastrophic-mismatch rejections. Null when the locator never ran
-    // (early pre-locate rejects) or the captured frame had no viable rung.
-    MapRectJson? LocatorBest = null);
+    // Coarse locator's raw fit rect + FM-style inlier/transform metrics + the gate
+    // verdict that produced the engine's outcome. Populated on both accept and
+    // rejected-map-not-located so the bundle is self-triaging for future
+    // close-miss-vs-catastrophic-mismatch rejections. Null when the locator never
+    // ran (early pre-locate rejects) or the captured frame had no viable fit.
+    LocatorBestJson? LocatorBest = null);
+
+/// <summary>
+/// Carries the locator's raw fit rect (gate-pass-or-not), the FM-style metrics
+/// (inlier counts/ratio, similarity transform, residual), and the gate verdict
+/// that drove the engine's outcome. Replaces the pre-PR-3 reuse of
+/// <see cref="MapRectJson"/> at the <see cref="AttemptJson.LocatorBest"/> arg site.
+/// </summary>
+public sealed record LocatorBestJson(
+    int SchemaVersion,
+    int OriginX,
+    int OriginY,
+    int Width,
+    int Height,
+    int TextureWidth,
+    int TextureHeight,
+    int InlierCount,
+    int CandidateCount,
+    double InlierRatio,
+    double Scale,
+    double RotationDegrees,
+    double Tx,
+    double Ty,
+    double ResidualPixels,
+    bool GateAccepted,
+    string? GateRejectReason);
 
 public sealed record AttemptFilesJson(
     string? RawScreenshot,
@@ -37,9 +63,7 @@ public sealed record MapRectJson(
     int Width,
     int Height,
     int TextureWidth,
-    int TextureHeight,
-    double? AutoDetectScore,
-    double? SourceScaleFactor);
+    int TextureHeight);
 
 public sealed record DetectionJson(
     string LandmarkType,
@@ -79,6 +103,7 @@ public sealed record RecoveredCalibrationJson(
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
 [JsonSerializable(typeof(AttemptJson))]
+[JsonSerializable(typeof(LocatorBestJson))]
 [JsonSerializable(typeof(MapRectJson))]
 [JsonSerializable(typeof(DetectionsJson))]
 [JsonSerializable(typeof(RecoveredCalibrationJson))]

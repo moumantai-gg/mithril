@@ -143,9 +143,11 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
 
     /// <summary>
     /// Observability: on a <c>rejected-map-not-located</c> outcome the bundle's
-    /// <c>01-attempt.json</c> must carry the coarse locator's best score+factor+origin
-    /// (under <c>LocatorBest</c>), so triaging close-miss vs catastrophic-mismatch is
-    /// just <c>jq .locatorBest.autoDetectScore</c> on the captured bundle.
+    /// <c>01-attempt.json</c> must carry the coarse locator's best origin+size (under
+    /// <c>LocatorBest</c>), so triaging close-miss vs catastrophic-mismatch via the
+    /// captured rect is possible. (Score/factor metadata used to ride on MapRect
+    /// itself; Task 13 stripped those fields, and Task 15 re-surfaces equivalents
+    /// via LocatorMetrics.)
     /// </summary>
     [Fact]
     public void Writes_locatorBest_on_map_not_located_reject()
@@ -154,9 +156,19 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
             new DateTimeOffset(2026, 6, 2, 17, 15, 30, 866, TimeSpan.Zero));
         ctx.RawCapture = new CapturedFrame(4, 4, new byte[4 * 4 * 4]);
         ctx.GrayCapture = new GrayImage(4, 4, new byte[16]);
-        // The locator found a best rung below threshold — preserved on the context.
-        ctx.LocatorBestRect = new MapRect(192, 100, 909, 909, 2048, 2048,
-            AutoDetectScore: 0.4729, SourceScaleFactor: 1.47);
+        // The locator found a raw fit below the gate — preserved on the context
+        // alongside its FM metrics so the bundle's LocatorBest carries both.
+        ctx.LocatorRawFit = new MapRect(192, 100, 909, 909, 2048, 2048);
+        ctx.LocatorMetrics = new LocateMetrics(
+            InlierCount: 42,
+            CandidateCount: 731,
+            InlierRatio: 0.057,
+            Scale: 1.0007,
+            RotationDegrees: 0.12,
+            Mirror: false,
+            Tx: 191.4,
+            Ty: 99.8,
+            ResidualPixels: 2.41);
         ctx.Outcome = OutcomeVocabulary.RejectedMapNotLocated;
 
         NewSink().Write(ctx);
@@ -167,10 +179,21 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         var attempt = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
         attempt.Should().NotBeNull();
         attempt!.LocatorBest.Should().NotBeNull();
-        attempt.LocatorBest!.AutoDetectScore.Should().Be(0.4729);
-        attempt.LocatorBest.SourceScaleFactor.Should().Be(1.47);
-        attempt.LocatorBest.OriginX.Should().Be(192);
+        attempt.LocatorBest!.OriginX.Should().Be(192);
         attempt.LocatorBest.OriginY.Should().Be(100);
+        attempt.LocatorBest.Width.Should().Be(909);
+        attempt.LocatorBest.Height.Should().Be(909);
+        // FM metrics from ctx.LocatorMetrics flow through to LocatorBest.
+        attempt.LocatorBest.InlierCount.Should().Be(42);
+        attempt.LocatorBest.CandidateCount.Should().Be(731);
+        attempt.LocatorBest.InlierRatio.Should().BeApproximately(0.057, 1e-9);
+        attempt.LocatorBest.Scale.Should().BeApproximately(1.0007, 1e-9);
+        attempt.LocatorBest.RotationDegrees.Should().BeApproximately(0.12, 1e-9);
+        attempt.LocatorBest.Tx.Should().BeApproximately(191.4, 1e-9);
+        attempt.LocatorBest.Ty.Should().BeApproximately(99.8, 1e-9);
+        attempt.LocatorBest.ResidualPixels.Should().BeApproximately(2.41, 1e-9);
+        // Map-not-located outcome → GateAccepted=false on the locator block.
+        attempt.LocatorBest.GateAccepted.Should().BeFalse();
     }
 
     [Theory]

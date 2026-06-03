@@ -115,8 +115,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             var dto = new MapRectJson(1,
                 ctx.MapRect.OriginX, ctx.MapRect.OriginY,
                 ctx.MapRect.Width, ctx.MapRect.Height,
-                ctx.MapRect.TextureWidth, ctx.MapRect.TextureHeight,
-                ctx.MapRect.AutoDetectScore, ctx.MapRect.SourceScaleFactor);
+                ctx.MapRect.TextureWidth, ctx.MapRect.TextureHeight);
             return WriteJson(dir, "04-maprect.json", dto, CalibrationBundleJsonContext.Default.MapRectJson);
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "04-maprect write failed"); return null; }
@@ -227,7 +226,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         {
             var finalized = DateTimeOffset.UtcNow;
             var dto = new AttemptJson(
-                SchemaVersion: 1,
+                SchemaVersion: 2,
                 Area: ctx.Area,
                 AttemptStartedUtc: ctx.StartedUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
                 AttemptFinalizedUtc: finalized.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
@@ -235,20 +234,41 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 RejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo,
                 EngineVersion: AssemblyVersion,
                 Files: files,
-                LocatorBest: ToMapRectJson(ctx.LocatorBestRect));
+                LocatorBest: ToLocatorBestJson(ctx));
             WriteJson(dir, "01-attempt.json", dto, CalibrationBundleJsonContext.Default.AttemptJson);
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "01-attempt.json header write failed for {Outcome}", ctx.Outcome); }
     }
 
-    private static MapRectJson? ToMapRectJson(MapRect? rect) =>
-        rect is null
-            ? null
-            : new MapRectJson(1,
-                rect.OriginX, rect.OriginY,
-                rect.Width, rect.Height,
-                rect.TextureWidth, rect.TextureHeight,
-                rect.AutoDetectScore, rect.SourceScaleFactor);
+    // LocatorBest is emitted only when BOTH the raw fit rect AND the FM metrics are
+    // present on the context. Under the in-tree NCC refiner (TextureRegistrationRefiner)
+    // Metrics is always null — NCC doesn't produce LocateMetrics — so this if-block
+    // is false on every NCC accept, leaving LocatorBest as null in the bundle. That's
+    // the correct transitional behavior: NCC bundles carry no FM metrics. PR-4 swaps
+    // in the FM refiner which DOES produce Metrics.
+    private static LocatorBestJson? ToLocatorBestJson(CalibrationAttemptContext ctx)
+    {
+        if (ctx.LocatorRawFit is not { } rect || ctx.LocatorMetrics is not { } metrics)
+            return null;
+        return new LocatorBestJson(
+            SchemaVersion: 1,
+            OriginX: rect.OriginX,
+            OriginY: rect.OriginY,
+            Width: rect.Width,
+            Height: rect.Height,
+            TextureWidth: rect.TextureWidth,
+            TextureHeight: rect.TextureHeight,
+            InlierCount: metrics.InlierCount,
+            CandidateCount: metrics.CandidateCount,
+            InlierRatio: metrics.InlierRatio,
+            Scale: metrics.Scale,
+            RotationDegrees: metrics.RotationDegrees,
+            Tx: metrics.Tx,
+            Ty: metrics.Ty,
+            ResidualPixels: metrics.ResidualPixels,
+            GateAccepted: ctx.Outcome == OutcomeVocabulary.Accepted,
+            GateRejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo);
+    }
 
     private static string WritePng(string dir, string name, BitmapSource src)
     {

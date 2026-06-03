@@ -14,8 +14,7 @@ public class BundleJsonDtosTests
             { "schemaVersion": 1,
               "originX": 130, "originY": 60,
               "width": 995, "height": 986,
-              "textureWidth": 2048, "textureHeight": 2033,
-              "autoDetectScore": null, "sourceScaleFactor": null }
+              "textureWidth": 2048, "textureHeight": 2033 }
             """;
 
         var parsed = JsonSerializer.Deserialize(json, BundleJsonContext.Default.MapRectJson)!;
@@ -27,8 +26,6 @@ public class BundleJsonDtosTests
         parsed.Height.Should().Be(986);
         parsed.TextureWidth.Should().Be(2048);
         parsed.TextureHeight.Should().Be(2033);
-        parsed.AutoDetectScore.Should().BeNull();
-        parsed.SourceScaleFactor.Should().BeNull();
     }
 
     [Fact]

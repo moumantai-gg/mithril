@@ -19,7 +19,7 @@ public sealed class FeatureMatchingRefinerTests
         // match against a near-tie second-best and the gate sees 0 inliers.
         // Seeded noise breaks the descriptor symmetry while preserving corners.
         var img = TestPatterns.NoisyChecker(width: 256, height: 256, cellSize: 16);
-        var result = BuildRefiner().Refine(img, img, minScore: 0);
+        var result = BuildRefiner().Refine(img, img);
 
         result.AcceptedRect.Should().NotBeNull();
         result.Metrics.Should().NotBeNull();
@@ -42,7 +42,7 @@ public sealed class FeatureMatchingRefinerTests
         // distinctive features at both 1x and 0.5x.
         var texture = TestPatterns.RichNoise(width: 512, height: 512);
         var halved = TestPatterns.Resize(texture, 256, 256);
-        var result = BuildRefiner().Refine(halved, texture, minScore: 0);
+        var result = BuildRefiner().Refine(halved, texture);
 
         result.AcceptedRect.Should().NotBeNull();
         result.Metrics!.Scale.Should().BeApproximately(0.5, 0.05);
@@ -62,7 +62,7 @@ public sealed class FeatureMatchingRefinerTests
             foreground: texture,
             originX: 192, originY: 100);
 
-        var result = BuildRefiner().Refine(screenshot, texture, minScore: 0);
+        var result = BuildRefiner().Refine(screenshot, texture);
 
         result.AcceptedRect.Should().NotBeNull();
         result.AcceptedRect!.OriginX.Should().BeCloseTo(192, 3);
@@ -76,7 +76,7 @@ public sealed class FeatureMatchingRefinerTests
         var texture = TestPatterns.GenerateChecker(width: 256, height: 256, cellSize: 16);
         var screenshot = TestPatterns.UniformGray(640, 480, 128);
 
-        var result = BuildRefiner().Refine(screenshot, texture, minScore: 0);
+        var result = BuildRefiner().Refine(screenshot, texture);
 
         // Either no-fit at all, or a fit the gate rejected.
         result.AcceptedRect.Should().BeNull();
@@ -88,7 +88,7 @@ public sealed class FeatureMatchingRefinerTests
         var texture = TestPatterns.GenerateChecker(width: 256, height: 256, cellSize: 16);
         var rotated = TestPatterns.Rotate(texture, degrees: 5.0);
 
-        var result = BuildRefiner().Refine(rotated, texture, minScore: 0);
+        var result = BuildRefiner().Refine(rotated, texture);
 
         // Either RANSAC fails or the rotation gate trips.
         result.AcceptedRect.Should().BeNull();
