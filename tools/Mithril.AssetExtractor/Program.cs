@@ -3,7 +3,13 @@
 // pre-decoded manifest+blob cache the decoder-free app graph reads BCL-only.
 //
 // CLI:
-//   mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <AreaKey>) [--expect-pg-version <v>] [--tpk <path>]
+//   mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --asset <Map_<X>>) [--expect-pg-version <v>] [--tpk <path>]
+//
+// --asset takes the literal Unity Texture2D name (e.g. Map_AreaSerbule,
+// Map_HogansKeepBasement) verbatim from the Player.log "Downloading Map" line
+// — see mithril#1021. Renamed from --area in mithril#1021; the caller side
+// (ProcessAssetExtractor in src/Mithril.MapCalibration.Detection) emits the
+// new flag.
 //
 // Outputs: cache files on disk (existing manifest+blob format) + ONE JSON result
 // line on stdout + an exit code. stderr = human diagnostics.
@@ -110,10 +116,23 @@ namespace Mithril.Tools.AssetExtractor
             else
             {
                 var mapDir = Path.Combine(args.OutDir, "maps-src");
+                // --asset is the literal Unity Texture2D name (e.g. Map_AreaSerbule,
+                // Map_HogansKeepBasement). The shared MapTextureExtractor.EnsureExtracted
+                // is also called from the gate-study / WPF / synthesis-probe tools, all
+                // of which pass the bare "<X>" form (e.g. "AreaSerbule"); to avoid
+                // churning those callers, strip the Map_ prefix here at the sidecar
+                // boundary before handing off. The consumer-facing cache (written by
+                // MapTextureCacheEmitter and read by CachedBaseTextureProvider) is keyed
+                // on the full Map_<X> form (#1021 — that's the per-scene cache key the
+                // runtime now expects).
+                var asset = args.MapAssetName!;
+                var bareArea = asset.StartsWith("Map_", StringComparison.Ordinal)
+                    ? asset["Map_".Length..]
+                    : asset;
                 string pngPath;
                 try
                 {
-                    pngPath = MapTextureExtractor.EnsureExtracted(args.InstallRoot, mapDir, args.AreaKey!);
+                    pngPath = MapTextureExtractor.EnsureExtracted(args.InstallRoot, mapDir, bareArea);
                 }
                 catch (UserFacingException ex) when (ex.Message.Contains("no map bundle for area", StringComparison.OrdinalIgnoreCase))
                 {
@@ -121,8 +140,8 @@ namespace Mithril.Tools.AssetExtractor
                     return ExitBundleMissing;
                 }
                 var (manifestPath, sha) = MapTextureCacheEmitter.EmitFromPng(
-                    pngPath, args.AreaKey!, args.OutDir, pgVersion, extractorVersion);
-                artifacts.Add(new ResultArtifact("texture", args.AreaKey, manifestPath, sha));
+                    pngPath, asset, args.OutDir, pgVersion, extractorVersion);
+                artifacts.Add(new ResultArtifact("texture", asset, manifestPath, sha));
             }
 
             EmitResult(pgVersion, extractorVersion, artifacts);
@@ -174,11 +193,11 @@ namespace Mithril.Tools.AssetExtractor
 
     internal enum ExtractKind { Icons, Texture }
 
-    internal sealed record SidecarArgs(string InstallRoot, string OutDir, ExtractKind Kind, string? AreaKey, string? ExpectPgVersion, string? TpkPath)
+    internal sealed record SidecarArgs(string InstallRoot, string OutDir, ExtractKind Kind, string? MapAssetName, string? ExpectPgVersion, string? TpkPath)
     {
         public static SidecarArgs Parse(string[] args)
         {
-            string? install = null, outDir = null, area = null, expect = null, tpk = null;
+            string? install = null, outDir = null, asset = null, expect = null, tpk = null;
             bool icons = false;
             for (int i = 0; i < args.Length; i++)
             {
@@ -187,7 +206,7 @@ namespace Mithril.Tools.AssetExtractor
                     case "--install": install = Next(args, ref i, "--install"); break;
                     case "--out": outDir = Next(args, ref i, "--out"); break;
                     case "--icons": icons = true; break;
-                    case "--area": area = Next(args, ref i, "--area"); break;
+                    case "--asset": asset = Next(args, ref i, "--asset"); break;
                     case "--expect-pg-version": expect = Next(args, ref i, "--expect-pg-version"); break;
                     case "--tpk": tpk = Next(args, ref i, "--tpk"); break;
                     default:
@@ -196,9 +215,9 @@ namespace Mithril.Tools.AssetExtractor
             }
             if (string.IsNullOrWhiteSpace(install)) throw new UserFacingException("--install <pgRoot> is required");
             if (string.IsNullOrWhiteSpace(outDir)) throw new UserFacingException("--out <cacheDir> is required");
-            if (icons && area is not null) throw new UserFacingException("--icons and --area are mutually exclusive");
-            if (!icons && area is null) throw new UserFacingException("one of --icons or --area <AreaKey> is required");
-            return new SidecarArgs(install, outDir, icons ? ExtractKind.Icons : ExtractKind.Texture, area, expect, tpk);
+            if (icons && asset is not null) throw new UserFacingException("--icons and --asset are mutually exclusive");
+            if (!icons && asset is null) throw new UserFacingException("one of --icons or --asset <Map_<X>> is required");
+            return new SidecarArgs(install, outDir, icons ? ExtractKind.Icons : ExtractKind.Texture, asset, expect, tpk);
         }
 
         private static string Next(string[] args, ref int i, string flag)
@@ -210,7 +229,7 @@ namespace Mithril.Tools.AssetExtractor
         public static void PrintUsage()
         {
             Console.Error.WriteLine(
-                "usage: mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <AreaKey>) [--expect-pg-version <v>] [--tpk <path>]");
+                "usage: mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --asset <Map_<X>>) [--expect-pg-version <v>] [--tpk <path>]");
         }
     }
 
