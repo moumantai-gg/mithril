@@ -64,7 +64,8 @@ public class AreaCalibrationServiceTests
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
         var (svc, proj, mapCal) = Build(refData);
-        var persisted = new AreaCalibration(3.0, 0.5, 11, 22, 4, 0.9);
+        // residual (0.3) must beat the bundled Eltibule baseline (0.65 px); refCount ≥ 4.
+        var persisted = new AreaCalibration(3.0, 0.5, 11, 22, 5, 0.3);
         Seed(mapCal, "AreaEltibule", persisted);
 
         // PlayerLogIngestionService bridges Arda MapAssetChanged → SelectScene
@@ -127,11 +128,14 @@ public class AreaCalibrationServiceTests
         svc.Changed += (_, _) => changed++;
 
         // Identity-ish transform: pixel == world ground plane (scale 1, rot 0).
+        // Four placements so ReferenceCount ≥ MinReferences (4) and the solved
+        // calibration lands in the eligible set under the residual-ordered picker.
         var placements = new (WorldCoord, PixelPoint)[]
         {
             (new WorldCoord(0, 0, 0), new PixelPoint(0, 0)),
             (new WorldCoord(100, 0, 0), new PixelPoint(100, 0)),
             (new WorldCoord(0, 0, 100), new PixelPoint(0, -100)), // north → up
+            (new WorldCoord(50, 0, 50), new PixelPoint(50, -50)),
         };
 
         var cal = svc.CalibrateCurrentArea(placements, calibrationZoom: 0.39);
@@ -184,7 +188,8 @@ public class AreaCalibrationServiceTests
             NpcsByKey = { ["NPC_Marn"] = new Npc { Name = "Marn", AreaName = "AreaEltibule", Pos = "x:1 y:0 z:2" } },
         };
         var (svc, proj, mapCal) = Build(refData);
-        var persisted = new AreaCalibration(2, 0.1, 5, 6, 3, 0.5);
+        // residual (0.3) must beat the bundled Eltibule baseline (0.65 px); refCount ≥ 4.
+        var persisted = new AreaCalibration(2, 0.1, 5, 6, 5, 0.3);
         Seed(mapCal, "AreaEltibule", persisted);
 
         svc.SelectScene(SceneFor("AreaEltibule"));
@@ -322,9 +327,11 @@ public class AreaCalibrationServiceTests
         var scene = SceneFor("AreaEltibule");
 
         // Seed via the shared service first so SelectScene's initial ApplyCalibration runs.
+        // refCount ≥ 4 and residual (0.3) beats the bundled Eltibule baseline (0.65 px)
+        // so the user refinement lands in the eligible set and wins the picker.
         var initial = new AreaCalibration(
             Scale: 1.0, RotationRadians: 0, OriginX: 10, OriginY: 20,
-            ReferenceCount: 3, ResidualPixels: 5.0);
+            ReferenceCount: 5, ResidualPixels: 0.3);
         mapCal.SaveUserRefinement(scene, initial);
 
         svc.SelectScene(scene);

@@ -192,7 +192,9 @@ public static class Program
                 GameRoot = shellSettings.GameRoot,
                 InstallRoot = shellSettings.InstallRoot,
                 GameProcessName = shellSettings.GameProcessName,
+#pragma warning disable CS0618 // Picker stopped consuming this in mithril#1046; round-tripping only until the next release cycle drops the property.
                 CalibrationGoodResidualPx = shellSettings.CalibrationGoodResidualPx,
+#pragma warning restore CS0618
             };
             gameConfig.PropertyChanged += (_, ev) =>
             {
@@ -207,9 +209,11 @@ public static class Program
                     case nameof(GameConfig.GameProcessName):
                         shellSettings.GameProcessName = gameConfig.GameProcessName;
                         break;
+#pragma warning disable CS0618 // Picker stopped consuming this in mithril#1046; round-tripping only until the next release cycle drops the property.
                     case nameof(GameConfig.CalibrationGoodResidualPx):
                         shellSettings.CalibrationGoodResidualPx = gameConfig.CalibrationGoodResidualPx;
                         break;
+#pragma warning restore CS0618
                 }
             };
 

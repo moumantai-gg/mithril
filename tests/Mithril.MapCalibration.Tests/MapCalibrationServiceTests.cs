@@ -41,7 +41,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
         var store = new UserRefinementStore(_tempDir);
         store.Save("Map_AreaEltibule", MakeCal(residual: 2.0, scale: 2.0));
 
-        var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0, logger: null);
+        var svc = new MapCalibrationService(baseline, store, logger: null);
 
         var active = svc.GetCalibration(Scene("Map_AreaEltibule"));
         active.Should().NotBeNull();
@@ -60,7 +60,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
         // Above the threshold of 12 — the resolver should prefer the baseline.
         store.Save("Map_AreaEltibule", MakeCal(residual: 25.0, scale: 2.0));
 
-        var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0, logger: null);
+        var svc = new MapCalibrationService(baseline, store, logger: null);
 
         var active = svc.GetCalibration(Scene("Map_AreaEltibule"));
         active.Should().NotBeNull();
@@ -75,7 +75,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
         var store = new UserRefinementStore(_tempDir);
         store.Save("Map_AreaEltibule", MakeCal(residual: 25.0, scale: 2.0));
 
-        var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0, logger: null);
+        var svc = new MapCalibrationService(baseline, store, logger: null);
 
         var active = svc.GetCalibration(Scene("Map_AreaEltibule"));
         active.Should().NotBeNull();
@@ -87,8 +87,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
     {
         var svc = new MapCalibrationService(
             new Dictionary<string, AreaCalibration>(),
-            new UserRefinementStore(_tempDir),
-            goodResidualThresholdPx: 12.0);
+            new UserRefinementStore(_tempDir));
 
         svc.IsCalibrated(Scene("Map_AreaEltibule")).Should().BeFalse();
         svc.GetCalibration(Scene("Map_AreaEltibule")).Should().BeNull();
@@ -106,7 +105,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
         var store = new UserRefinementStore(_tempDir);
         store.Save("Map_AreaEltibule", MakeCal(residual: 8.0, scale: 2.0));
 
-        var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0);
+        var svc = new MapCalibrationService(baseline, store);
 
         var sources = svc.GetAllSources(Scene("Map_AreaEltibule"));
         sources.Should().HaveCount(2);
@@ -119,16 +118,14 @@ public sealed class MapCalibrationServiceTests : IDisposable
     {
         var svc1 = new MapCalibrationService(
             new Dictionary<string, AreaCalibration>(),
-            new UserRefinementStore(_tempDir),
-            goodResidualThresholdPx: 12.0);
+            new UserRefinementStore(_tempDir));
 
         svc1.SaveUserRefinement(Scene("Map_AreaEltibule"), MakeCal(residual: 3.0, scale: 1.7));
 
         // New service instance reading from the same directory should see it.
         var svc2 = new MapCalibrationService(
             new Dictionary<string, AreaCalibration>(),
-            new UserRefinementStore(_tempDir),
-            goodResidualThresholdPx: 12.0);
+            new UserRefinementStore(_tempDir));
 
         var loaded = svc2.GetCalibration(Scene("Map_AreaEltibule"));
         loaded.Should().NotBeNull();
@@ -146,7 +143,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
             ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
         };
         var store = new UserRefinementStore(_tempDir);
-        var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0);
+        var svc = new MapCalibrationService(baseline, store);
 
         svc.SaveUserRefinement(Scene("Map_AreaEltibule"), MakeCal(residual: 2.0, scale: 2.0));
         svc.GetCalibration(Scene("Map_AreaEltibule"))!.Source.Should().Be(CalibrationSource.UserRefinement);
@@ -161,8 +158,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
         var store = new UserRefinementStore(_tempDir);
         var svc = new MapCalibrationService(
             new Dictionary<string, AreaCalibration>(),
-            store,
-            goodResidualThresholdPx: 12.0);
+            store);
 
         var notifications = new List<MapSceneRef>();
         svc.Changed += (_, scene) => notifications.Add(scene);
@@ -190,7 +186,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
         {
             ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
         };
-        var svc = new MapCalibrationService(baseline, new UserRefinementStore(_tempDir), goodResidualThresholdPx: 12.0);
+        var svc = new MapCalibrationService(baseline, new UserRefinementStore(_tempDir));
 
         svc.SaveUserRefinement(Scene("Map_AreaEltibule"), MakeCal(residual: 25.0, scale: 2.0));
 
@@ -243,7 +239,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
             ["Map_AreaSerbule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
             ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
         };
-        var svc = new MapCalibrationService(baseline, new UserRefinementStore(_tempDir), goodResidualThresholdPx: 12.0);
+        var svc = new MapCalibrationService(baseline, new UserRefinementStore(_tempDir));
 
         var all = svc.AllCalibrations;
         all.Should().HaveCount(2);

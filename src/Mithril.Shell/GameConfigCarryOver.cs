@@ -77,6 +77,7 @@ public static class GameConfigCarryOver
 
         // CalibrationGoodResidualPx — carry only when shell is still the factory
         // default and legolas holds a positive, non-default value.
+#pragma warning disable CS0618 // Picker stopped consuming this in mithril#1046; round-tripping only until the next release cycle drops the property.
         if (Math.Abs(shell.CalibrationGoodResidualPx - DefaultCalibrationGoodResidualPx) < 1e-9
             && root.TryGetProperty("calibrationGoodResidualPx", out var resEl)
             && resEl.ValueKind == JsonValueKind.Number
@@ -87,6 +88,7 @@ public static class GameConfigCarryOver
             shell.CalibrationGoodResidualPx = legacyResidual;
             carried = true;
         }
+#pragma warning restore CS0618
 
         return carried;
     }

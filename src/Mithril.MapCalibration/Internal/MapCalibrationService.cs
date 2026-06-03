@@ -22,19 +22,16 @@ internal sealed class MapCalibrationService : IMapCalibrationService
 {
     private readonly IReadOnlyDictionary<string, AreaCalibration> _baseline;
     private readonly UserRefinementStore _userStore;
-    private readonly double _goodResidualThresholdPx;
     private readonly ILogger? _logger;
     private readonly object _eventGate = new();
 
     public MapCalibrationService(
         IReadOnlyDictionary<string, AreaCalibration> baseline,
         UserRefinementStore userStore,
-        double goodResidualThresholdPx,
         ILogger? logger = null)
     {
         _baseline = baseline;
         _userStore = userStore;
-        _goodResidualThresholdPx = goodResidualThresholdPx;
         _logger = logger;
     }
 

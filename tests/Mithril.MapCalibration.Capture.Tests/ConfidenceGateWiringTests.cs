@@ -1,3 +1,6 @@
+// Picker stopped consuming CalibrationGoodResidualPx in mithril#1046; this test
+// intentionally exercises the confidence-gate wiring.
+#pragma warning disable CS0618
 using FluentAssertions;
 using Mithril.MapCalibration;
 using Mithril.MapCalibration.Capture.DependencyInjection;

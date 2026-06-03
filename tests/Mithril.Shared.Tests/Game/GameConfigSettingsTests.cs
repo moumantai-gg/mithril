@@ -1,3 +1,6 @@
+// Picker stopped consuming CalibrationGoodResidualPx in mithril#1046; tests
+// intentionally exercise the round-trip / PropertyChanged contract.
+#pragma warning disable CS0618
 using System.Collections.Generic;
 using FluentAssertions;
 using Mithril.Shared.Game;

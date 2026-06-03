@@ -106,7 +106,7 @@ public sealed class Legolas_PerSceneCalibration_IntegrationTests : IDisposable
             // anchored.
             var baseline = BundledBaselineLoader.Load(NullLogger.Instance);
             var userStore = new UserRefinementStore(directory: tempDir, logger: NullLogger.Instance);
-            var mapCal = new MapCalibrationService(baseline, userStore, goodResidualThresholdPx: 12.0, NullLogger.Instance);
+            var mapCal = new MapCalibrationService(baseline, userStore, NullLogger.Instance);
 
             // Real SceneAssetCacheStore + SceneAssetCache. Seeded against a
             // minimal areaKeys set covering the three directly-registered areas

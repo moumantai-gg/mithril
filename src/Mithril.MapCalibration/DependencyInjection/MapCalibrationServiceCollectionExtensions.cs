@@ -40,7 +40,7 @@ public static class MapCalibrationServiceCollectionExtensions
             throw new ArgumentException("storageDirectory required", nameof(storageDirectory));
 
         services.AddSingleton<IMapCalibrationService>(sp =>
-            Build(storageDirectory, goodResidualThresholdPx, sp.GetService<ILoggerFactory>()));
+            Build(storageDirectory, sp.GetService<ILoggerFactory>()));
 
         // Scene-asset cache (mithril#1041) — composite-key cache of observed /
         // seeded (ParentArea, SceneFriendlyName?) → MapAssetKey pairings. Cold-
@@ -87,7 +87,6 @@ public static class MapCalibrationServiceCollectionExtensions
     /// </summary>
     public static IMapCalibrationService Build(
         string storageDirectory,
-        double goodResidualThresholdPx = DefaultGoodResidualThresholdPx,
         ILoggerFactory? loggerFactory = null)
     {
         if (string.IsNullOrWhiteSpace(storageDirectory))
@@ -98,6 +97,6 @@ public static class MapCalibrationServiceCollectionExtensions
         Directory.CreateDirectory(storageDirectory);
         var store = new UserRefinementStore(storageDirectory, storeLogger);
         var baseline = BundledBaselineLoader.Load(serviceLogger);
-        return new MapCalibrationService(baseline, store, goodResidualThresholdPx, serviceLogger);
+        return new MapCalibrationService(baseline, store, serviceLogger);
     }
 }

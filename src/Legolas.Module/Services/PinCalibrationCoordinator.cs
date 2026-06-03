@@ -151,7 +151,9 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
         // #919: react to live edits of the shared threshold (now on GameConfig).
         _gameConfig.PropertyChanged += (_, e) =>
         {
+#pragma warning disable CS0618 // Picker stopped consuming this in mithril#1046; round-tripping only until the next release cycle drops the property.
             if (e.PropertyName == nameof(Mithril.Shared.Game.GameConfig.CalibrationGoodResidualPx))
+#pragma warning restore CS0618
             {
                 OnPropertyChanged(nameof(IsResidualGood));
                 OnPropertyChanged(nameof(ResidualText));
@@ -225,12 +227,14 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
 
     /// <summary>Confirm is ungated once the preview residual is at or below the
     /// configured "good" threshold; otherwise the user must "finish anyway".</summary>
+#pragma warning disable CS0618 // Picker stopped consuming this in mithril#1046; round-tripping only until the next release cycle drops the property.
     public bool IsResidualGood =>
         PreviewResidual is { } r && r <= _gameConfig.CalibrationGoodResidualPx;
 
     public string ResidualText => PreviewResidual is { } r
         ? $"Fit residual: {r:0.0} px (target ≤ {_gameConfig.CalibrationGoodResidualPx:0} px)."
         : "Pair ≥3 pins to see the fit quality.";
+#pragma warning restore CS0618
 
     /// <summary>The next pin the user should pair: the explicit override if
     /// set, else the spread suggestion (farthest-point from already-paired,

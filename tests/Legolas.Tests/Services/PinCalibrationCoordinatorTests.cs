@@ -1,3 +1,6 @@
+// Picker stopped consuming CalibrationGoodResidualPx in mithril#1046; this test
+// exercises the residual-gate wiring in PinCalibrationCoordinator.
+#pragma warning disable CS0618
 using Arda.World.Player;
 using FluentAssertions;
 using Legolas.Domain;

@@ -21,7 +21,9 @@ public sealed partial class GameConfigViewModel : ObservableObject
         _installRoot = config.InstallRoot;
         _pollSeconds = config.PollIntervalSeconds;
         _gameProcessName = config.GameProcessName;
+#pragma warning disable CS0618 // Picker stopped consuming this in mithril#1046; round-tripping only until the next release cycle drops the property.
         _calibrationGoodResidualPx = config.CalibrationGoodResidualPx;
+#pragma warning restore CS0618
         _tpkInstalled = _tpkProvisioner?.IsInstalled() ?? false;
         _downloadTpkStatus = _tpkInstalled
             ? "Map-decoder data is installed."
@@ -65,7 +67,9 @@ public sealed partial class GameConfigViewModel : ObservableObject
 
     partial void OnGameProcessNameChanged(string value) => _config.GameProcessName = value;
 
+#pragma warning disable CS0618 // Picker stopped consuming this in mithril#1046; round-tripping only until the next release cycle drops the property.
     partial void OnCalibrationGoodResidualPxChanged(double value) => _config.CalibrationGoodResidualPx = value;
+#pragma warning restore CS0618
 
     [RelayCommand]
     private void Browse()

@@ -30,7 +30,6 @@ public sealed class MapCalibrationServicePickerTests
         new(
             baseline: baseline ?? new Dictionary<string, AreaCalibration>(),
             userStore: UserRefinementStore.ForTests(userRefs),
-            goodResidualThresholdPx: 0, // unused after picker rewrite; will be removed in Task A3
             logger: NullLogger.Instance);
 
     /// <summary>
