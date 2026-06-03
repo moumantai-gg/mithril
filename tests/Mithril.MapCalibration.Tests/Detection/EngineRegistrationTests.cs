@@ -4,7 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Mithril.MapCalibration;
 using Mithril.MapCalibration.Detection;
-using Mithril.MapCalibration.DependencyInjection;
+using Mithril.MapCalibration.Detection.DependencyInjection;
 using Xunit;
 
 namespace Mithril.MapCalibration.Tests.Detection;
@@ -21,7 +21,7 @@ public sealed class EngineRegistrationTests
     public void Resolves_solve_engine_and_dependencies()
     {
         var provider = new ServiceCollection()
-            .AddMithrilMapCalibrationEngine(TempCacheDir())
+            .AddMithrilMapCalibrationDetection(TempCacheDir())
             .BuildServiceProvider();
 
         provider.GetService<MapCalibrationSolveEngine>().Should().NotBeNull();
@@ -38,7 +38,7 @@ public sealed class EngineRegistrationTests
         // IconTemplateSet singleton. The provider itself is a singleton (it memoises
         // the loaded set across attempts).
         var provider = new ServiceCollection()
-            .AddMithrilMapCalibrationEngine(TempCacheDir())
+            .AddMithrilMapCalibrationDetection(TempCacheDir())
             .BuildServiceProvider();
 
         var a = provider.GetRequiredService<IIconTemplateProvider>();
@@ -50,7 +50,7 @@ public sealed class EngineRegistrationTests
     public void Absent_cache_dir_yields_empty_templates_and_null_base_texture()
     {
         var provider = new ServiceCollection()
-            .AddMithrilMapCalibrationEngine(TempCacheDir())
+            .AddMithrilMapCalibrationDetection(TempCacheDir())
             .BuildServiceProvider();
 
         provider.GetRequiredService<IIconTemplateProvider>().GetTemplates().Templates.Should().BeEmpty();
@@ -60,15 +60,15 @@ public sealed class EngineRegistrationTests
     [Fact]
     public void Requires_a_cache_dir()
     {
-        var act = () => new ServiceCollection().AddMithrilMapCalibrationEngine("");
+        var act = () => new ServiceCollection().AddMithrilMapCalibrationDetection("");
         act.Should().Throw<ArgumentException>();
     }
 
     [Fact]
-    public void AddMithrilMapCalibrationEngine_registers_MapCalibrationSolverOptions_with_Shadow_default()
+    public void AddMithrilMapCalibrationDetection_registers_MapCalibrationSolverOptions_with_Shadow_default()
     {
         var services = new ServiceCollection();
-        services.AddMithrilMapCalibrationEngine(assetCacheDir: System.IO.Path.GetTempPath());
+        services.AddMithrilMapCalibrationDetection(assetCacheDir: System.IO.Path.GetTempPath());
         using var sp = services.BuildServiceProvider();
 
         var opts = sp.GetRequiredService<MapCalibrationSolverOptions>();

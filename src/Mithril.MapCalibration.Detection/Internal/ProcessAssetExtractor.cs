@@ -194,7 +194,7 @@ public sealed class ProcessAssetExtractor : IAssetExtractor
             if (trimmed.Length == 0 || trimmed[0] != '{') continue;
             try
             {
-                var result = JsonSerializer.Deserialize(trimmed, MapCalibrationJsonContext.Default.SidecarResult);
+                var result = JsonSerializer.Deserialize(trimmed, DetectionJsonContext.Default.SidecarResult);
                 if (result is not null && !string.IsNullOrEmpty(result.Status))
                     return result;
             }

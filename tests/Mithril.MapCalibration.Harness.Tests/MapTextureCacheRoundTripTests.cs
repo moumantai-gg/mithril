@@ -5,7 +5,7 @@ using System.IO;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Mithril.MapCalibration.Detection;
-using Mithril.MapCalibration.DependencyInjection;
+using Mithril.MapCalibration.Detection.DependencyInjection;
 using Mithril.Tools.MapCalibration.Common;
 using Xunit;
 
@@ -15,7 +15,7 @@ namespace Mithril.Tools.MapCalibration.Harness.Tests;
 /// #931 byte-parity round-trip: the REAL texture-cache writer
 /// (<see cref="MapTextureCacheEmitter"/> in Tools.Common) → the REAL reader
 /// (the core's cached base-texture provider, resolved through the public
-/// <c>AddMithrilMapCalibrationEngine</c> seam). Lives in the harness test project
+/// <c>AddMithrilMapCalibrationDetection</c> seam). Lives in the harness test project
 /// because <see cref="MapTextureCacheEmitter"/> is in Tools.Common, which must
 /// stay out of the decoder-free core test suite (issue #921); this project
 /// already references Tools.Common (via the Harness lib) and runs in the isolated
@@ -56,7 +56,7 @@ public sealed class MapTextureCacheRoundTripTests
 
     private static IBaseTextureProvider Reader(string cacheDir) =>
         new ServiceCollection()
-            .AddMithrilMapCalibrationEngine(cacheDir)
+            .AddMithrilMapCalibrationDetection(cacheDir)
             .BuildServiceProvider()
             .GetRequiredService<IBaseTextureProvider>();
 

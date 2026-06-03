@@ -1,4 +1,4 @@
-namespace Mithril.MapCalibration.Capture.Internal;
+namespace Mithril.MapCalibration.Detection.Internal;
 
 /// <summary>
 /// Per-area ORB descriptor cache manifest. Sits alongside

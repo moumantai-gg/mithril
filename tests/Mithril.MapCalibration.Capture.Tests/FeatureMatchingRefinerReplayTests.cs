@@ -1,10 +1,9 @@
 using System.IO;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
-using Mithril.MapCalibration.DependencyInjection;
 using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Detection.DependencyInjection;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -29,7 +28,7 @@ public sealed class FeatureMatchingRefinerReplayTests
         var capture = PngFixtureLoader.LoadGray(capturePath);
 
         var provider = new ServiceCollection()
-            .AddMithrilMapCalibrationEngine(bundleDir)
+            .AddMithrilMapCalibrationDetection(bundleDir)
             .BuildServiceProvider()
             .GetRequiredService<IBaseTextureProvider>();
 

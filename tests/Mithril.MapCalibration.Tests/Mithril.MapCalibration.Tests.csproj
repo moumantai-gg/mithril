@@ -16,5 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.MapCalibration.Detection\Mithril.MapCalibration.Detection.csproj" />
   </ItemGroup>
 </Project>

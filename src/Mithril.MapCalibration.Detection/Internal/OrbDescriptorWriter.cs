@@ -5,7 +5,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 
-namespace Mithril.MapCalibration.Capture.Internal;
+namespace Mithril.MapCalibration.Detection.Internal;
 
 /// <summary>
 /// Writes per-area ORB descriptors to disk as a sibling pair of
@@ -57,7 +57,7 @@ internal sealed class OrbDescriptorWriter
 
             using (var s = File.Create(manifestPath))
             {
-                JsonSerializer.Serialize(s, manifest, CaptureJsonContext.Default.OrbDescriptorManifest);
+                JsonSerializer.Serialize(s, manifest, DetectionJsonContext.Default.OrbDescriptorManifest);
             }
             using (var s = File.Create(blobPath))
             using (var deflate = new DeflateStream(s, CompressionLevel.Optimal))

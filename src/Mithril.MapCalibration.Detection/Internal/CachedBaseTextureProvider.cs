@@ -4,7 +4,6 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Mithril.MapCalibration.Internal;
 
 namespace Mithril.MapCalibration.Detection.Internal;
 
@@ -117,7 +116,7 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
         try
         {
             using var stream = File.OpenRead(manifestPath);
-            var manifest = JsonSerializer.Deserialize(stream, MapCalibrationJsonContext.Default.MapTextureManifest);
+            var manifest = JsonSerializer.Deserialize(stream, DetectionJsonContext.Default.MapTextureManifest);
             if (manifest is null || string.IsNullOrEmpty(manifest.PixelSha256) || manifest.Width <= 0 || manifest.Height <= 0)
             {
                 _logger?.LogWarning("Base-texture manifest {Path} empty/malformed — no base texture for {Area} (safe-degrade).", manifestPath, areaKey);

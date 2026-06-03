@@ -3,8 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Mithril.MapCalibration.DependencyInjection;
 using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Detection.DependencyInjection;
 using Mithril.MapCalibration.Internal;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
@@ -14,7 +14,7 @@ namespace Mithril.MapCalibration.Capture.DependencyInjection;
 /// <summary>
 /// DI composition for the map auto-capture pipeline (mithril#914 PR-2). Registers
 /// the OS-capture seams, the headless detect→solve engine (Phase 1, via
-/// <see cref="MapCalibrationServiceCollectionExtensions.AddMithrilMapCalibrationEngine"/>),
+/// <see cref="DetectionServiceCollectionExtensions.AddMithrilMapCalibrationDetection"/>),
 /// the orchestrator, the two hotkeys, and the background trigger.
 /// </summary>
 public static partial class CaptureServiceCollectionExtensions
@@ -66,10 +66,9 @@ public static partial class CaptureServiceCollectionExtensions
         if (string.IsNullOrWhiteSpace(assetCacheDir))
             throw new System.ArgumentException("assetCacheDir required", nameof(assetCacheDir));
 
-        // Phase-1 detect→solve engine + IconTemplateSet + IBaseTextureProvider
-        // (the #931 sidecar-cache seam) over the asset cache. This also registers
-        // the engine's DEFAULT ICalibrationConfidenceGate; we override it below.
-        services.AddMithrilMapCalibrationEngine(assetCacheDir, pgVersion);
+        // Detection tier (Phase-1 detect→solve engine + #931 cache providers +
+        // FeatureMatchingRefiner + ORB descriptor cache) — spec: detection project split.
+        services.AddMithrilMapCalibrationDetection(assetCacheDir, pgVersion);
 
         // GameConfig-wired gate override (Task 23). Registered AFTER the engine so
         // last-registration-wins makes this the resolved ICalibrationConfidenceGate
@@ -96,51 +95,7 @@ public static partial class CaptureServiceCollectionExtensions
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Window")));
         services.AddSingleton<IScreenCapture>(sp => new BitBltScreenCapture(
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Screen")));
-        // PR-4: FeatureMatchingRefiner is the production refiner; the NCC-based
-        // TextureRegistrationRefiner was deleted in PR-4 Task 19. The internal
-        // cache-aware ctor wires the on-disk ORB descriptor reader+writer
-        // registered below — the engine calls FeatureMatchingRefiner.SetAreaKey
-        // (area) before each Refine so the cache key is populated (the
-        // IMapRegionRefiner interface stays narrow; runtime-cast in
-        // AutoCalibrationEngine).
-        services.AddSingleton<IMapRegionRefiner>(sp =>
-            new FeatureMatchingRefiner(
-                options: sp.GetRequiredService<MapCalibrationLocateOptions>(),
-                logger: sp.GetService<ILogger<FeatureMatchingRefiner>>(),
-                cachedDescriptors: sp.GetService<Internal.CachedOrbDescriptorProvider>(),
-                writer: sp.GetService<Internal.OrbDescriptorWriter>()));
         services.AddSingleton<CaptureValidation>();
-
-        // PR-2 Task 11: ORB descriptor cache infrastructure. Registered now so
-        // PR-4 can pick them up when it swaps FeatureMatchingRefiner in as the
-        // production refiner. Both reader + writer share the same asset cache
-        // dir as the base-texture cache (sibling files
-        // map-texture-<area>.orb.{json,bin}) and the same orb-params hash
-        // derived from MapCalibrationLocateOptions.
-        //
-        // MapCalibrationLocateOptions is registered here as a singleton (POCO
-        // with INotifyPropertyChanged so a future settings UI can bind without
-        // re-resolving the graph). TryAdd so a shell-side settings surface can
-        // pre-register a user-tunable instance.
-        services.TryAddSingleton<MapCalibrationLocateOptions>();
-
-        services.TryAddSingleton<Internal.CachedOrbDescriptorProvider>(sp =>
-        {
-            var opts = sp.GetRequiredService<MapCalibrationLocateOptions>();
-            return new Internal.CachedOrbDescriptorProvider(
-                cacheDir: assetCacheDir,
-                orbParamsHash: ComputeOrbParamsHash(opts),
-                logger: sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.OrbCache"));
-        });
-
-        services.TryAddSingleton<Internal.OrbDescriptorWriter>(sp =>
-        {
-            var opts = sp.GetRequiredService<MapCalibrationLocateOptions>();
-            return new Internal.OrbDescriptorWriter(
-                cacheDir: assetCacheDir,
-                orbParamsHash: ComputeOrbParamsHash(opts),
-                logger: sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.OrbCache"));
-        });
 
         // #966 Task 3: capture-frame debug-dump options (OFF by default). Registered
         // only if the shell hasn't already supplied one, so a settings surface can
@@ -267,22 +222,4 @@ public static partial class CaptureServiceCollectionExtensions
     internal static ICalibrationConfidenceGate BuildConfidenceGate(GameConfig cfg) =>
         new CalibrationConfidenceGate(cfg.CalibrationGoodResidualPx, CalibrationConfidenceGate.DefaultInlierFloor);
 
-    /// <summary>
-    /// Canonical SHA-256 of the locate options that affect the ORB-descriptor
-    /// cache identity. The descriptors are only reusable when these params
-    /// match — change any of them and the manifest's <c>OrbParamsHash</c>
-    /// mismatches the cache key, invalidating the on-disk pair so the next
-    /// refine recomputes (then rewrites) the cache.
-    /// <para>Culture-invariant formatting so the same params hash identically
-    /// across locales; canonical key=value ordering so future param additions
-    /// can extend the suffix without churning existing entries.</para>
-    /// </summary>
-    private static string ComputeOrbParamsHash(MapCalibrationLocateOptions opts)
-    {
-        var s = string.Create(
-            System.Globalization.CultureInfo.InvariantCulture,
-            $"orb-v1|nFeatures={opts.OrbNFeatures}|loweRatio={opts.LoweRatio:F4}|ransacPx={opts.RansacReprojectionThresholdPx:F4}");
-        var bytes = System.Text.Encoding.UTF8.GetBytes(s);
-        return System.Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
-    }
 }

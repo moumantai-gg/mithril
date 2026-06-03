@@ -1,6 +1,6 @@
 using System.IO;
 using FluentAssertions;
-using Mithril.MapCalibration.Capture.Internal;
+using Mithril.MapCalibration.Detection.Internal;
 using OpenCvSharp;
 using Xunit;
 

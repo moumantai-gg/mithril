@@ -18,4 +18,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Mithril.MapCalibration.Capture.Tests" />
+    <InternalsVisibleTo Include="Mithril.MapCalibration.Tests" />
+  </ItemGroup>
 </Project>

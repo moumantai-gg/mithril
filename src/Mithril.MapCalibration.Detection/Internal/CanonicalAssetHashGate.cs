@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Mithril.MapCalibration.Internal;
 
 namespace Mithril.MapCalibration.Detection.Internal;
 
@@ -110,7 +109,7 @@ internal sealed class CanonicalAssetHashGate
         }
         try
         {
-            return JsonSerializer.Deserialize(stream, MapCalibrationJsonContext.Default.CanonicalAssetHashes);
+            return JsonSerializer.Deserialize(stream, DetectionJsonContext.Default.CanonicalAssetHashes);
         }
         catch (JsonException ex)
         {
