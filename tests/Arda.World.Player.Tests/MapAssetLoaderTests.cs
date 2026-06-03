@@ -68,6 +68,18 @@ public class MapAssetLoaderTests
     }
 
     [Fact]
+    public void Replay_LastDownloadingMapLineWins()
+    {
+        Dispatch("Serbule", "Map_AreaSerbule", Meta(isReplay: true));
+        Dispatch("Eltibule", "Map_AreaEltibule", Meta(isReplay: true));
+        Dispatch("Hogan's Basement", "Map_HogansKeepBasement", Meta(isReplay: true));
+
+        _handler.CurrentMapAsset.Should().Be("Map_HogansKeepBasement");
+        _handler.CurrentSceneFriendlyName.Should().Be("Hogan's Basement");
+        _bus.Published<MapAssetChanged>().Should().HaveCount(3);
+    }
+
+    [Fact]
     public void Transition_PopulatesPreviousMapAsset()
     {
         Dispatch("Serbule", "Map_AreaSerbule");
