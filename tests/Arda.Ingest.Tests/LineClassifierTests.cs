@@ -54,6 +54,19 @@ public class LineClassifierTests
         result.Value.Timestamp.Should().BeNull();
     }
 
+    [Fact]
+    public void Classify_DownloadingMapSystemPattern_ReturnsClassifiedLineWithNullTimestamp()
+    {
+        var line = "Downloading Map [44d50fb35fa65dd4cbb84e3af49ca0a4] GUID 44d50fb35fa65dd4cbb84e3af49ca0a4 for area Hogan's Basement runtime key 44d50fb35fa65dd4cbb84e3af49ca0a4[Map_HogansKeepBasement]".AsSpan();
+
+        var result = _sut.Classify(line);
+
+        result.Should().NotBeNull();
+        result!.Value.Log.Should().Contain("[Map_HogansKeepBasement]");
+        result.Value.Timestamp.Should().BeNull();
+        result.Value.Raw.Should().BeNull();
+    }
+
     [Theory]
     [InlineData("LoadAssetAsync: eq-x-m2-head-0. Status=None.")]
     [InlineData("Shader warmup: 15 shaders loaded")]

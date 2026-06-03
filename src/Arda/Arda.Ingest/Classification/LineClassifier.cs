@@ -73,6 +73,7 @@ internal sealed class LineClassifier
     /// <list type="bullet">
     ///   <item><c>Connecting to {host} port {port}</c> — server identity.</item>
     ///   <item><c>EVENT(Ok): connected, url={host}, port={port}</c> — connection confirmation.</item>
+    ///   <item><c>Downloading Map [{guid}] GUID {guid} for area {name} runtime key {guid}[{Map_*}]</c> — per-scene asset load.</item>
     /// </list>
     /// This allowlist expands as more patterns are catalogued from log samples.
     /// </summary>
@@ -82,6 +83,9 @@ internal sealed class LineClassifier
             return true;
 
         if (line.StartsWith("EVENT(Ok): connected".AsSpan(), StringComparison.Ordinal))
+            return true;
+
+        if (line.StartsWith("Downloading Map ".AsSpan(), StringComparison.Ordinal))
             return true;
 
         return false;
