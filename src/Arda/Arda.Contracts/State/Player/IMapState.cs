@@ -1,4 +1,5 @@
 using Arda.World.Player.Events;
+using Mithril.MapCalibration;
 
 namespace Arda.World.Player;
 
@@ -25,18 +26,15 @@ public interface IMapState
 
     // --- Map asset (per-Unity-scene texture identity) ---
 
-    /// <summary>Literal Unity Texture2D name for the currently-displayed map texture (e.g. <c>"Map_HogansKeepBasement"</c>),
-    /// including the <c>Map_</c> prefix. Source: Player.log's <c>Downloading Map ... runtime key ...[Map_&lt;X&gt;]</c> line.
-    /// <c>null</c> until the first such line is observed in this session.</summary>
-    string? CurrentMapAsset { get; }
-
-    /// <summary>Sub-zone-level friendly area name from the same line (e.g. <c>"Hogan's Basement"</c>), which for
-    /// aggregator areas (<c>AreaCave1</c>, etc.) differs from <see cref="IMapState.CurrentArea"/>'s parent FriendlyName.
-    /// Matches the per-NPC <c>AreaFriendlyName</c> field in npcs.json.</summary>
-    string? CurrentSceneFriendlyName { get; }
+    /// <summary>Composite map-scene identity (parent area + sub-zone friendly name + Unity asset key),
+    /// or <c>null</c> until the first <c>Downloading Map</c> line is observed this session.
+    /// <para>Live truth — preferred over <c>Mithril.MapCalibration.ISceneAssetCache</c>
+    /// resolution. Source: Player.log's <c>Downloading Map ... runtime key ...[Map_&lt;X&gt;]</c>
+    /// line, parsed by <c>Arda.World.Player.Internal.MapAssetLoader</c>.</para></summary>
+    MapSceneRef? CurrentMapScene { get; }
 
     /// <summary>Timestamp of the most recent <c>Downloading Map</c> line.</summary>
-    DateTimeOffset? MapAssetMeasuredAt { get; }
+    DateTimeOffset? MapSceneMeasuredAt { get; }
 
     // --- Position ---
 
