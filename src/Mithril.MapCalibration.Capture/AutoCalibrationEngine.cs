@@ -205,7 +205,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (string.IsNullOrWhiteSpace(area))
         {
             attempt.Outcome = OutcomeVocabulary.RejectedNoArea;
-            return Fail("", "not in-world — open Project Gorgon and enter an area first");
+            return Fail("", "not in-world — open Project Gorgon and enter an area first", OutcomeVocabulary.RejectedNoArea);
         }
 
         // PG-foreground gate: capture must read the game's framebuffer, not
@@ -214,14 +214,14 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (_windowLocator.Locate() is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedPgNotForeground;
-            return Fail(area, "Project Gorgon is not the foreground window");
+            return Fail(area, "Project Gorgon is not the foreground window", OutcomeVocabulary.RejectedPgNotForeground);
         }
 
         var bbox = _region.Current;
         if (bbox is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedNoBbox;
-            return Fail(area, "no map bbox set — use the draw-map-bbox hotkey first");
+            return Fail(area, "no map bbox set — use the draw-map-bbox hotkey first", OutcomeVocabulary.RejectedNoBbox);
         }
 
         actSpan?.SetTag("map.area", area);
@@ -244,7 +244,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (captureResult.Gray is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedCaptureFailed;
-            return Fail(area, "map capture failed or was rejected (black / wrong-size frame)");
+            return Fail(area, "map capture failed or was rejected (black / wrong-size frame)", OutcomeVocabulary.RejectedCaptureFailed);
         }
 
         var gray = captureResult.Gray;
@@ -256,7 +256,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (baseTexture is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedNoBaseTexture;
-            return Fail(area, "preparing map assets… (base texture unavailable — no detections possible)");
+            return Fail(area, "preparing map assets… (base texture unavailable — no detections possible)", OutcomeVocabulary.RejectedNoBaseTexture);
         }
 
         // Locate the map within the captured frame. Under the production refiner
@@ -307,7 +307,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                     "Auto-calibration {Area}: locate rejected — raw fit rect at origin = ({X}, {Y}), size = {W}x{H}.",
                     area, best.OriginX, best.OriginY, best.Width, best.Height);
             }
-            return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map");
+            return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map", OutcomeVocabulary.RejectedMapNotLocated);
         }
         attempt.MapRect = mapRect;
         _logger?.LogInformation(
@@ -341,7 +341,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (clamped is null)
         {
             attempt.Outcome = OutcomeVocabulary.RejectedClampDegenerate;
-            return Fail(area, "the located map rect fell outside the captured frame — redraw the capture box tightly around the in-game map");
+            return Fail(area, "the located map rect fell outside the captured frame — redraw the capture box tightly around the in-game map", OutcomeVocabulary.RejectedClampDegenerate);
         }
 
         // #989: the bundle sink reads attempt.MapRect to write 04-maprect.json.
@@ -399,9 +399,10 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (result.Calibration is null)
         {
             var reason = result.RejectReason ?? "no geometrically-consistent fit";
-            attempt.Outcome = OutcomeVocabulary.RejectSolveSubcategory(result.RejectReason);
+            var category = OutcomeVocabulary.RejectSolveSubcategory(result.RejectReason);
+            attempt.Outcome = category;
             _logger?.LogInformation("Auto-calibration rejected for {Area}: {Reason}. Prior calibration kept.", area, reason);
-            return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason);
+            return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason, OutcomeCategory: category);
         }
 
         // Gate-accept: persist through the user store stamped AutoCapture, which
@@ -445,7 +446,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         _logger?.LogInformation(
             "Auto-calibration persisted for {Area} (residual {Residual:0.00} px, {Inliers} inliers).",
             area, stamped.ResidualPixels, result.InlierCount);
-        return new AutoCalibrationOutcome(Persisted: true, AreaKey: area, RejectReason: null);
+        return new AutoCalibrationOutcome(
+            Persisted: true,
+            AreaKey: area,
+            RejectReason: null,
+            OutcomeCategory: OutcomeVocabulary.Accepted);
     }
 
     /// <summary>
@@ -582,10 +587,10 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         return rect with { OriginX = x, OriginY = y, Width = w, Height = h };
     }
 
-    private AutoCalibrationOutcome Fail(string area, string reason)
+    private AutoCalibrationOutcome Fail(string area, string reason, string outcomeCategory)
     {
         _logger?.LogInformation("Auto-calibration not attempted for {Area}: {Reason}.", string.IsNullOrEmpty(area) ? "<none>" : area, reason);
-        return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason);
+        return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason, OutcomeCategory: outcomeCategory);
     }
 
     /// <summary>
