@@ -62,7 +62,7 @@ public sealed class AutoCalibrationEngineOutcomeCategoryTests
     [Fact]
     public async Task MapNotLocated_outcome_carries_RejectedMapNotLocated_category()
     {
-        var h = new EngineHarness { Refiner = new FakeRefiner((MapRect?)null) };
+        var h = new EngineHarness { Refiner = FakeRefiner.NotLocated() };
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
         outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.RejectedMapNotLocated);
     }

@@ -19,7 +19,7 @@ namespace Mithril.MapCalibration.Capture.Tests;
 /// </summary>
 public sealed class AutoCalibrationEngineTests
 {
-    private const string Area = "AreaEltibule";
+    private const string Area = EngineHarness.DefaultArea;
 
     [Fact]
     public async Task Persists_with_AutoCapture_source_on_accept()
@@ -621,10 +621,12 @@ public sealed class AutoCalibrationEngineTests
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
         outcome.Persisted.Should().BeFalse();
-        // The Eltibule pair (0.79 → 4.03, refs 10 → inliers 4) trips both
-        // monotonicity arms; residual is checked first, so the residual-arm
-        // reason is what surfaces. Either is monotonicity-flavoured.
-        outcome.RejectReason.Should().MatchRegex("residual|inlier");
+        // Assert structurally on OutcomeCategory rather than substring-matching
+        // RejectReason — the category is the contract, the human-readable
+        // reason string is diagnostic. The Eltibule pair trips the residual
+        // arm first (checked before inlier-delta), but either arm is the same
+        // monotonicity-reject outcome from a router POV.
+        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.RejectedNotMonotonic);
         svc.Saved.Should().NotContainKey(Area); // prior preserved (no Save call)
     }
 

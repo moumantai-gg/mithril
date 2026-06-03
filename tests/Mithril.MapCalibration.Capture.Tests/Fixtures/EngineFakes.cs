@@ -74,6 +74,15 @@ internal sealed class FakeRefiner : IMapRegionRefiner
         => _result = new MapRegionRefineResult(AcceptedRect: rect, RawFitRect: rect, Metrics: metrics);
     public FakeRefiner(MapRegionRefineResult result) => _result = result;
     public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture) => _result;
+
+    /// <summary>
+    /// Convenience for tests that exercise the map-not-located reject path:
+    /// returns a refiner that always reports "no fit". Equivalent to
+    /// <c>new FakeRefiner((MapRect?)null)</c> but avoids the disambiguation
+    /// cast that `new FakeRefiner(null)` requires (the two overloads of the
+    /// constructor both accept reference types).
+    /// </summary>
+    public static FakeRefiner NotLocated() => new(rect: (MapRect?)null);
 }
 
 internal sealed class FakeBaseTextureProvider : IBaseTextureProvider
