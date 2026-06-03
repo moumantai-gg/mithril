@@ -1,9 +1,11 @@
 using Arda.Abstractions.Logs;
 using Arda.Contracts;
 using Arda.Dispatch;
+using Arda.World.Player;
 using Arda.World.Player.Events;
 using Arda.World.Player.Internal;
 using FluentAssertions;
+using Mithril.MapCalibration;
 using Xunit;
 
 namespace Arda.World.Player.Tests;
@@ -11,11 +13,12 @@ namespace Arda.World.Player.Tests;
 public class MapAssetLoaderTests
 {
     private readonly SpyEventBus _bus = new();
+    private readonly FakeAreaState _areaState = new();
     private readonly MapAssetLoader _handler;
 
     public MapAssetLoaderTests()
     {
-        _handler = new MapAssetLoader(_bus);
+        _handler = new MapAssetLoader(_bus, _areaState);
     }
 
     private static LogLineMetadata Meta(bool isReplay = false) =>
@@ -35,33 +38,41 @@ public class MapAssetLoaderTests
     [Fact]
     public void Parses_HogansBasement_HappyPath()
     {
+        _areaState.CurrentArea = "AreaCave1";
         Dispatch("Hogan's Basement", "Map_HogansKeepBasement");
 
-        _handler.CurrentMapAsset.Should().Be("Map_HogansKeepBasement");
-        _handler.CurrentSceneFriendlyName.Should().Be("Hogan's Basement");
-        _handler.MapAssetMeasuredAt.Should().NotBeNull();
+        _handler.CurrentMapScene.Should().NotBeNull();
+        _handler.CurrentMapScene!.Value.MapAssetKey.Should().Be("Map_HogansKeepBasement");
+        _handler.CurrentMapScene!.Value.SceneFriendlyName.Should().Be("Hogan's Basement");
+        _handler.CurrentMapScene!.Value.ParentAreaKey.Should().Be("AreaCave1");
+        _handler.MapSceneMeasuredAt.Should().NotBeNull();
 
         var changed = _bus.Published<MapAssetChanged>().Should().ContainSingle().Subject;
-        changed.PreviousMapAsset.Should().BeNull();
-        changed.CurrentMapAsset.Should().Be("Map_HogansKeepBasement");
-        changed.CurrentSceneFriendlyName.Should().Be("Hogan's Basement");
+        changed.PreviousScene.Should().BeNull();
+        changed.CurrentScene.Should().NotBeNull();
+        changed.CurrentScene!.Value.MapAssetKey.Should().Be("Map_HogansKeepBasement");
+        changed.CurrentScene!.Value.SceneFriendlyName.Should().Be("Hogan's Basement");
+        changed.CurrentScene!.Value.ParentAreaKey.Should().Be("AreaCave1");
     }
 
     [Theory]
-    [InlineData("Hogan's Basement", "Map_HogansKeepBasement")]
-    [InlineData("Caves Beneath Kur Mountains", "Map_AreaKurCaves")]
-    [InlineData("Serbule", "Map_AreaSerbule")]
-    [InlineData("Anagoge Island", "Map_AreaNewbieIsland")]
-    public void Parses_VariousFriendlyAndAssetForms(string friendly, string asset)
+    [InlineData("Hogan's Basement", "Map_HogansKeepBasement", "AreaCave1")]
+    [InlineData("Caves Beneath Kur Mountains", "Map_AreaKurCaves", "AreaKurCaves")]
+    [InlineData("Serbule", "Map_AreaSerbule", "AreaSerbule")]
+    [InlineData("Anagoge Island", "Map_AreaNewbieIsland", "AreaNewbieIsland")]
+    public void Parses_VariousFriendlyAndAssetForms(string friendly, string asset, string parent)
     {
+        _areaState.CurrentArea = parent;
         Dispatch(friendly, asset);
-        _handler.CurrentMapAsset.Should().Be(asset);
-        _handler.CurrentSceneFriendlyName.Should().Be(friendly);
+        _handler.CurrentMapScene!.Value.MapAssetKey.Should().Be(asset);
+        _handler.CurrentMapScene!.Value.SceneFriendlyName.Should().Be(friendly);
+        _handler.CurrentMapScene!.Value.ParentAreaKey.Should().Be(parent);
     }
 
     [Fact]
     public void Idempotent_ReParse_DoesNotRepublish()
     {
+        _areaState.CurrentArea = "AreaCave1";
         Dispatch("Hogan's Basement", "Map_HogansKeepBasement");
         Dispatch("Hogan's Basement", "Map_HogansKeepBasement");
         _bus.Published<MapAssetChanged>().Should().ContainSingle();
@@ -70,25 +81,63 @@ public class MapAssetLoaderTests
     [Fact]
     public void Replay_LastDownloadingMapLineWins()
     {
+        _areaState.CurrentArea = "AreaSerbule";
         Dispatch("Serbule", "Map_AreaSerbule", Meta(isReplay: true));
+        _areaState.CurrentArea = "AreaEltibule";
         Dispatch("Eltibule", "Map_AreaEltibule", Meta(isReplay: true));
+        _areaState.CurrentArea = "AreaCave1";
         Dispatch("Hogan's Basement", "Map_HogansKeepBasement", Meta(isReplay: true));
 
-        _handler.CurrentMapAsset.Should().Be("Map_HogansKeepBasement");
-        _handler.CurrentSceneFriendlyName.Should().Be("Hogan's Basement");
+        _handler.CurrentMapScene!.Value.MapAssetKey.Should().Be("Map_HogansKeepBasement");
+        _handler.CurrentMapScene!.Value.SceneFriendlyName.Should().Be("Hogan's Basement");
+        _handler.CurrentMapScene!.Value.ParentAreaKey.Should().Be("AreaCave1");
         _bus.Published<MapAssetChanged>().Should().HaveCount(3);
     }
 
     [Fact]
-    public void Transition_PopulatesPreviousMapAsset()
+    public void Transition_PopulatesPreviousScene()
     {
+        _areaState.CurrentArea = "AreaSerbule";
         Dispatch("Serbule", "Map_AreaSerbule");
+        _areaState.CurrentArea = "AreaCave1";
         Dispatch("Hogan's Basement", "Map_HogansKeepBasement");
 
         var events = _bus.Published<MapAssetChanged>().ToList();
         events.Should().HaveCount(2);
-        events[1].PreviousMapAsset.Should().Be("Map_AreaSerbule");
-        events[1].CurrentMapAsset.Should().Be("Map_HogansKeepBasement");
+        events[1].PreviousScene.Should().NotBeNull();
+        events[1].PreviousScene!.Value.MapAssetKey.Should().Be("Map_AreaSerbule");
+        events[1].CurrentScene!.Value.MapAssetKey.Should().Be("Map_HogansKeepBasement");
+    }
+
+    [Fact]
+    public void SubZoneTransition_WithinSameParentArea_PreservesParentAreaKey()
+    {
+        // Two sub-zones in the same aggregator area: parent key carries through
+        // via the with-expression branch.
+        _areaState.CurrentArea = "AreaCave1";
+        Dispatch("Hogan's Basement", "Map_HogansKeepBasement");
+        var first = _handler.CurrentMapScene!.Value;
+
+        Dispatch("Goblin Dungeon", "Map_GoblinDungeon");
+        var second = _handler.CurrentMapScene!.Value;
+
+        first.ParentAreaKey.Should().Be("AreaCave1");
+        second.ParentAreaKey.Should().Be("AreaCave1");
+        second.MapAssetKey.Should().Be("Map_GoblinDungeon");
+        second.SceneFriendlyName.Should().Be("Goblin Dungeon");
+        second.MapAssetKey.Should().NotBe(first.MapAssetKey);
+        _bus.Published<MapAssetChanged>().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void Parses_BeforeAreaIsKnown_ParentAreaKeyIsEmpty()
+    {
+        // Cold-start: Downloading Map line fires before any Initializing area! —
+        // unusual but valid. ParentAreaKey is empty; consumers treat as strict-gate.
+        Dispatch("Serbule", "Map_AreaSerbule");
+
+        _handler.CurrentMapScene!.Value.ParentAreaKey.Should().BeEmpty();
+        _handler.CurrentMapScene!.Value.MapAssetKey.Should().Be("Map_AreaSerbule");
     }
 
     [Theory]
@@ -100,17 +149,22 @@ public class MapAssetLoaderTests
     public void Malformed_SilentSkip_NoStateMutation_NoEvent(string args)
     {
         _handler.Handle(args.AsSpan(), default, "Downloading Map " + args, Meta());
-        _handler.CurrentMapAsset.Should().BeNull();
-        _handler.CurrentSceneFriendlyName.Should().BeNull();
+        _handler.CurrentMapScene.Should().BeNull();
         _bus.Published<MapAssetChanged>().Should().BeEmpty();
     }
 
     [Fact]
     public void LastBracketWins_NotTheArgsHeadGuidBracket()
     {
+        _areaState.CurrentArea = "AreaTest";
         Dispatch("Test Area", "Map_TestScene");
-        _handler.CurrentMapAsset.Should().Be("Map_TestScene");
-        _handler.CurrentMapAsset.Should().NotStartWith("44d50fb"); // not the GUID
+        _handler.CurrentMapScene!.Value.MapAssetKey.Should().Be("Map_TestScene");
+        _handler.CurrentMapScene!.Value.MapAssetKey.Should().NotStartWith("44d50fb"); // not the GUID
+    }
+
+    private sealed class FakeAreaState : IAreaState
+    {
+        public string? CurrentArea { get; set; }
     }
 
     private sealed class SpyEventBus : IDomainEventSubscriber, IDomainEventPublisher

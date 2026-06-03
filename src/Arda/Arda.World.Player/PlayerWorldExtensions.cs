@@ -131,7 +131,8 @@ public static class PlayerWorldExtensions
         builder.Services.AddSingleton(sp =>
         {
             var bus = sp.GetRequiredService<IDomainEventPublisher>();
-            return new MapAssetLoader(bus);
+            var areaState = sp.GetRequiredService<IAreaState>();
+            return new MapAssetLoader(bus, areaState);
         });
 
         // --- Map scope composite (flat IMapState over all map-scoped handlers) ---
