@@ -41,6 +41,11 @@ public static class CalibrationStatusFormatter
         OutcomeVocabulary.RejectedNotMonotonic =>
             "Calibration unchanged: the new fit was worse than the saved one. "
             + "To force-replace, clear the saved calibration for this area.",
+        // #1021: per-scene calibration keying — autocal fired before any
+        // Downloading Map line was observed in this session, so the per-scene
+        // Map_<X> asset name is unknown. Tell the user how to recover.
+        OutcomeVocabulary.MapAssetNotYetKnown =>
+            "Map asset not yet known — change zones once or restart while in this scene.",
         // Other categories deliberately not routed here yet — they fall through
         // to the substring path so today's wording is preserved by default.
         _ => null,
