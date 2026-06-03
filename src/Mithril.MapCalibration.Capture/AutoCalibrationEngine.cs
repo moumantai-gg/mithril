@@ -455,7 +455,9 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // RenderSizePx-16 typed-detection bar). When the regimes differ (or either
         // side has no stamped factor — pre-#1005 legacy records, or a refiner
         // returning null Metrics), skip the comparison and accept.
-        var existing = _calibrationService.GetCalibration(area);
+        // #1021: persistence is keyed on the per-scene assetKey (Map_<X>) post-migration —
+        // baseline.json + UserRefinementStore both store under the asset key.
+        var existing = _calibrationService.GetCalibration(assetKey);
         if (existing is not null
             && IsSameScaleRegime(existing.LocatorScale, stamped.LocatorScale))
         {
@@ -475,7 +477,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         }
 
         attempt.Outcome = OutcomeVocabulary.Accepted;
-        _calibrationService.SaveUserRefinement(area, stamped);
+        _calibrationService.SaveUserRefinement(assetKey, stamped);
         _logger?.LogInformation(
             "Auto-calibration persisted for {Area} (residual {Residual:0.00} px, {Inliers} inliers).",
             area, stamped.ResidualPixels, result.InlierCount);

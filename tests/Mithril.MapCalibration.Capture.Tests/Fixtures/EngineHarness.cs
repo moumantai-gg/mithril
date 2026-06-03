@@ -28,6 +28,13 @@ internal sealed class EngineHarness
     /// distinct asset name).</summary>
     public const string DefaultMapAsset = "Map_AreaEltibule";
 
+    /// <summary>The default per-scene asset key the engine uses for persistence
+    /// + lookup post-#1021. Equal to <see cref="DefaultMapAsset"/>; aliased
+    /// separately so test sites that read/write the calibration store can name
+    /// their intent ("the asset-key the engine persists under") without coupling
+    /// to the texture-load semantics.</summary>
+    public const string DefaultAssetKey = DefaultMapAsset;
+
     public string? CurrentArea { get; init; } = DefaultArea;
 
     /// <summary>Per-scene map-asset key for the engine's strict gate (mithril#1021 D3).
