@@ -70,8 +70,8 @@ internal sealed class SpyCapture : ICaptureService
 internal sealed class FakeRefiner : IMapRegionRefiner
 {
     private readonly MapRegionRefineResult _result;
-    public FakeRefiner(MapRect? rect)
-        => _result = new MapRegionRefineResult(AcceptedRect: rect, RawFitRect: rect, Metrics: null);
+    public FakeRefiner(MapRect? rect, LocateMetrics? metrics = null)
+        => _result = new MapRegionRefineResult(AcceptedRect: rect, RawFitRect: rect, Metrics: metrics);
     public FakeRefiner(MapRegionRefineResult result) => _result = result;
     public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture) => _result;
 }

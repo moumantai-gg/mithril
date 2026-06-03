@@ -405,17 +405,25 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         }
 
         // Gate-accept: persist through the user store stamped AutoCapture, which
-        // inherits user-store precedence by construction (Task 20).
-        var stamped = result.Calibration with { Source = CalibrationSource.AutoCapture };
+        // inherits user-store precedence by construction (Task 20). Stamp
+        // LocatorScale from the FeatureMatchingRefiner's recovered partial-affine
+        // scale (#1005) so the next attempt's regime comparison has an anchor.
+        var stamped = result.Calibration with
+        {
+            Source = CalibrationSource.AutoCapture,
+            LocatorScale = refineResult.Metrics?.Scale,
+        };
 
-        // #988 monotonicity gate. When a stored calibration already exists for
-        // this area, the new fit must not regress residual/inlier quality (a
-        // wrong-fit second attempt that clears the cold-start gate would
-        // otherwise replace a good first attempt — see the Eltibule 03:11:05
-        // vs 03:11:30 pair in the originating issue). Cold start (no existing)
-        // takes the same accept path it always did.
+        // #988 monotonicity gate, scale-aware (#1005). A new fit must not regress
+        // residual/inlier quality vs. an existing calibration at the SAME zoom
+        // regime — comparing across regimes is invalid because the per-attempt
+        // inlier count tracks visible-icon size, not fit quality (the
+        // RenderSizePx-16 typed-detection bar). When the regimes differ (or either
+        // side has no stamped factor — pre-#1005 legacy records, or a refiner
+        // returning null Metrics), skip the comparison and accept.
         var existing = _calibrationService.GetCalibration(area);
-        if (existing is not null)
+        if (existing is not null
+            && IsSameScaleRegime(existing.LocatorScale, stamped.LocatorScale))
         {
             var monotonicReason = CheckMonotonicAccept(existing, stamped, result.InlierCount);
             if (monotonicReason is not null)
@@ -424,7 +432,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 _logger?.LogInformation(
                     "Auto-calibration rejected for {Area}: monotonicity gate — {Reason}. Prior calibration kept (residual {PriorResidual:0.00}px, refs {PriorRefs}).",
                     area, monotonicReason, existing.ResidualPixels, existing.ReferenceCount);
-                return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: monotonicReason);
+                return new AutoCalibrationOutcome(
+                    Persisted: false,
+                    AreaKey: area,
+                    RejectReason: monotonicReason,
+                    OutcomeCategory: OutcomeVocabulary.RejectedNotMonotonic);
             }
         }
 

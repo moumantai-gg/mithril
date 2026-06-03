@@ -469,9 +469,18 @@ public sealed class AutoCalibrationEngineTests
     public async Task Rejects_when_new_residual_blows_up_vs_existing()
     {
         // Mirrors the PR #986 Eltibule case: existing residual 0.79 px, new 4.03 px.
+        // Both sides must be at the same LocatorScale regime (#1005) for the
+        // monotonicity gate to fire — same in-game zoom is the original #988 case.
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, MakeCal(residual: 0.79, refs: 10));
-        var h = new EngineHarness { Solve = Accepted(residual: 4.03, inliers: 4), Service = svc };
+        svc.Seed(Area, MakeCal(residual: 0.79, refs: 10) with { LocatorScale = 0.408 });
+        var h = new EngineHarness
+        {
+            Solve = Accepted(residual: 4.03, inliers: 4),
+            Service = svc,
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.408)),
+        };
 
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
@@ -483,9 +492,18 @@ public sealed class AutoCalibrationEngineTests
     [Fact]
     public async Task Rejects_when_new_inlier_count_drops_vs_existing()
     {
+        // Same in-game zoom (matching LocatorScale) so the #1005 regime predicate
+        // does NOT skip the gate; the inlier-delta arm is then free to fire.
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, MakeCal(residual: 1.0, refs: 10));
-        var h = new EngineHarness { Solve = Accepted(residual: 1.0, inliers: 4), Service = svc };
+        svc.Seed(Area, MakeCal(residual: 1.0, refs: 10) with { LocatorScale = 0.408 });
+        var h = new EngineHarness
+        {
+            Solve = Accepted(residual: 1.0, inliers: 4),
+            Service = svc,
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.408)),
+        };
 
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
 
@@ -530,6 +548,108 @@ public sealed class AutoCalibrationEngineTests
         var candidate = MakeCal(residual: 1.8, refs: 8); // 1.8 < 1.0 × 2.0
         AutoCalibrationEngine.CheckMonotonicAccept(existing, candidate, candidateInlierCount: 7) // 8 − 7 = 1 ≤ delta 2
             .Should().BeNull();
+    }
+
+    // ── #1005: scale-aware monotonicity gate ─────────────────────────────────
+
+    [Fact]
+    public async Task Persisted_calibration_carries_LocatorScale_from_the_locate_metrics()
+    {
+        var svc = new FakeCalibrationService();
+        var h = new EngineHarness
+        {
+            Solve = Accepted(residual: 0.65, inliers: 5),
+            Service = svc,
+            // Refiner returns a populated Metrics with a known scale — the
+            // engine must stamp this onto the persisted AreaCalibration so the
+            // gate has it to compare on the next attempt.
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.408)),
+        };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeTrue();
+        svc.Saved[Area].LocatorScale.Should().Be(0.408);
+    }
+
+    [Fact]
+    public async Task Different_scale_regime_accepts_even_when_monotonicity_would_have_rejected()
+    {
+        var svc = new FakeCalibrationService();
+        // Seed an EXISTING calibration at scale 0.408 with high quality.
+        svc.Seed(Area, SomeBaseline() with { LocatorScale = 0.408, ResidualPixels = 0.5, ReferenceCount = 10 });
+
+        // Capture at scale 0.800 (different regime) with a WORSE-looking fit
+        // (would trip both monotonicity arms: residual much higher, inliers much lower).
+        // Different regime → gate skipped → accept.
+        var h = new EngineHarness
+        {
+            Service = svc,
+            Solve = Accepted(residual: 3.5, inliers: 4),
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.800)),
+        };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeTrue();
+        outcome.RejectReason.Should().BeNull();
+        svc.Saved[Area].LocatorScale.Should().Be(0.800);
+    }
+
+    [Fact]
+    public async Task Same_scale_regime_still_protects_a_good_fit_from_a_worse_one()
+    {
+        // The original #988 protection: same in-game zoom, second wrong-fit
+        // attempt seconds later. LocatorScale values match within tolerance,
+        // gate fires, prior calibration kept.
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, SomeBaseline() with { LocatorScale = 0.408, ResidualPixels = 0.79, ReferenceCount = 10 });
+
+        var h = new EngineHarness
+        {
+            Service = svc,
+            Solve = Accepted(residual: 4.03, inliers: 4),
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.411)), // within ±2%
+        };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeFalse();
+        // The Eltibule pair (0.79 → 4.03, refs 10 → inliers 4) trips both
+        // monotonicity arms; residual is checked first, so the residual-arm
+        // reason is what surfaces. Either is monotonicity-flavoured.
+        outcome.RejectReason.Should().MatchRegex("residual|inlier");
+        svc.Saved.Should().NotContainKey(Area); // prior preserved (no Save call)
+    }
+
+    [Fact]
+    public async Task Legacy_null_LocatorScale_on_existing_skips_the_gate()
+    {
+        // Legacy record (pre-#1005) has null LocatorScale. A new capture's
+        // candidate has a value. IsSameScaleRegime(null, _) → false → gate skipped.
+        // First re-capture stamps a value and subsequent comparisons can gate normally.
+        var svc = new FakeCalibrationService();
+        svc.Seed(Area, SomeBaseline() with { LocatorScale = null, ResidualPixels = 0.5, ReferenceCount = 10 });
+
+        var h = new EngineHarness
+        {
+            Service = svc,
+            Solve = Accepted(residual: 5.0, inliers: 3), // would normally trip both gates
+            Refiner = new FakeRefiner(
+                new MapRect(0, 0, 64, 64, 64, 64),
+                TestLocateMetrics.ForScale(0.408)),
+        };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeTrue();
+        svc.Saved[Area].LocatorScale.Should().Be(0.408); // legacy null replaced with stamped value
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
