@@ -82,18 +82,18 @@ public sealed class ProcessAssetExtractor : IAssetExtractor
         catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !ct.IsCancellationRequested)
         {
             _logger?.LogWarning(
-                "Asset-extractor sidecar timed out after {Timeout} ({Kind} {Area}) — child killed (safe-degrade).",
+                "Asset-extractor sidecar timed out after {Timeout} ({Kind} {MapAsset}) — child killed (safe-degrade).",
                 _timeout, request.Kind, request.MapAssetName);
             return ExtractResult.Failure(ExitTimeout, $"sidecar timed out after {_timeout}");
         }
         catch (OperationCanceledException)
         {
-            _logger?.LogInformation("Asset-extractor sidecar cancelled by caller ({Kind} {Area}).", request.Kind, request.MapAssetName);
+            _logger?.LogInformation("Asset-extractor sidecar cancelled by caller ({Kind} {MapAsset}).", request.Kind, request.MapAssetName);
             throw;
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Asset-extractor sidecar failed to launch ({Kind} {Area}) — safe-degrade.", request.Kind, request.MapAssetName);
+            _logger?.LogWarning(ex, "Asset-extractor sidecar failed to launch ({Kind} {MapAsset}) — safe-degrade.", request.Kind, request.MapAssetName);
             return ExtractResult.Failure(ExitLaunchFailed, $"sidecar launch failed: {ex.Message}");
         }
 
