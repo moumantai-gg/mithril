@@ -804,8 +804,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 /// (<see cref="CalibrationStatusFormatter"/>), and the structured outcome
 /// category (one of the constants on <see cref="Diagnostics.OutcomeVocabulary"/>).
 ///
-/// <para><see cref="OutcomeCategory"/> is nullable for backward-compat with
-/// callers that pre-date #1005; <see cref="CalibrationStatusFormatter.ForOutcome"/>
+/// <para><see cref="OutcomeCategory"/> is nullable; <see cref="CalibrationStatusFormatter.ForOutcome"/>
 /// routes structurally when it is set and falls back to substring-matching
 /// the <see cref="RejectReason"/> when null. New engine return sites MUST
 /// populate it.</para>

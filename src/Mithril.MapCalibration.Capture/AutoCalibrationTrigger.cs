@@ -168,6 +168,10 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
 
                 // Picker/store-disagreement telemetry — informational, surfaces how
                 // often the picker prefers a baseline over a stored auto.
+                //
+                // Second store lookup is intentional: GetAllSources returns the persisted
+                // list (what the trigger gates on); GetCalibration runs the picker (what
+                // the runtime renderer sees). Comparing the two surfaces the divergence.
                 var picked = _calibrationService.GetCalibration(scene);
                 if (picked is not null && picked.Source != converged.Source)
                 {

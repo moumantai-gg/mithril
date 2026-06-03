@@ -10,13 +10,10 @@ namespace Mithril.MapCalibration.Capture;
 /// The engine's reject reasons are diagnostic ("residual 25.00 px exceeds
 /// threshold…"); this turns them into an actionable instruction.
 ///
-/// <para><b>Routing model (#1005).</b> <see cref="ForOutcome"/> routes
-/// structurally on <see cref="AutoCalibrationOutcome.OutcomeCategory"/> first:
-/// when set, the outcome category maps deterministically to its user message.
-/// When <see langword="null"/> (legacy callers that pre-date #1005),
-/// <see cref="ForReject"/> falls back to substring-matching the
-/// <see cref="AutoCalibrationOutcome.RejectReason"/> &#8212; preserving the
-/// pre-#1005 behaviour for any path that hasn't been updated yet.</para>
+/// <para>Routing model: callers populate <see cref="AutoCalibrationOutcome.OutcomeCategory"/>
+/// (one of <see cref="OutcomeVocabulary"/>'s constants); <see cref="ForOutcome"/>
+/// switches on the constant for crisp messages. When the field is null, the
+/// formatter falls back to substring-matching the <see cref="AutoCalibrationOutcome.RejectReason"/>.</para>
 /// </summary>
 public static class CalibrationStatusFormatter
 {
