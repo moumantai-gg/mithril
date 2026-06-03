@@ -217,10 +217,10 @@ foreach (var npc in _refData.NpcsByInternalName.Values)
 
 For directly-registered areas (`SceneFriendlyName == null`), the NPC filter collapses to the existing `AreaName == ParentAreaKey` behaviour. Back-compat preserved at the implementation level.
 
-**Texture-provider seam** (`src/Mithril.MapCalibration/Detection/IBaseTextureProvider.cs`): signature stays string-typed; parameter renamed `areaKey` → `mapAssetKey` for honesty. The cache filename rolls naturally to `map-texture-Map_HogansKeepBasement.{json,bin}` because `CachedBaseTextureProvider` interpolates the key into the filename verbatim. Doc comment updated to reference the new identifier shape.
+**Texture-provider seam** (`src/Mithril.MapCalibration.Detection/IBaseTextureProvider.cs` — moved out of `Mithril.MapCalibration` proper by [#1028](https://github.com/moumantai-gg/mithril/pull/1028)'s project split, shipped 2026-06-02): signature stays string-typed; parameter renamed `areaKey` → `mapAssetKey` for honesty. The cache filename rolls naturally to `map-texture-Map_HogansKeepBasement.{json,bin}` because `CachedBaseTextureProvider` interpolates the key into the filename verbatim. Doc comment updated to reference the new identifier shape.
 
 **Sidecar contract rename** (`tools/Mithril.AssetExtractor/`):
-- `ExtractRequest.AreaKey` → `ExtractRequest.MapAssetName` (record field rename in `src/Mithril.MapCalibration/Detection/IAssetExtractor.cs`).
+- `ExtractRequest.AreaKey` → `ExtractRequest.MapAssetName` (record field rename in `src/Mithril.MapCalibration/IAssetExtractor.cs`).
 - CLI flag `--area <X>` → `--asset <Map_X>` (in `ProcessAssetExtractor.BuildStartInfo` + the sidecar `Program.cs` argument parser + the README).
 - Sidecar internally still lowercases the asset name when matching against the bundle glob (`maps_assets_assets_art_maps_<lowercased>.png_*.bundle`) — case-preservation gotcha (wiki) is handled *inside* the sidecar; callers always pass the literal PascalCase form.
 
@@ -363,10 +363,10 @@ Production code (~16 files):
 - `src/Mithril.MapCalibration/MapSceneRef.cs` — NEW record struct.
 - `src/Mithril.MapCalibration.Capture/IAreaReferenceProvider.cs` — signature change.
 - `src/Mithril.MapCalibration.Capture/ReferenceDataAreaReferenceProvider.cs` — composite-key filter.
-- `src/Mithril.MapCalibration/Detection/IBaseTextureProvider.cs` — param rename + doc.
-- `src/Mithril.MapCalibration/Detection/Internal/CachedBaseTextureProvider.cs` — param rename (only).
-- `src/Mithril.MapCalibration/Detection/IAssetExtractor.cs` — `ExtractRequest.AreaKey` → `MapAssetName`.
-- `src/Mithril.MapCalibration/Detection/ProcessAssetExtractor.cs` — CLI flag `--area` → `--asset`.
+- `src/Mithril.MapCalibration.Detection/IBaseTextureProvider.cs` — param rename + doc. (Moved out of `Mithril.MapCalibration` by #1028.)
+- `src/Mithril.MapCalibration.Detection/Internal/CachedBaseTextureProvider.cs` — param rename (only).
+- `src/Mithril.MapCalibration/IAssetExtractor.cs` — `ExtractRequest.AreaKey` → `MapAssetName`. (Stayed in `Mithril.MapCalibration` per #1028's split — the contract is BCL-only.)
+- `src/Mithril.MapCalibration.Detection/Internal/ProcessAssetExtractor.cs` — CLI flag `--area` → `--asset`. (Moved into `Mithril.MapCalibration.Detection.Internal` by #1028.)
 - `src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs` — DI swap + gate + `MapSceneRef` build.
 - `src/Mithril.MapCalibration.Capture/CalibrationStatusFormatter.cs` + `OutcomeVocabulary.cs` — new `MapAssetNotYetKnown` entry.
 - `src/Mithril.MapCalibration/Internal/UserRefinementStore.cs` — v1→v2 migrator in `Load`.
