@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "area": "AreaKurMountains",
+  "width": 2048,
+  "height": 2048,
+  "pixelSha256": "7a0da494843da414d196c9aa8259777773bdc484559023df3092460512d4ca55",
+  "pgVersion": "6000.3.11f1 (3000ef702840)",
+  "extractorVersion": "1.0.0.0"
+}

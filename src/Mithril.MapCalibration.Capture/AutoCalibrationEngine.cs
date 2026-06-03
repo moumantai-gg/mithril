@@ -264,6 +264,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         {
             refineResult = _refiner.Refine(gray, baseTexture, RefineMinScore);
             refineAct?.SetTag("map.located", refineResult.AcceptedRect is not null);
+            // PR-1 transitional: BestCoarseRect is the [Obsolete] alias for RawFitRect
+            // (renamed under feature-matching-locate). The in-tree
+            // TextureRegistrationRefiner still populates it under the old name; PR-3
+            // rewrites every call site to RawFitRect and deletes the alias.
+#pragma warning disable CS0618 // BestCoarseRect: alias removed in PR-3
             if (refineResult.BestCoarseRect?.AutoDetectScore is { } coarseScore)
             {
                 refineAct?.SetTag("locator.best_score", coarseScore);
@@ -284,6 +289,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             }
             return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map");
         }
+#pragma warning restore CS0618
         attempt.MapRect = mapRect;
         _logger?.LogInformation(
             "Auto-calibration {Area}: map sub-rect located ({MapRect}) in {ElapsedMs:0} ms.",
