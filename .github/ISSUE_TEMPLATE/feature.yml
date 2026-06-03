@@ -34,7 +34,7 @@ body:
     id: module
     attributes:
       label: Module
-      description: Which module owns this work? Adds the matching `module:*` label.
+      description: Which module owns this work? After create, apply the matching `module:*` label manually (no auto-applier wired yet — see #1024).
       options:
         - shell
         - samwise
@@ -59,14 +59,19 @@ body:
     id: area
     attributes:
       label: Area
-      description: Which cross-cutting area, if any?
+      description: Which cross-cutting area, if any? After create, apply the matching `area:*` label manually.
       options:
         - none
-        - parser
-        - ui
+        - arda
         - ci
         - docs
+        - gamestate-services
+        - map-calibration
+        - parser
+        - performance
+        - telemetry
         - test
+        - ui
     validations:
       required: false
 

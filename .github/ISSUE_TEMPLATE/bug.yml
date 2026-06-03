@@ -35,7 +35,7 @@ body:
     id: module
     attributes:
       label: Module
-      description: Which module is affected? Adds the matching `module:*` label.
+      description: Which module is affected? After create, apply the matching `module:*` label manually (no auto-applier wired yet — see #1024).
       options:
         - shell
         - samwise
@@ -60,16 +60,30 @@ body:
     id: area
     attributes:
       label: Area
-      description: Which cross-cutting area, if any?
+      description: Which cross-cutting area, if any? After create, apply the matching `area:*` label manually.
       options:
         - none
-        - parser
-        - ui
+        - arda
         - ci
         - docs
+        - gamestate-services
+        - map-calibration
+        - parser
+        - performance
+        - telemetry
         - test
+        - ui
     validations:
       required: false
+
+  - type: checkboxes
+    id: flags
+    attributes:
+      label: Flags
+      description: Tick any that apply. After create, apply the corresponding labels manually (`regression`, `area:performance`).
+      options:
+        - label: Regression — previously-working behavior broke from a known change
+        - label: Performance issue — slowness, stalls, regressions in wall-clock or resource use
 
   - type: textarea
     id: context
