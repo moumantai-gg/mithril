@@ -58,7 +58,7 @@ internal static class SparseLocateSpike
             using var capColor = Cv2.ImRead(b.ScreenshotPath, ImreadModes.Color);
             using var capFull = new Mat();
             Cv2.CvtColor(capColor, capFull, ColorConversionCodes.BGR2GRAY);
-            using var cap = b.CropRect is Rect r ? new Mat(capFull, r) : capFull.Clone();
+            using var cap = b.CropRect is Rect r ? new Mat(capFull, ClampRectToMat(r, capFull)) : capFull.Clone();
             using var tex = LoadBaseTextureGray(assetsDir, b.TextureKey);
             if (tex is null || tex.Empty())
             {
@@ -88,6 +88,19 @@ internal static class SparseLocateSpike
     // ---- harness ----
 
     private sealed record Bundle(string Name, string ScreenshotPath, string TextureKey, Rect? CropRect);
+
+    // Clamp a crop rect to a Mat's bounds. The production mapRect occasionally
+    // overshoots the screenshot by a few pixels (e.g. AreaEltibule 20260602-031130
+    // mapRect height extends 13 px below the capture); without this, the
+    // Mat(roi) ctor throws OpenCVException.
+    private static Rect ClampRectToMat(Rect r, Mat m)
+    {
+        int x = Math.Max(0, r.X);
+        int y = Math.Max(0, r.Y);
+        int w = Math.Min(r.Width, m.Cols - x);
+        int h = Math.Min(r.Height, m.Rows - y);
+        return new Rect(x, y, Math.Max(1, w), Math.Max(1, h));
+    }
 
     // Auto-discover bundles under %LocalAppData%/Mithril/diagnostics/calibration/.
     // Directory naming convention (from CalibrationAttemptContext): the area key
