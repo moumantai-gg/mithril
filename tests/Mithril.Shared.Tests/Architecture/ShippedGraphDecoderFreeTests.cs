@@ -64,7 +64,11 @@ public class ShippedGraphDecoderFreeTests
     // silently. (AssetsTools.NET / System.Drawing.Common are NOT allowlisted anywhere.)
     private static readonly Dictionary<string, string[]> PackageAllowlistByProject = new(StringComparer.OrdinalIgnoreCase)
     {
+        // Transitional state — `.Capture` keeps its entry until the OpenCv-using code
+        // is lifted into `.Detection` (this plan, Task 11). The final state has only
+        // `.Detection`.
         ["Mithril.MapCalibration.Capture.csproj"] = ["OpenCvSharp"],
+        ["Mithril.MapCalibration.Detection.csproj"] = ["OpenCvSharp"],
     };
 
     private static readonly string[] ForbiddenProjects =

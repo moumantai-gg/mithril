@@ -19,6 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <ProjectReference Include="..\Mithril.MapCalibration.Detection\Mithril.MapCalibration.Detection.csproj" />
     <ProjectReference Include="..\Mithril.Overlay\Mithril.Overlay.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
     <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />

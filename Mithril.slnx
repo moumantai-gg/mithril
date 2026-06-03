@@ -10,6 +10,7 @@
     <Project Path="src/Mithril.Leveling/Mithril.Leveling.csproj" />
     <Project Path="src/Mithril.MapCalibration/Mithril.MapCalibration.csproj" />
     <Project Path="src/Mithril.MapCalibration.Capture/Mithril.MapCalibration.Capture.csproj" />
+    <Project Path="src/Mithril.MapCalibration.Detection/Mithril.MapCalibration.Detection.csproj" />
     <Project Path="src/Mithril.Overlay/Mithril.Overlay.csproj" />
     <Project Path="src/Mithril.Planning/Mithril.Planning.csproj" />
     <Project Path="src/Mithril.Reference/Mithril.Reference.csproj" />

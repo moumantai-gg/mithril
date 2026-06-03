@@ -94,6 +94,11 @@
          base dir even though no DI wiring consumes it yet (Phase 3 wires the
          orchestrator + hotkeys). Memory pointer: shell_must_projectref_shared_libs. -->
     <ProjectReference Include="..\Mithril.MapCalibration.Capture\Mithril.MapCalibration.Capture.csproj" />
+    <!-- Mithril.MapCalibration.Detection (spec: detection-project-split): OpenCv-using
+         detection algorithms (NCC, blob, RANSAC, solve engine, FeatureMatchingRefiner).
+         Shell must reference it so the DLL lands in the app base dir per
+         shell_must_projectref_shared_libs convention. -->
+    <ProjectReference Include="..\Mithril.MapCalibration.Detection\Mithril.MapCalibration.Detection.csproj" />
     <!-- Mithril.Overlay (#835): scaffold-only. Shell must reference so the
          DLL lands in the app base dir for the reflection module loader to
          resolve when consumer modules call IWorldOverlayMarkers / IOverlayWindow
