@@ -469,30 +469,6 @@ public sealed class AutoCalibrationEngineTests
         captured[0].Outcome.Should().Be(OutcomeVocabulary.RejectedSolveInsufficientInliers);
     }
 
-    // ── #1005: LocatorScale stamping ─────────────────────────────────────────
-
-    [Fact]
-    public async Task Persisted_calibration_carries_LocatorScale_from_the_locate_metrics()
-    {
-        var svc = new FakeCalibrationService();
-        var h = new EngineHarness
-        {
-            Solve = Accepted(residual: 0.65, inliers: 5),
-            Service = svc,
-            // Refiner returns a populated Metrics with a known scale — the
-            // engine must stamp this onto the persisted AreaCalibration so the
-            // gate has it to compare on the next attempt.
-            Refiner = new FakeRefiner(
-                new MapRect(0, 0, 64, 64, 64, 64),
-                TestLocateMetrics.ForScale(0.408)),
-        };
-
-        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
-
-        outcome.Persisted.Should().BeTrue();
-        svc.Saved[AssetKey].LocatorScale.Should().Be(0.408);
-    }
-
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private static CalibrationAttemptBundleSinkSelector MakeSinkSelector(ICalibrationAttemptBundleSink sink) =>

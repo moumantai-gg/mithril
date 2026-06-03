@@ -64,15 +64,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private const double DriftMatchGatePx = 20.0;
     private const int DriftMinMatchedReferences = 3;
 
-    /// <summary>
-    /// Relative tolerance for <see cref="IsSameScaleRegime"/>: a new candidate's
-    /// <c>LocatorScale</c> must be within ±2% of the stored one to count as the
-    /// same in-game zoom regime. Generous over the
-    /// <c>FeatureMatchingRefiner</c>'s sub-percent stability for repeated
-    /// captures at the same zoom (see #1005).
-    /// </summary>
-    private const double ScaleRegimeRelTolerance = 0.02;
-
     private readonly IMapState _mapState;
     private readonly ISceneAssetCache _sceneCache;
     private readonly IGameWindowLocator _windowLocator;
@@ -643,13 +634,10 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         }
 
         // Gate-accept: persist through the user store stamped AutoCapture, which
-        // inherits user-store precedence by construction (Task 20). Stamp
-        // LocatorScale from the FeatureMatchingRefiner's recovered partial-affine
-        // scale (#1005) so the next attempt's regime comparison has an anchor.
+        // inherits user-store precedence by construction (Task 20).
         var stamped = result.Calibration with
         {
             Source = CalibrationSource.AutoCapture,
-            LocatorScale = refineResult.Metrics?.Scale,
         };
 
         attempt.Outcome = OutcomeVocabulary.Accepted;
@@ -806,29 +794,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     {
         _logger?.LogInformation("Auto-calibration not attempted for {Area}: {Reason}.", string.IsNullOrEmpty(area) ? "<none>" : area, reason);
         return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason, OutcomeCategory: outcomeCategory);
-    }
-
-    /// <summary>
-    /// True when an existing stored calibration and a new candidate were both
-    /// solved at the same in-game zoom regime &#8212; i.e. the locator's
-    /// <see cref="LocateMetrics.Scale"/> values agree within
-    /// <see cref="ScaleRegimeRelTolerance"/> (currently 2%, generous over the
-    /// <c>FeatureMatchingRefiner</c>'s sub-percent stability for repeated
-    /// captures at the same zoom).
-    ///
-    /// <para>Returns <see langword="false"/> when either side is <see langword="null"/>
-    /// (legacy record stamped pre-#1005, or a candidate whose locator didn't
-    /// populate the factor) OR non-positive/non-finite. "Regime unknown" routes
-    /// to "skip the gate, accept the new fit" at the call site &#8212; the
-    /// monotonicity check is only valid when both fits saw the same icon-size
-    /// regime, and we have no basis to claim that when the data is missing or
-    /// degenerate.</para>
-    /// </summary>
-    internal static bool IsSameScaleRegime(double? existing, double? candidate)
-    {
-        if (existing is not { } e || candidate is not { } c) return false;
-        if (!double.IsFinite(e) || !double.IsFinite(c) || e <= 0 || c <= 0) return false;
-        return Math.Abs(c / e - 1.0) <= ScaleRegimeRelTolerance;
     }
 
 }
