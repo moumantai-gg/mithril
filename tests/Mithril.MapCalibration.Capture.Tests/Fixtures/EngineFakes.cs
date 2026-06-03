@@ -211,6 +211,10 @@ internal sealed class SpySolver : IMapCalibrationSolver
         SolveCalls++;
         return _result;
     }
+
+    /// <summary>Not used by the calibration path; throws to guard accidental invocation.</summary>
+    public IReadOnlyList<TypedDetection> DetectOnly(DetectionRequest request) =>
+        throw new InvalidOperationException("SpySolver.DetectOnly must not be called from the calibration path.");
 }
 
 /// <summary>

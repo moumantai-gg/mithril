@@ -15,6 +15,14 @@ namespace Mithril.MapCalibration.Capture;
 public interface IMapCalibrationSolver
 {
     CalibrationSolveResult Solve(DetectionRequest request, IReadOnlyList<LandmarkReference> references);
+
+    /// <summary>
+    /// Run the detector phase only (no geometric solve). Returns all typed
+    /// detections as a flat list, suitable for the drift-check path (mithril#1046
+    /// §6.2) which needs to compare predicted positions to detections without
+    /// paying for RANSAC.
+    /// </summary>
+    IReadOnlyList<TypedDetection> DetectOnly(DetectionRequest request);
 }
 
 /// <summary>Production adapter: delegates to the shipped <see cref="MapCalibrationSolveEngine"/>.</summary>
@@ -26,4 +34,8 @@ public sealed class MapCalibrationSolveEngineAdapter : IMapCalibrationSolver
 
     public CalibrationSolveResult Solve(DetectionRequest request, IReadOnlyList<LandmarkReference> references) =>
         _engine.Solve(request, references);
+
+    /// <inheritdoc/>
+    public IReadOnlyList<TypedDetection> DetectOnly(DetectionRequest request) =>
+        throw new NotImplementedException("Implemented in Task B4.");
 }
