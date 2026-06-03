@@ -34,6 +34,16 @@ dotnet test tests/Mithril.MapCalibration.Tests --filter "FullyQualifiedName~Scen
 
 > **Build-state caveat (D9).** Phases 1-4 land as one atomic PR. Intermediate states between tasks may not build cleanly because the interface surface change is cross-cutting. The plan's commits per task may not produce buildable intermediate trees — they're logically-ordered TDD-style commits that the final-state suite gates. If a task's "verify build" step fails mid-plan, that's expected unless flagged otherwise.
 
+## Code review cadence
+
+**Do NOT request a code review after every task.** Most tasks are 5-50 lines of mechanical edits where a review would be ceremony, not signal. Instead, code reviews happen at **phase boundaries** — where the diff has grown to a coherent reviewable unit, where related changes can be assessed together, and where a reviewer's findings can usefully redirect subsequent work.
+
+The phases below end with a `### Phase N — Review checkpoint` section. At those points, run `pr-review-toolkit:code-reviewer` against the cumulative diff since the previous checkpoint (or main, for Phase 1). Address findings before proceeding to the next phase; if a finding requires going back into a previous phase, that's the right outcome — better to discover it now than after Phase 4 lands and the whole architecture is rebuilt around a wrong assumption.
+
+Within a phase, run tests (the task-level `dotnet test` Step) but skip code review. Save the review eyes for the boundary.
+
+**Final review** (after Phase 5 / Task 24): one last code-review pass on the cumulative diff vs main, before opening the PR. Catches any cross-phase incoherence and is the last gate before the reviewer sees it.
+
 ---
 
 ## Codebase cohesion corrections (READ BEFORE TASK 1)
@@ -470,6 +480,16 @@ git commit -m "refactor(arda): MapScope delegates CurrentMapScene + MapSceneMeas
 
 ---
 
+### Phase 1 — Review checkpoint
+
+The Arda foundation layer is complete. The diff so far reshapes `MapSceneRef`, `IMapState`, `MapAssetChanged`, `MapAssetLoader`, and `MapScope`. The rest of the solution does NOT build at this point — that's expected (D9 build-state caveat).
+
+- [ ] **Run cumulative Arda-layer tests:** `dotnet test tests/Arda.World.Player.Tests tests/Mithril.MapCalibration.Tests --filter "FullyQualifiedName~MapSceneRef|FullyQualifiedName~MapAssetLoader|FullyQualifiedName~MapScope|FullyQualifiedName~MapTests"`. All green.
+- [ ] **Code review (Phase 1):** invoke `pr-review-toolkit:code-reviewer` against the cumulative diff vs `main` (`git diff main...HEAD`). Focus areas: composite identity correctness (`MapSceneRef` field placement, doc comments), `MapAssetLoader`'s `with`-expression vs. fresh construction logic, idempotent-re-parse guard.
+- [ ] **Address findings:** if the reviewer surfaces anything that touches the composite contract (e.g. "the `ParentAreaKey` empty-string sentinel is ambiguous"), fix it now — the entire downstream plan rests on this layer's correctness.
+
+---
+
 ## Phase 2 — Calibration core API reshape
 
 ### Task 6: Retype `IMapCalibrationService` + delete `ImportUserRefinements`
@@ -703,6 +723,16 @@ Expected: surviving tests PASS; `ImportFromLegacy` tests no longer exist.
 git add src/Mithril.MapCalibration/Internal/UserRefinementStore.cs tests/Mithril.MapCalibration.Tests/Internal/UserRefinementStoreTests.cs
 git commit -m "refactor(map-calibration): retire UserRefinementStore.ImportFromLegacy (mithril#1041 D6)"
 ```
+
+---
+
+### Phase 2 — Review checkpoint
+
+`IMapCalibrationService` is now `MapSceneRef`-typed end-to-end; the impl extracts `scene.MapAssetKey` for inner lookups; `ImportUserRefinements` + `ImportFromLegacy` are gone. The interface change ripples into Phase 4 consumers, so getting the interface shape right NOW prevents thrash later.
+
+- [ ] **Run core tests:** `dotnet test tests/Mithril.MapCalibration.Tests --filter "FullyQualifiedName~MapCalibrationService|FullyQualifiedName~UserRefinementStore"`. All green.
+- [ ] **Code review (Phase 2):** `pr-review-toolkit:code-reviewer` against cumulative diff. Focus: `IMapCalibrationService` xmldoc accuracy, `AllCalibrations` asymmetry note (string-keyed by asset, not `MapSceneRef`-keyed), `Changed` event payload retype, complete absence of `ImportUserRefinements` and `ImportFromLegacy` references.
+- [ ] **Address findings.** D6 retirement is the most likely findings cluster — any leftover xmldoc cross-references or test imports.
 
 ---
 
@@ -1706,6 +1736,16 @@ git commit -m "feat(map-calibration): wire DI for SceneAssetCache + Recorder + S
 
 ---
 
+### Phase 3 — Review checkpoint
+
+The cache is the largest net-new addition in this PR (5 new files: `ISceneAssetCache`, `SceneAssetCache`, `SceneAssetCacheStore`, `SceneAssetCacheSeeder`, `SceneAssetCacheRecorder`, plus the `SceneResolution` helper). It's also the most independently-reviewable surface — the cache could land on `main` standalone if we wanted (Phase 3 doesn't break callers; it's purely additive). That makes the cumulative-diff review here especially high-signal: a reviewer can assess "is this cache designed correctly?" without the noise of consumer refactoring.
+
+- [ ] **Run cache tests:** `dotnet test tests/Mithril.MapCalibration.Tests --filter "FullyQualifiedName~SceneAssetCache|FullyQualifiedName~SceneResolution"`. All green (~25-30 tests).
+- [ ] **Code review (Phase 3):** `pr-review-toolkit:code-reviewer` against cumulative diff. Focus: composite-key strictness (`null` vs non-null `SceneFriendlyName`), seeder's "observation wins over seed" invariant (timestamp tiebreaker), persistence transactional shape mirroring `UserRefinementStore`, JSON-context source generation entries.
+- [ ] **Address findings.** Pay particular attention to any "what about XYZ failure mode?" findings — the cache's safety invariants are still under-tested vs. potential adversarial inputs.
+
+---
+
 ## Phase 4a — Capture consumers
 
 ### Task 15: Update `AutoCalibrationEngine` to read `CurrentMapScene`
@@ -1942,6 +1982,16 @@ git commit -m "refactor(map-calibration): AutoCalibrationTrigger subscribes to M
 
 ---
 
+### Phase 4a — Review checkpoint
+
+The capture consumers (engine + trigger) are the first consumers to consume the cache-resolution helper. The interplay between strict gate, cache fallback, and the `_persistedScenes`-keyed-on-`MapAssetKey` skip-check has subtle correctness questions that aren't obvious from reading either consumer in isolation.
+
+- [ ] **Run capture tests:** `dotnet test tests/Mithril.MapCalibration.Capture.Tests --filter "FullyQualifiedName~AutoCalibrationEngine|FullyQualifiedName~AutoCalibrationTrigger"`. All green.
+- [ ] **Code review (Phase 4a):** `pr-review-toolkit:code-reviewer` against cumulative diff. Focus: `_persistedScenes` rekeying logic (correct under sub-zone re-entry?), `MapAssetChanged` subscription's fire-and-forget delegation matching the existing `AreaChanged` shape, cache-fallback gate ordering vs strict-gate refusal.
+- [ ] **Address findings.**
+
+---
+
 ## Phase 4b — Renderer
 
 ### Task 17: Update `OverlayWindowService` + rename overlay interfaces
@@ -2123,6 +2173,16 @@ Expected: all PASS.
 git add src/Mithril.Overlay/ tests/Mithril.Overlay.Tests/
 git commit -m "refactor(overlay): OverlayWindowService consumes MapSceneRef + cache fallback (mithril#1041)"
 ```
+
+---
+
+### Phase 4b — Review checkpoint
+
+This phase contains the headline fix — the renderer cutover. Every consumer of `IMapCalibrationService` that the brief identified as broken is now migrated. The cumulative diff at this point is approximately the upper-half of what the PR will look like; reviewing here catches structural issues before Legolas grafts on top.
+
+- [ ] **Run overlay tests:** `dotnet test tests/Mithril.Overlay.Tests`. All green.
+- [ ] **Code review (Phase 4b):** `pr-review-toolkit:code-reviewer` against cumulative diff. Focus: dissolved-#868 invariant preserved (scene drawers run when uncalibrated; the marker-projection block alone gates on calibration), the `OverlaySceneContext.Project` per-frame snapshot, `MapAssetChanged` dispatcher marshaling, telemetry tag rename (`area` → `scene.asset_key` — backwards-compat consideration?).
+- [ ] **Address findings.**
 
 ---
 
@@ -2496,6 +2556,17 @@ git commit -m "refactor(legolas): ViewModels consume CurrentScene composite (mit
 
 ---
 
+### Phase 4c — Review checkpoint
+
+Legolas is the final consumer phase. After this, the solution should fully build and every test should pass. The cumulative diff at this checkpoint is the FULL PR — review here catches anything cross-cutting before the integration test (Phase 5) puts the seal on it.
+
+- [ ] **Run Legolas tests:** `dotnet test tests/Legolas.Tests`. All green.
+- [ ] **Full-solution build:** `dotnet build Mithril.slnx`. Succeeds with no warnings (warnings-as-errors enforced). Specifically watch for `CS0618` warnings on `LegolasSettings.AreaCalibrations` references — any leftover reader is a bug.
+- [ ] **Code review (Phase 4c):** `pr-review-toolkit:code-reviewer` against cumulative diff. Focus: `IAreaCalibrationService` interface coherence, `AreaCalibrationService.OnMapCalChanged` equality fix (`payload.MapAssetKey == _currentScene?.MapAssetKey` — the load-bearing one-liner from the brief), `PlayerLogIngestionService`'s subscription swap completeness, the `MapSceneRefForDirectlyRegisteredArea` synthesizer's correctness for the picker case.
+- [ ] **Address findings.**
+
+---
+
 ## Phase 5 — Integration + verification
 
 ### Task 23: Headline integration test
@@ -2657,9 +2728,21 @@ Expected: 3 tests PASS.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/Legolas.Module.Tests/Integration/Legolas_PerSceneCalibration_IntegrationTests.cs
+git add tests/Legolas.Tests/Integration/Legolas_PerSceneCalibration_IntegrationTests.cs
 git commit -m "test(legolas): headline integration test for per-scene calibration resolution (mithril#1041)"
 ```
+
+---
+
+### Phase 5 — Review checkpoint (final, pre-PR)
+
+The integration test is in place. The cumulative diff is the entire PR. This is the last code review before the reviewer sees it on GitHub — catch any cross-cutting concern that the per-phase reviews missed because they only saw a slice.
+
+- [ ] **Full-solution test:** `dotnet test Mithril.slnx`. All green.
+- [ ] **Final code review:** `pr-review-toolkit:code-reviewer` against `git diff main...HEAD`. Focus: cross-phase incoherence (e.g., a doc-comment in Phase 1 references something that was renamed in Phase 4), the cleanup-grep results from Task 24 Step 4, integration test thoroughness vs the three cases in spec §5.8.
+- [ ] **`silent-failure-hunter` pass:** invoke `pr-review-toolkit:silent-failure-hunter` against the same diff. This phase added new error-handling surfaces in `SceneAssetCacheStore` (transactional rollback) + `SceneAssetCacheRecorder` (lossy on IOException) + `OverlayWindowService` (cross-thread dispatch); silent-failure analysis is high-value here.
+- [ ] **`comment-analyzer` pass on the spec.md + plan.md docstrings:** `pr-review-toolkit:comment-analyzer` against the spec's tables + the plan's task xmldoc blocks. Catches comment-vs-implementation drift before merge.
+- [ ] **Address findings.** If any phase's invariants are violated, fix in the appropriate phase's commit (not at the tail) so the squashed commit history remains coherent.
 
 ---
 
