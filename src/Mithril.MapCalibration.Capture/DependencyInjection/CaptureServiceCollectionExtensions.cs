@@ -98,6 +98,37 @@ public static partial class CaptureServiceCollectionExtensions
         services.AddSingleton<IMapRegionRefiner, TextureRegistrationRefiner>();
         services.AddSingleton<CaptureValidation>();
 
+        // PR-2 Task 11: ORB descriptor cache infrastructure. Registered now so
+        // PR-4 can pick them up when it swaps FeatureMatchingRefiner in as the
+        // production refiner. Both reader + writer share the same asset cache
+        // dir as the base-texture cache (sibling files
+        // map-texture-<area>.orb.{json,bin}) and the same orb-params hash
+        // derived from MapCalibrationLocateOptions.
+        //
+        // MapCalibrationLocateOptions is registered here as a singleton (POCO
+        // with INotifyPropertyChanged so a future settings UI can bind without
+        // re-resolving the graph). TryAdd so a shell-side settings surface can
+        // pre-register a user-tunable instance.
+        services.TryAddSingleton<MapCalibrationLocateOptions>();
+
+        services.TryAddSingleton<Internal.CachedOrbDescriptorProvider>(sp =>
+        {
+            var opts = sp.GetRequiredService<MapCalibrationLocateOptions>();
+            return new Internal.CachedOrbDescriptorProvider(
+                cacheDir: assetCacheDir,
+                orbParamsHash: ComputeOrbParamsHash(opts),
+                logger: sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.OrbCache"));
+        });
+
+        services.TryAddSingleton<Internal.OrbDescriptorWriter>(sp =>
+        {
+            var opts = sp.GetRequiredService<MapCalibrationLocateOptions>();
+            return new Internal.OrbDescriptorWriter(
+                cacheDir: assetCacheDir,
+                orbParamsHash: ComputeOrbParamsHash(opts),
+                logger: sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.OrbCache"));
+        });
+
         // #966 Task 3: capture-frame debug-dump options (OFF by default). Registered
         // only if the shell hasn't already supplied one, so a settings surface can
         // override by registering its own instance first.
@@ -222,4 +253,23 @@ public static partial class CaptureServiceCollectionExtensions
     /// </summary>
     internal static ICalibrationConfidenceGate BuildConfidenceGate(GameConfig cfg) =>
         new CalibrationConfidenceGate(cfg.CalibrationGoodResidualPx, CalibrationConfidenceGate.DefaultInlierFloor);
+
+    /// <summary>
+    /// Canonical SHA-256 of the locate options that affect the ORB-descriptor
+    /// cache identity. The descriptors are only reusable when these params
+    /// match — change any of them and the manifest's <c>OrbParamsHash</c>
+    /// mismatches the cache key, invalidating the on-disk pair so the next
+    /// refine recomputes (then rewrites) the cache.
+    /// <para>Culture-invariant formatting so the same params hash identically
+    /// across locales; canonical key=value ordering so future param additions
+    /// can extend the suffix without churning existing entries.</para>
+    /// </summary>
+    private static string ComputeOrbParamsHash(MapCalibrationLocateOptions opts)
+    {
+        var s = string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"orb-v1|nFeatures={opts.OrbNFeatures}|loweRatio={opts.LoweRatio:F4}|ransacPx={opts.RansacReprojectionThresholdPx:F4}");
+        var bytes = System.Text.Encoding.UTF8.GetBytes(s);
+        return System.Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
+    }
 }

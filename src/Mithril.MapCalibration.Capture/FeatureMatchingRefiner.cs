@@ -1,4 +1,6 @@
+using System.Security.Cryptography;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Capture.Internal;
 using Mithril.MapCalibration.Detection;
 using OpenCvSharp;
 
@@ -33,7 +35,15 @@ public sealed class FeatureMatchingRefiner : IMapRegionRefiner
 {
     private readonly MapCalibrationLocateOptions _options;
     private readonly ILogger? _logger;
+    private readonly CachedOrbDescriptorProvider? _cachedDescriptors;
+    private readonly OrbDescriptorWriter? _writer;
+    private string? _currentAreaKey;
 
+    /// <summary>
+    /// PR-1 backward-compatible constructor. No on-disk ORB descriptor cache
+    /// — every Refine recomputes texture-side ORB. Existing tests + the (not
+    /// yet shipped) production DI path use this overload.
+    /// </summary>
     public FeatureMatchingRefiner(
         MapCalibrationLocateOptions options,
         ILogger<FeatureMatchingRefiner>? logger = null)
@@ -42,6 +52,43 @@ public sealed class FeatureMatchingRefiner : IMapRegionRefiner
         _logger = logger;
     }
 
+    /// <summary>
+    /// PR-2 cache-aware constructor. The reader + writer types are internal
+    /// to <c>Mithril.MapCalibration.Capture</c> (their on-disk format is a
+    /// private implementation detail), so this overload is internal too — the
+    /// DI extension method registers the refiner via this ctor; tests reach
+    /// it through <see cref="InternalsVisibleToAttribute"/>.
+    /// </summary>
+    internal FeatureMatchingRefiner(
+        MapCalibrationLocateOptions options,
+        ILogger<FeatureMatchingRefiner>? logger,
+        CachedOrbDescriptorProvider? cachedDescriptors,
+        OrbDescriptorWriter? writer)
+    {
+        _options = options;
+        _logger = logger;
+        _cachedDescriptors = cachedDescriptors;
+        _writer = writer;
+    }
+
+    /// <summary>
+    /// Set the area-key context for the next <see cref="Refine"/> call. The
+    /// engine (PR-4) calls this before each attempt; the refiner uses the
+    /// area key for the on-disk ORB descriptor cache filename
+    /// (<c>map-texture-&lt;areaKey&gt;.orb.{json,bin}</c>).
+    ///
+    /// <para>Not thread-safe. Calibration runs single-attempt-per-hotkey-press
+    /// so single-threaded by construction (spec §"Risks and open questions").
+    /// If a future surface needs multiple concurrent refiners, switch to a
+    /// per-attempt arg on the interface (deferred until then).</para>
+    ///
+    /// <para>Cache integration is opt-in: when the cache reader+writer were
+    /// supplied to the constructor AND <see cref="_currentAreaKey"/> is
+    /// non-null, the cache consults/populates on each Refine. Otherwise the
+    /// behaviour is identical to PR-1 (always compute texture-side ORB).</para>
+    /// </summary>
+    public void SetAreaKey(string? areaKey) => _currentAreaKey = areaKey;
+
     public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture, double minScore)
     {
         // The minScore arg is a leftover from the NCC interface and is
@@ -49,6 +96,13 @@ public sealed class FeatureMatchingRefiner : IMapRegionRefiner
         // The gate that matters lives in _options.
         _ = minScore;
 
+        // texDescriptors lifetime is conditional: when we read from the cache
+        // OrbDescriptorBundle.Dispose owns the Mat; when we compute fresh we
+        // own it. Tracked by texDescriptorsOwned + cachedBundle below, freed
+        // in the outer finally so neither path leaks.
+        Mat? texDescriptors = null;
+        bool texDescriptorsOwned = true;
+        OrbDescriptorBundle? cachedBundle = null;
         try
         {
             using var orb = ORB.Create(nFeatures: _options.OrbNFeatures);
@@ -56,9 +110,39 @@ public sealed class FeatureMatchingRefiner : IMapRegionRefiner
             using var texMat = ToMat8U(baseTexture);
 
             using var capDescriptors = new Mat();
-            using var texDescriptors = new Mat();
             orb.DetectAndCompute(capMat, null, out var capKeypoints, capDescriptors);
-            orb.DetectAndCompute(texMat, null, out var texKeypoints, texDescriptors);
+
+            // ===== begin: cache integration (opt-in) =====
+            KeyPoint[] texKeypoints;
+            string? textureSha = null;
+            bool cacheEligible =
+                _cachedDescriptors is not null
+                && _writer is not null
+                && !string.IsNullOrEmpty(_currentAreaKey);
+
+            if (cacheEligible)
+            {
+                textureSha = Convert.ToHexStringLower(SHA256.HashData(baseTexture.Pixels));
+                cachedBundle = _cachedDescriptors!.TryRead(_currentAreaKey!, textureSha);
+            }
+
+            if (cachedBundle is not null)
+            {
+                texKeypoints = cachedBundle.Keypoints;
+                texDescriptors = cachedBundle.Descriptors;
+                texDescriptorsOwned = false;  // OrbDescriptorBundle.Dispose owns it
+            }
+            else
+            {
+                var computedTexDescriptors = new Mat();
+                orb.DetectAndCompute(texMat, null, out texKeypoints, computedTexDescriptors);
+                texDescriptors = computedTexDescriptors;
+                if (cacheEligible && texKeypoints.Length > 0)
+                {
+                    _writer!.Write(_currentAreaKey!, texKeypoints, texDescriptors, textureSha!, pgVersion: null);
+                }
+            }
+            // ===== end: cache integration =====
 
             if (capDescriptors.Rows < 2 || texDescriptors.Rows < 2)
             {
@@ -172,6 +256,14 @@ public sealed class FeatureMatchingRefiner : IMapRegionRefiner
         {
             _logger?.LogWarning(ex, "Feature-matching locate: OpenCV failure. Safe-degrade.");
             return MapRegionRefineResult.None;
+        }
+        finally
+        {
+            // Dispose the texture descriptors only when we own them (fresh
+            // compute path). On a cache hit the OrbDescriptorBundle owns the
+            // Mat and disposing it here would double-dispose via cachedBundle.
+            if (texDescriptorsOwned) texDescriptors?.Dispose();
+            cachedBundle?.Dispose();
         }
     }
 
