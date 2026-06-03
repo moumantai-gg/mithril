@@ -10,12 +10,6 @@
     <PackageReference Include="Microsoft.Windows.CsWin32" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
-    <!-- #978: sub-pixel screenshot↔texture ECC registration in-process. Sanctioned
-         in-process exception to the #921 decoder-free split (allowlisted for THIS
-         assembly only by ShippedGraphDecoderFreeTests). OpenCvSharp is an alignment
-         library here (FindTransformECC), not an asset decoder. -->
-    <PackageReference Include="OpenCvSharp4" />
-    <PackageReference Include="OpenCvSharp4.runtime.win" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
