@@ -196,13 +196,13 @@ The arming state + window live in a small new `ManualCalibrationCoordinator` (DI
 - Owns `_armedUntil : DateTimeOffset?` and the 10-second arming window (`ArmingWindow = TimeSpan.FromSeconds(10)`).
 - Decision tree on each hotkey press:
   1. Resolve scene via the existing cascade. Bbox/foreground gates checked the same way `TryCalibrateCurrentAreaAsync` checks them — surface a reject chip via `CalibrationStatusFormatter` on failure.
-  2. If `_armedUntil` is set and `IGameClock.UtcNow < _armedUntil`: armed re-press → call `_runner.TryCalibrateCurrentAreaAsync(ct)`, surface its outcome via `CalibrationStatusFormatter`, clear `_armedUntil`.
+  2. If `_armedUntil` is set and `TimeProvider.GetUtcNow() < _armedUntil`: armed re-press → call `_runner.TryCalibrateCurrentAreaAsync(ct)`, surface its outcome via `CalibrationStatusFormatter`, clear `_armedUntil`.
   3. Otherwise, clear any stale `_armedUntil` and look up `stored = _calibrationService.GetCalibration(scene)`:
      - Null: cold path. Call `_runner.TryCalibrateCurrentAreaAsync(ct)` (existing behavior).
      - Non-null: drift-check path. Call `_runner.CheckDriftAsync(ct)`:
        - `Ok` → chip `"Calibration check OK — no drift detected."` Do not arm.
        - `Inconclusive` → chip `"Drift check inconclusive — {reason}."` Do not arm.
-       - `Drift(max, matched, threshold)` → set `_armedUntil = IGameClock.UtcNow + ArmingWindow`, chip `"Drift detected (~{max:0.0}px). Press calibrate hotkey again within {seconds}s to recalibrate."`
+       - `Drift(max, matched, threshold)` → set `_armedUntil = TimeProvider.GetUtcNow() + ArmingWindow`, chip `"Drift detected (~{max:0.0}px). Press calibrate hotkey again within {seconds}s to recalibrate."`
        - `CaptureFailed`/`MapNotLocated`/`NoIconDetections` → surface the actionable reject reason via `CalibrationStatusFormatter`. Do not arm.
        - `NoStoredCalibration` → fall back to `TryCalibrateCurrentAreaAsync` (cold path; coordinator's drift-check pre-check is purely a fast path).
 
@@ -357,7 +357,7 @@ xunit + FluentAssertions per project convention. New test classes named per exis
 
 ### 10.3 Manual hotkey arming — `ManualCalibrationCoordinatorTests`
 
-`IGameClock` is the existing clock seam already used by the project. The coordinator takes it in its ctor; tests inject a `TestGameClock`.
+`TimeProvider` is the wall-clock seam (`IGameClock` is PG in-game time-of-day, not what we want for the arming window). The coordinator takes a `TimeProvider` in its ctor; tests inject the existing `FakeClock : TimeProvider` pattern used in `Mithril.Shared.Tests`, `Legolas.Tests`, and `ThrottledWarnTests`.
 
 | Case | Setup | Assertion |
 |---|---|---|
