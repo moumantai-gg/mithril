@@ -26,8 +26,8 @@ public sealed class BundledBaselineLoaderTests
         // turns this red rather than degrading at runtime.
         var baseline = BundledBaselineLoader.Load(logger: null);
 
-        baseline.Should().ContainKeys("AreaSerbule", "AreaEltibule", "AreaKurMountains");
-        baseline["AreaSerbule"].Source.Should().Be(CalibrationSource.BundledBaseline);
+        baseline.Should().ContainKeys("Map_AreaSerbule", "Map_AreaEltibule", "Map_AreaKurMountains");
+        baseline["Map_AreaSerbule"].Source.Should().Be(CalibrationSource.BundledBaseline);
     }
 
     [Fact]
@@ -38,5 +38,23 @@ public sealed class BundledBaselineLoaderTests
         {
             cal.Source.Should().Be(CalibrationSource.BundledBaseline);
         }
+    }
+
+    [Fact]
+    public void Bundled_baseline_v2_keys_have_Map_prefix()
+    {
+        // The v2 schema (#1021) keys calibration entries by the per-scene asset name
+        // (Map_AreaSerbule) rather than the area aggregate (AreaSerbule). This test
+        // catches a regression where someone hand-edits the JSON and forgets the
+        // prefix OR forgets the schemaVersion bump — either of which would silently
+        // re-break the per-scene keying #1021 fixed.
+        var baseline = BundledBaselineLoader.Load(logger: null);
+
+        baseline.Should().ContainKey("Map_AreaSerbule");
+        baseline.Should().ContainKey("Map_AreaEltibule");
+        baseline.Should().ContainKey("Map_AreaKurMountains");
+        baseline.Should().NotContainKey("AreaSerbule");
+        baseline.Should().NotContainKey("AreaEltibule");
+        baseline.Should().NotContainKey("AreaKurMountains");
     }
 }
