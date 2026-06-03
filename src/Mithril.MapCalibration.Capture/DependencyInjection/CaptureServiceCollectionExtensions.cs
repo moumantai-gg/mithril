@@ -185,11 +185,26 @@ public static partial class CaptureServiceCollectionExtensions
             sp.GetService<IMapCaptureRectStore>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Draw")));
 
+        // TimeProvider: registered TryAdd so the shell host's own registration wins,
+        // but test graphs (which don't call AddArda) get a working default.
+        services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+
+        // Manual calibrate coordinator (mithril#1046 §6.4): owns the drift-check +
+        // arming + chip routing state machine; the hotkey command is a thin pass-through.
+        services.AddSingleton<ManualCalibrationCoordinator>(sp => new ManualCalibrationCoordinator(
+            sp.GetRequiredService<IAutoCalibrationRunner>(),
+            sp.GetRequiredService<IMapCalibrationService>(),
+            sp.GetRequiredService<Arda.World.Player.IMapState>(),
+            sp.GetRequiredService<ISceneAssetCache>(),
+            sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.ManualCoordinator")));
+
         // Hotkeys.
         services.AddSingleton<IHotkeyCommand>(sp =>
             new Hotkeys.CaptureCalibrateCommand(
-                sp.GetRequiredService<IAutoCalibrationRunner>(),
-                sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>()));
+                sp.GetRequiredService<ManualCalibrationCoordinator>(),
+                sp.GetService<ILoggerFactory>()?.CreateLogger<Hotkeys.CaptureCalibrateCommand>()));
         services.AddSingleton<IHotkeyCommand>(sp =>
             new Hotkeys.DrawMapBboxCommand(sp.GetRequiredService<IMapBboxDrawController>()));
 
