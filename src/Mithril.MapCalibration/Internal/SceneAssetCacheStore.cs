@@ -50,6 +50,11 @@ internal sealed class SceneAssetCacheStore
         }
     }
 
+    /// <summary>Highest <c>schemaVersion</c> this build knows how to read.
+    /// On-disk shape currently matches v1. Bump alongside any breaking
+    /// shape change to <see cref="SceneAssetCacheFile"/>.</summary>
+    private const int KnownSchemaVersion = 1;
+
     private void Load()
     {
         if (!File.Exists(_filePath)) return;
@@ -59,6 +64,31 @@ internal sealed class SceneAssetCacheStore
             using var doc = JsonDocument.Parse(stream);
 
             if (doc.RootElement.ValueKind != JsonValueKind.Object) return;
+
+            // schemaVersion read-back (mithril#1054): Persist stamps v1, but
+            // until this gate Load ignored the field. A future v>1 file read by
+            // this build would be silently half-parsed — every v2-shaped entry
+            // falls through the per-entry resilient parse as "missing fields"
+            // and the user's learned cache vanishes. Fail-closed instead: start
+            // empty so the newer build (which CAN read v>1) sees the file
+            // intact on its next run. Mirrors UserRefinementStore.Load's
+            // schemaVersion handling.
+            var schemaVersion = 1; // absent → v1 (pre-stamp shape)
+            if (doc.RootElement.TryGetProperty("schemaVersion", out var verProp) &&
+                verProp.ValueKind == JsonValueKind.Number &&
+                verProp.TryGetInt32(out var v))
+            {
+                schemaVersion = v;
+            }
+            if (schemaVersion > KnownSchemaVersion)
+            {
+                _logger?.LogWarning(
+                    "scene-asset-cache schema v{Found} at {Path} is newer than supported v{Known}; " +
+                    "starting empty this session to avoid corrupting data this build doesn't recognise.",
+                    schemaVersion, _filePath, KnownSchemaVersion);
+                return;
+            }
+
             if (!doc.RootElement.TryGetProperty("entries", out var entries) ||
                 entries.ValueKind != JsonValueKind.Array) return;
 

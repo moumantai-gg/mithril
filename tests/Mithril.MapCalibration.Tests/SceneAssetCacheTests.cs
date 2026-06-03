@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.IO;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mithril.MapCalibration.Internal;
 using Xunit;
@@ -88,5 +90,43 @@ public sealed class SceneAssetCacheTests : IDisposable
         cache.Record(new MapSceneRef("AreaX", null, string.Empty), DateTimeOffset.UtcNow);
         // Neither should poison the cache.
         cache.TryResolve("AreaX", null).Should().BeNull();
+    }
+
+    [Fact]
+    public void Record_UnderDefinedComposite_EmitsTraceDiagnostic()
+    {
+        // mithril#1053: the Downloading-Map-before-Initializing-area race
+        // (see MapAssetLoader) hands SceneAssetCache a composite with an
+        // empty ParentAreaKey. The drop itself is correct (don't poison the
+        // cache) but a support investigation can't tell whether THIS guard
+        // fired vs. some other path failed silently. LogTrace surfaces it
+        // in the diagnostics ring buffer without spamming Information.
+        var capture = new CapturingLogger();
+        var cache = new SceneAssetCache(new SceneAssetCacheStore(_tempDir, NullLogger.Instance), capture);
+
+        cache.Record(new MapSceneRef(string.Empty, null, "Map_X"), DateTimeOffset.UtcNow);
+
+        capture.Traces.Should().Contain(m =>
+            m.Contains("dropped under-defined composite"));
+    }
+
+    private sealed class CapturingLogger : ILogger
+    {
+        public List<string> Traces { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Trace) Traces.Add(formatter(state, exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 }

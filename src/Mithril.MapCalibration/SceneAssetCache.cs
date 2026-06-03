@@ -30,7 +30,16 @@ public sealed class SceneAssetCache : ISceneAssetCache
     public void Record(MapSceneRef scene, DateTimeOffset observedAt)
     {
         if (string.IsNullOrEmpty(scene.ParentAreaKey) || string.IsNullOrEmpty(scene.MapAssetKey))
-            return; // an under-defined composite — don't poison the cache
+        {
+            // mithril#1053: an under-defined composite — don't poison the cache.
+            // Surface the drop at Trace so a support investigation can spot the
+            // MapAssetLoader "Downloading Map fired before Initializing area!"
+            // race (the dominant cause) without spamming Information.
+            _logger?.LogTrace(
+                "SceneAssetCache: dropped under-defined composite (parentArea='{ParentArea}', assetKey='{AssetKey}').",
+                scene.ParentAreaKey, scene.MapAssetKey);
+            return;
+        }
         _store.Record(scene.ParentAreaKey, scene.SceneFriendlyName, scene.MapAssetKey, observedAt);
     }
 }
