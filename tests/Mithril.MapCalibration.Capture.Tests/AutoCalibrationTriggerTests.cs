@@ -1,5 +1,6 @@
 using System.Threading.Tasks;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mithril.MapCalibration;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
@@ -127,9 +128,100 @@ public sealed class AutoCalibrationTriggerTests
         overlay.StatusMessage.Should().NotBeNullOrWhiteSpace("an actionable auto-reject tells the user why auto-cal isn't engaging");
     }
 
+    // -------------------------------------------------------------------------
+    // Group D1: pre-flight tests using GetAllSources (mithril#1046 §10.4).
+    // These tests are written against the NEW pre-flight rule (D2) and are
+    // intentionally RED under the old GetCalibration-based rule.
+    // -------------------------------------------------------------------------
+
+    private static AreaCalibration Cal(double residual, int refs, CalibrationSource source) =>
+        new(Scale: 1.0, RotationRadians: 0, OriginX: 0, OriginY: 0,
+            ReferenceCount: refs, ResidualPixels: residual) { Source = source };
+
+    [Fact]
+    public async Task Trigger_StoreHasUserRefinement_Skips()
+    {
+        // Store returns a UserRefinement; trigger must skip and log it.
+        var engine = new SpyAutoCalibrationEngine();
+        var svc = new FakeCalibrationService();
+        svc.SeedAllSources(AssetKey, new[] { Cal(0.8, 6, CalibrationSource.UserRefinement) });
+        var logger = new CapturingLogger();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            service: svc, logger: logger);
+        await trigger.OnSceneChangedAsync(Scene());
+        engine.Calls.Should().Be(0, "store has a UserRefinement; auto path must not displace it");
+        logger.Entries.Should().Contain(e => e.Message.Contains("store has UserRefinement record"),
+            "trigger must log why it skipped");
+    }
+
+    [Fact]
+    public async Task Trigger_StoreHasAutoCapture_Skips()
+    {
+        // Store returns an AutoCapture; trigger must skip and log it.
+        var engine = new SpyAutoCalibrationEngine();
+        var svc = new FakeCalibrationService();
+        svc.SeedAllSources(AssetKey, new[] { Cal(0.6, 5, CalibrationSource.AutoCapture) });
+        var logger = new CapturingLogger();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            service: svc, logger: logger);
+        await trigger.OnSceneChangedAsync(Scene());
+        engine.Calls.Should().Be(0, "store has an AutoCapture; one-shot-per-install must be respected");
+        logger.Entries.Should().Contain(e => e.Message.Contains("store has AutoCapture record"),
+            "trigger must log why it skipped");
+    }
+
+    [Fact]
+    public async Task Trigger_StoreOnlyHasBundledBaseline_Fires()
+    {
+        // Store has only a BundledBaseline — upgradeable; engine must be invoked.
+        var engine = new SpyAutoCalibrationEngine();
+        var svc = new FakeCalibrationService();
+        svc.SeedAllSources(AssetKey, new[] { Cal(2.1, 6, CalibrationSource.BundledBaseline) });
+        svc.Seed(AssetKey, Cal(2.1, 6, CalibrationSource.BundledBaseline));
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
+        await trigger.OnSceneChangedAsync(Scene());
+        engine.Calls.Should().Be(1, "a bundled baseline is upgradeable by the auto path");
+    }
+
+    [Fact]
+    public async Task Trigger_StoreEmpty_Fires()
+    {
+        // Store returns empty (cold install); engine must be invoked.
+        var engine = new SpyAutoCalibrationEngine();
+        var svc = new FakeCalibrationService();
+        // SeedAllSources not called → GetAllSources returns empty
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
+        await trigger.OnSceneChangedAsync(Scene());
+        engine.Calls.Should().Be(1, "no solve in store; cold install should trigger the engine");
+    }
+
+    [Fact]
+    public async Task Trigger_PickerReturnsBaselineButStoreHasAuto_Skips()
+    {
+        // Picker prefers the higher-quality BundledBaseline (lower residual, more refs),
+        // but the store ALSO holds an AutoCapture. The new pre-flight reads GetAllSources
+        // and sees AutoCapture → must skip. The old rule reads GetCalibration (picker)
+        // which returns BundledBaseline → would fire. This test is RED under the old rule.
+        var auto = Cal(1.2, 5, CalibrationSource.AutoCapture);
+        var baseline = Cal(0.5, 8, CalibrationSource.BundledBaseline);
+        var engine = new SpyAutoCalibrationEngine();
+        var svc = new FakeCalibrationService();
+        svc.SeedAllSources(AssetKey, new[] { auto, baseline });
+        svc.Seed(AssetKey, baseline); // picker returns baseline (preferred by residual)
+        var logger = new CapturingLogger();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            service: svc, logger: logger);
+        await trigger.OnSceneChangedAsync(Scene());
+        engine.Calls.Should().Be(0,
+            "store has an AutoCapture even though the picker chose the better Baseline; trigger must respect the store");
+        logger.Entries.Should().Contain(e => e.Message.Contains("picker returned BundledBaseline"),
+            "trigger must emit the picker-disagrees-with-store log");
+    }
+
     private static AutoCalibrationTrigger Build(
         SpyAutoCalibrationEngine engine, CaptureRect? bbox, bool focused,
-        FakeCalibrationService? service = null, FakeOverlayWindow? overlay = null)
+        FakeCalibrationService? service = null, FakeOverlayWindow? overlay = null,
+        ILogger? logger = null)
         => new(
             new FakeDomainEventSubscriber(),
             engine,
@@ -139,5 +231,5 @@ public sealed class AutoCalibrationTriggerTests
             new FakeMapState { CurrentArea = Area, CurrentMapScene = new MapSceneRef(Area, null, AssetKey) },
             new FakeSceneAssetCache(),
             overlay ?? new FakeOverlayWindow(),
-            NullLogger.Instance);
+            logger ?? NullLogger.Instance);
 }
