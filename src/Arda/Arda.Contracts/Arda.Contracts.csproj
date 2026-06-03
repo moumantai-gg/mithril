@@ -16,12 +16,6 @@
       the pre-#370 stringly-typed footgun.
     -->
     <ProjectReference Include="..\..\Mithril.Reference\Mithril.Reference.csproj" />
-    <!--
-      Mithril.MapCalibration owns MapSceneRef (mithril#1041 — the universal
-      calibration identity surfaced on IMapState). Mithril.MapCalibration is
-      TFM net10.0 and has no Arda dependency, so this reference is acyclic.
-    -->
-    <ProjectReference Include="..\..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
   </ItemGroup>
 
 </Project>

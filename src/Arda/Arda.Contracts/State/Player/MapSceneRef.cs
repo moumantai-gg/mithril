@@ -1,3 +1,10 @@
+// Type lives in Arda.Contracts (NOT Mithril.MapCalibration) so IMapState can
+// expose it without creating a circular project reference between Arda.Contracts
+// (consumer of MapSceneRef on IMapState) and Mithril.MapCalibration (which needs
+// Arda.Contracts for IMapState, MapAssetChanged, IDomainEventSubscriber).
+// Namespace is preserved as Mithril.MapCalibration per the mithril#1041 spec —
+// every consumer continues to `using Mithril.MapCalibration;` regardless of
+// physical assembly location.
 namespace Mithril.MapCalibration;
 
 /// <summary>
