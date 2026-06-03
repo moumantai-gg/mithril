@@ -314,7 +314,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             "Auto-calibration {Area}: map sub-rect located ({MapRect}) in {ElapsedMs:0} ms.",
             area, mapRect, Stopwatch.GetElapsedTime(refineStart).TotalMilliseconds);
 
-        var references = _references.ForArea(area);
+        // Task 15 (mithril#1021) will replace this with the strict (Map_<X>, SceneFriendlyName)
+        // pair from IMapState. For now, keep the build green by lifting the area
+        // string into a directly-registered MapSceneRef (SceneFriendlyName = null
+        // → area-only filter, same behaviour as pre-#1021).
+        var references = _references.ForArea(new MapSceneRef(area, SceneFriendlyName: null));
         attempt.References = references;
         _logger?.LogInformation(
             "Auto-calibration {Area}: {ReferenceCount} landmark reference(s) for this area.", area, references.Count);

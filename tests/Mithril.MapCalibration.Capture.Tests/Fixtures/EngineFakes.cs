@@ -112,9 +112,25 @@ internal sealed class FakeIconTemplateProvider : IIconTemplateProvider
 
 internal sealed class FakeAreaRefs : IAreaReferenceProvider
 {
-    private readonly IReadOnlyList<LandmarkReference> _refs;
-    public FakeAreaRefs(IReadOnlyList<LandmarkReference> refs) => _refs = refs;
-    public IReadOnlyList<LandmarkReference> ForArea(string areaKey) => _refs;
+    public FakeAreaRefs() => References = Array.Empty<LandmarkReference>();
+    public FakeAreaRefs(IReadOnlyList<LandmarkReference> refs) => References = refs;
+
+    /// <summary>References returned by every <see cref="ForArea"/> call. Settable
+    /// so callers may use either the positional constructor or an
+    /// object-initializer (mithril#1021 plan style).</summary>
+    public IReadOnlyList<LandmarkReference> References { get; set; }
+
+    /// <summary>The <see cref="MapSceneRef"/> from the most recent
+    /// <see cref="ForArea"/> call, or <c>null</c> if not yet invoked. Used by
+    /// the per-scene-keying tests (mithril#1021) to assert the composite
+    /// scene identity flows through unmodified.</summary>
+    public MapSceneRef? LastSceneRef { get; private set; }
+
+    public IReadOnlyList<LandmarkReference> ForArea(MapSceneRef sceneRef)
+    {
+        LastSceneRef = sceneRef;
+        return References;
+    }
 }
 
 internal sealed class SpySolver : IMapCalibrationSolver
