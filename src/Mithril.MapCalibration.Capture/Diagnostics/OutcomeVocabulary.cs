@@ -21,7 +21,6 @@ public static class OutcomeVocabulary
     public const string RejectedSolveNoDetections = "rejected-solve-no-detections";
     public const string RejectedSolveInsufficientInliers = "rejected-solve-insufficient-inliers";
     public const string RejectedSolveResidual = "rejected-solve-residual";
-    public const string RejectedNotMonotonic = "rejected-not-monotonic";
 
     /// <summary>
     /// Refusal: autocal was invoked before any Downloading Map line was observed

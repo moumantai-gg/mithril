@@ -38,9 +38,6 @@ public static class CalibrationStatusFormatter
     /// </summary>
     private static string? ForCategory(string? category) => category switch
     {
-        OutcomeVocabulary.RejectedNotMonotonic =>
-            "Calibration unchanged: the new fit was worse than the saved one. "
-            + "To force-replace, clear the saved calibration for this area.",
         // #1021: per-scene calibration keying — autocal fired before any
         // Downloading Map line was observed in this session, so the per-scene
         // Map_<X> asset name is unknown. Tell the user how to recover.

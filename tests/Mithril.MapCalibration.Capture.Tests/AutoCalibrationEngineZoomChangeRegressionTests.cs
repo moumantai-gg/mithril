@@ -18,7 +18,6 @@ namespace Mithril.MapCalibration.Capture.Tests;
 /// </summary>
 public sealed class AutoCalibrationEngineZoomChangeRegressionTests
 {
-    private const string Area = EngineHarness.DefaultArea;
     // #1021: the calibration store is keyed by per-scene asset key (Map_<X>),
     // not the bare area key.
     private const string AssetKey = EngineHarness.DefaultAssetKey;
@@ -68,41 +67,4 @@ public sealed class AutoCalibrationEngineZoomChangeRegressionTests
         svc.Saved[AssetKey].ResidualPixels.Should().Be(1.2);
     }
 
-    [Fact]
-    public async Task Wrong_fit_at_the_same_zoom_still_keeps_the_good_one_with_the_new_chip_message()
-    {
-        // The original #988 protection. Same in-game zoom, second capture is
-        // a 5× residual blow-up with fewer inliers — clearly wrong. Gate
-        // fires, chip says "unchanged".
-        var svc = new FakeCalibrationService();
-
-        var firstHarness = new EngineHarness
-        {
-            Service = svc,
-            Solve = TestHelpers.Accepted(residual: 0.79, inliers: 10),
-            Refiner = new FakeRefiner(
-                new MapRect(0, 0, 64, 64, 64, 64),
-                TestLocateMetrics.ForScale(0.408)),
-        };
-        await firstHarness.Engine().TryCalibrateCurrentAreaAsync(default);
-
-        var secondHarness = new EngineHarness
-        {
-            Service = svc,
-            Solve = TestHelpers.Accepted(residual: 4.03, inliers: 4),
-            Refiner = new FakeRefiner(
-                new MapRect(0, 0, 64, 64, 64, 64),
-                TestLocateMetrics.ForScale(0.411)), // within ±2%
-        };
-        var second = await secondHarness.Engine().TryCalibrateCurrentAreaAsync(default);
-
-        second.Persisted.Should().BeFalse();
-        second.OutcomeCategory.Should().Be(OutcomeVocabulary.RejectedNotMonotonic);
-        var msg = CalibrationStatusFormatter.ForOutcome(second);
-        msg.Should().Contain("Calibration unchanged");
-        msg.Should().NotContain("zoom the in-game map all the way out");
-
-        // Good first calibration preserved.
-        svc.Saved[AssetKey].ResidualPixels.Should().Be(0.79);
-    }
 }

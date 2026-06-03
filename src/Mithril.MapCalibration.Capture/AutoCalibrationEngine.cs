@@ -59,16 +59,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private static readonly BlobOptions BlobOpts = new(
         MinArea: 12, MaxIconArea: 900, MinSolidity: 0.35, MaxAspect: 2.5, MinPeak: 0.7);
 
-    // #988 monotonicity gate: when a stored calibration exists for the area,
-    // a new fit must not regress quality by more than these tolerances.
-    // Tuned from the Eltibule 03:11:05 (0.79 px / 10 inliers, GOOD) vs
-    // 03:11:30 (4.03 px / 4 inliers, WRONG) pair surfaced by PR #986: ratio
-    // 2.0× catches the 5× residual blow-up; delta 2 catches the 6-inlier
-    // drop. Both gates conservative on the cold-start floor (4 inliers /
-    // residual already <12 px) so a marginal-but-correct re-fit still wins.
-    private const double MonotonicResidualRatio = 2.0;
-    private const int MonotonicInlierDelta = 2;
-
     // mithril#1046 §6.3: drift-check thresholds.
     private const double DriftToleranceFactor = 3.0;
     private const double DriftMatchGatePx = 20.0;
@@ -662,34 +652,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             LocatorScale = refineResult.Metrics?.Scale,
         };
 
-        // #988 monotonicity gate, scale-aware (#1005). A new fit must not regress
-        // residual/inlier quality vs. an existing calibration at the SAME zoom
-        // regime — comparing across regimes is invalid because the per-attempt
-        // inlier count tracks visible-icon size, not fit quality (the
-        // RenderSizePx-16 typed-detection bar). When the regimes differ (or either
-        // side has no stamped factor — pre-#1005 legacy records, or a refiner
-        // returning null Metrics), skip the comparison and accept.
-        // #1021: persistence is keyed on the per-scene assetKey (Map_<X>) post-migration;
-        // #1041 retypes the call site to take the typed MapSceneRef.
-        var existing = _calibrationService.GetCalibration(sceneRef);
-        if (existing is not null
-            && IsSameScaleRegime(existing.LocatorScale, stamped.LocatorScale))
-        {
-            var monotonicReason = CheckMonotonicAccept(existing, stamped, result.InlierCount);
-            if (monotonicReason is not null)
-            {
-                attempt.Outcome = OutcomeVocabulary.RejectedNotMonotonic;
-                _logger?.LogInformation(
-                    "Auto-calibration rejected for {Area}: monotonicity gate — {Reason}. Prior calibration kept (residual {PriorResidual:0.00}px, refs {PriorRefs}).",
-                    area, monotonicReason, existing.ResidualPixels, existing.ReferenceCount);
-                return new AutoCalibrationOutcome(
-                    Persisted: false,
-                    AreaKey: area,
-                    RejectReason: monotonicReason,
-                    OutcomeCategory: OutcomeVocabulary.RejectedNotMonotonic);
-            }
-        }
-
         attempt.Outcome = OutcomeVocabulary.Accepted;
         _calibrationService.SaveUserRefinement(sceneRef, stamped);
         _logger?.LogInformation(
@@ -869,32 +831,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         return Math.Abs(c / e - 1.0) <= ScaleRegimeRelTolerance;
     }
 
-    /// <summary>
-    /// #988 monotonicity gate. A new fit may REPLACE an existing stored
-    /// calibration only if it isn't meaningfully worse. Rejects when the new
-    /// residual exceeds the existing by <see cref="MonotonicResidualRatio"/>×
-    /// OR the new inlier count is below the existing by more than
-    /// <see cref="MonotonicInlierDelta"/>. Returns null on accept, or a
-    /// human-readable reason on reject.
-    ///
-    /// <para>Cold start (no <paramref name="existing"/>) is the caller's
-    /// problem — this helper is consulted only after the engine looks up a
-    /// prior calibration and finds one. The cold-start accept path is
-    /// unchanged per the issue's out-of-scope list.</para>
-    /// </summary>
-    internal static string? CheckMonotonicAccept(AreaCalibration existing, AreaCalibration candidate, int candidateInlierCount)
-    {
-        if (existing.ResidualPixels > 0
-            && candidate.ResidualPixels > existing.ResidualPixels * MonotonicResidualRatio)
-        {
-            return $"new residual {candidate.ResidualPixels:0.00}px exceeds existing {existing.ResidualPixels:0.00}px × {MonotonicResidualRatio:0.0}";
-        }
-        if (candidateInlierCount < existing.ReferenceCount - MonotonicInlierDelta)
-        {
-            return $"new inlier count {candidateInlierCount} below existing {existing.ReferenceCount} − {MonotonicInlierDelta}";
-        }
-        return null;
-    }
 }
 
 /// <summary>
