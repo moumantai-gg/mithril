@@ -4,6 +4,7 @@ using Legolas.Domain;
 using Legolas.Services;
 using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
+using Mithril.MapCalibration;
 using Mithril.Shared.Reference;
 
 namespace Legolas.Tests.ViewModels;
@@ -19,7 +20,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("Marn", 10, 20), Ref("Yetta", -5, 8) },
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -34,7 +35,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0), Ref("B", 100, 0) },
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -73,7 +74,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0) },
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -95,7 +96,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0), Ref("B", 100, 0) },
             SolveResult = new AreaCalibration(1.0, 0, 0, 0, 2, 0.4),
         };
@@ -117,7 +118,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0), Ref("B", 100, 0) },
             SolveResult = new AreaCalibration(1.0, 0, 0, 0, 2, 47.0),
         };
@@ -138,7 +139,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0), Ref("B", 100, 0) },
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -176,7 +177,7 @@ public class CalibrationSessionViewModelTests
         var withRefs = new CalibrationSessionViewModel(new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0) },
         });
         withRefs.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5)); // nothing selected
@@ -189,7 +190,7 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0) },
         });
         vm.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5)); // sets a warning
@@ -209,7 +210,7 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0) },
         });
         vm.SelectedReference = vm.References[0];
@@ -233,7 +234,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 10, 20), Ref("B", 40, -15) },
             // Full solved transform: scale 1, rot 0, world-origin pixel (100,100).
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 100, 100, 2, 0.3) { MirrorNorth = false },
@@ -263,7 +264,7 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 1, 1) },
         });
 
@@ -279,7 +280,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.2),
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -310,7 +311,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             // scale 1 px/unit, solved at zoom 2.
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1) { CalibrationZoom = 2.0 },
         };
@@ -334,7 +335,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0), Ref("B", 100, 0) },
             SolveResult = new AreaCalibration(1.0, 0.0, 0, 0, 2, 0.2),
         };
@@ -357,7 +358,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -381,7 +382,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0) },
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
         };
@@ -410,7 +411,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -446,7 +447,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -476,7 +477,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -506,7 +507,7 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0) },
         });
         vm.SelectedReference = vm.References[0];
@@ -525,7 +526,7 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0), Ref("B", 100, 0) },
         });
 
@@ -563,7 +564,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0) },
             CurrentCalibration = new AreaCalibration(1, 0, 0, 0, 2, 0.1),
         };
@@ -587,7 +588,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.2),
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -610,7 +611,7 @@ public class CalibrationSessionViewModelTests
     [Fact]
     public void Survey_without_calibration_or_player_records_why_no_pin()
     {
-        var noCal = new FakeService { CurrentAreaKey = "AreaEltibule", CurrentAreaFriendlyName = "Eltibule" };
+        var noCal = new FakeService { CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"), CurrentAreaFriendlyName = "Eltibule" };
         var vm1 = new CalibrationSessionViewModel(noCal);
         noCal.NoteSurvey("X", new MetreOffset(1, 1));
         vm1.SurveyPins.Should().BeEmpty();
@@ -619,7 +620,7 @@ public class CalibrationSessionViewModelTests
 
         var hasCal = new FakeService
         {
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             CurrentAreaFriendlyName = "Eltibule",
             CurrentCalibration = new AreaCalibration(1, 0, 0, 0, 2, 0),
         };
@@ -635,7 +636,7 @@ public class CalibrationSessionViewModelTests
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
         };
         var vm = new CalibrationSessionViewModel(svc);
@@ -662,7 +663,7 @@ public class CalibrationSessionViewModelTests
         svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
-            CurrentAreaKey = "AreaEltibule",
+            CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             SolveResult = new AreaCalibration(0.4, 0.1, 5, 6, 3, 0.0),
         };
         bus = new TestDomainEventBus();
@@ -675,7 +676,7 @@ public class CalibrationSessionViewModelTests
     [Fact]
     public void Disarmed_pins_are_dropped_so_area_entry_replay_cannot_leak()
     {
-        var svc = new FakeService { CurrentAreaKey = "AreaEltibule" };
+        var svc = new FakeService { CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule") };
         var bus = new TestDomainEventBus();
         var vm = new CalibrationSessionViewModel(svc, bus);
 
@@ -747,7 +748,7 @@ public class CalibrationSessionViewModelTests
         public List<AreaEntry> Areas { get; } = new();
         public string? SelectedAreaKey { get; private set; }
 
-        public string? CurrentAreaKey { get; set; }
+        public MapSceneRef? CurrentScene { get; set; }
         public string? CurrentAreaFriendlyName { get; set; }
         public bool IsCurrentAreaCalibrated => CurrentCalibration is not null;
         public AreaCalibration? CurrentCalibration { get; set; }
@@ -755,11 +756,11 @@ public class CalibrationSessionViewModelTests
         public IReadOnlyList<AreaEntry> AllAreas => Areas;
         public event EventHandler? Changed;
 
-        public void SelectArea(string areaKey)
+        public void SelectScene(MapSceneRef scene)
         {
-            SelectedAreaKey = areaKey;
-            CurrentAreaKey = areaKey;
-            CurrentAreaFriendlyName = Areas.FirstOrDefault(a => a.Key == areaKey)?.FriendlyName ?? areaKey;
+            SelectedAreaKey = scene.ParentAreaKey;
+            CurrentScene = scene;
+            CurrentAreaFriendlyName = Areas.FirstOrDefault(a => a.Key == scene.ParentAreaKey)?.FriendlyName ?? scene.ParentAreaKey;
             Changed?.Invoke(this, EventArgs.Empty);
         }
 

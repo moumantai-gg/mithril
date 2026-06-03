@@ -30,11 +30,15 @@ public sealed class AutoCalibrationEngineOutcomeCategoryTests
     }
 
     [Fact]
-    public async Task NoArea_outcome_carries_RejectedNoArea_category()
+    public async Task NoArea_outcome_carries_MapAssetNotYetKnown_category()
     {
+        // mithril#1041: the outer resolution-cascade guard refuses both the
+        // "no area" and "no scene observed yet" cells under the same outcome
+        // category (MapAssetNotYetKnown) — there's no separate RejectedNoArea
+        // category exposed past the outer guard anymore.
         var h = new EngineHarness { CurrentArea = null };
         var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
-        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.RejectedNoArea);
+        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.MapAssetNotYetKnown);
     }
 
     [Fact]

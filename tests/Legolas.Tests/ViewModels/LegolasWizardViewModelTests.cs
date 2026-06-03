@@ -4,6 +4,7 @@ using Legolas.Flow;
 using Legolas.Services;
 using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
+using Mithril.MapCalibration;
 
 namespace Legolas.Tests.ViewModels;
 
@@ -24,13 +25,13 @@ public class LegolasWizardViewModelTests
         public bool IsCurrentAreaCalibrated => Calibrated;
         public void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
 
-        public string? CurrentAreaKey { get; set; } = "AreaTest";
+        public MapSceneRef? CurrentScene { get; set; } = new MapSceneRef("AreaTest", null, "Map_AreaTest");
         public string? CurrentAreaFriendlyName => "Test";
         public AreaCalibration? CurrentCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<Mithril.Shared.Reference.AreaEntry> AllAreas => Array.Empty<Mithril.Shared.Reference.AreaEntry>();
         public event EventHandler? Changed;
-        public void SelectArea(string areaKey) { }
+        public void SelectScene(MapSceneRef scene) { }
         public AreaCalibration? CalibrateCurrentArea(
             IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
         {
@@ -479,7 +480,7 @@ public class LegolasWizardViewModelTests
     {
         // #502: the only remaining gate is IsAreaKnown. Area not detected ⇒
         // the chip is a status label, not a button.
-        var calib = new FakeAreaCalib { CurrentAreaKey = null, Calibrated = false };
+        var calib = new FakeAreaCalib { CurrentScene = null, Calibrated = false };
         var (wizard, _, _, _, _) = BuildSut(calib);
         wizard.CanCalibrateThisArea.Should().BeFalse();
 

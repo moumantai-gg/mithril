@@ -6,6 +6,7 @@ using Legolas.Flow;
 using Legolas.Services;
 using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
+using Mithril.MapCalibration;
 using Mithril.Shared.Reference;
 using Xunit;
 
@@ -14,8 +15,12 @@ namespace Legolas.Tests.Services;
 /// <summary>
 /// Post-Arda migration: the service subscribes to structured domain events via
 /// <see cref="Arda.Contracts.IDomainEventSubscriber"/> instead of the former L1
-/// driver. Tests publish Arda events through a <see cref="TestDomainEventBus"/>
-/// and assert the handler's UI-bound state mutations.
+/// driver. mithril#1041 (per-scene calibration keying) replaces the
+/// <c>AreaChanged</c> bridge with <see cref="MapAssetChanged"/> so the
+/// calibration handoff is keyed on the Unity asset (one transform per scene),
+/// not the parent areas.json key (which aggregates sub-scenes). The service no
+/// longer takes an <c>IAreaState</c>; the cold-start seed flows through the
+/// bus replay of the first <c>Downloading Map</c> line.
 /// </summary>
 public sealed class PlayerLogIngestionServiceTests : IDisposable
 {
@@ -32,20 +37,19 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         ReadOn: DateTimeOffset.UtcNow,
         IsReplay: true);
 
+    private static MapSceneRef SceneFor(string areaKey) =>
+        new(ParentAreaKey: areaKey, SceneFriendlyName: null, MapAssetKey: "Map_" + areaKey);
+
     private sealed record Fixture(
         PlayerLogIngestionService Service,
         TestDomainEventBus Bus,
         SpyAreaCalibration Spy,
         SessionState Session,
-        SurveyFlowController Flow,
-        FakeAreaState AreaState);
+        SurveyFlowController Flow);
 
-    private static Fixture Build(
-        AreaCalibration? calibration = null, string? preSeededArea = null)
+    private static Fixture Build(AreaCalibration? calibration = null)
     {
         var bus = new TestDomainEventBus();
-        var areaState = new FakeAreaState();
-        if (preSeededArea is not null) areaState.CurrentArea = preSeededArea;
         var spy = new SpyAreaCalibration(calibration);
         var session = new SessionState();
         session.CurrentMapZoom = 1.0;
@@ -53,50 +57,57 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         var flow = new SurveyFlowController(session, settings);
         var motherlode = new MotherlodeMeasurementCoordinator(
             new MultilaterationSolver(), new MotherlodeFlowController(session), bus);
+        // mithril#1041: IAreaState dropped from the ctor — calibration handoff
+        // is now driven exclusively by MapAssetChanged on the bus.
         var svc = new PlayerLogIngestionService(
-            bus, areaState, spy, flow, session, motherlode, settings);
-        return new Fixture(svc, bus, spy, session, flow, areaState);
+            bus, spy, flow, session, motherlode, settings);
+        return new Fixture(svc, bus, spy, session, flow);
     }
 
     // ---- area→calibration bridge -----------------------------------------
 
     [Fact]
-    public async Task Area_change_applies_calibration()
+    public async Task Map_asset_change_applies_calibration()
     {
         var f = Build();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await f.Service.StartAsync(cts.Token);
         try
         {
-            f.Bus.Publish(new AreaChanged("AreaSerbule", "AreaEltibule", LiveMeta));
+            f.Bus.Publish(new MapAssetChanged(SceneFor("AreaSerbule"), SceneFor("AreaEltibule"), LiveMeta));
             f.Spy.SelectedAreas.Should().Equal("AreaEltibule");
         }
         finally { await Stop(f, cts); }
     }
 
     [Fact]
-    public async Task Same_area_re_emit_does_not_duplicate()
+    public async Task Same_asset_re_emit_does_not_duplicate()
     {
         var f = Build();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await f.Service.StartAsync(cts.Token);
         try
         {
-            f.Bus.Publish(new AreaChanged(null, "AreaEltibule", LiveMeta));
-            f.Bus.Publish(new AreaChanged(null, "AreaEltibule", LiveMeta));
+            f.Bus.Publish(new MapAssetChanged(null, SceneFor("AreaEltibule"), LiveMeta));
+            f.Bus.Publish(new MapAssetChanged(null, SceneFor("AreaEltibule"), LiveMeta));
             f.Spy.SelectedAreas.Should().Equal("AreaEltibule");
         }
         finally { await Stop(f, cts); }
     }
 
     [Fact]
-    public async Task Startup_seed_applies_current_area()
+    public async Task Startup_replay_applies_current_scene()
     {
-        var f = Build(preSeededArea: "AreaEltibule");
+        // mithril#1041: there is no startup-time IAreaState seed; the cold-start
+        // calibration handoff arrives as the first MapAssetChanged event Arda
+        // replays through the bus on first boot. Publishing the event after
+        // StartAsync mirrors that replay shape.
+        var f = Build();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         await f.Service.StartAsync(cts.Token);
         try
         {
+            f.Bus.Publish(new MapAssetChanged(null, SceneFor("AreaEltibule"), LiveMeta));
             f.Spy.SelectedAreas.Should().Equal("AreaEltibule");
         }
         finally { await Stop(f, cts); }
@@ -319,13 +330,23 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         private readonly AreaCalibration? _cal;
         public SpyAreaCalibration(AreaCalibration? cal) => _cal = cal;
 
+        /// <summary>Record the <see cref="MapSceneRef.ParentAreaKey"/> of every
+        /// <see cref="SelectScene"/> call so existing assertions on parent-area
+        /// strings (the pre-#1041 surface) keep working. Tests that need the full
+        /// composite read <see cref="SelectedScenes"/> directly.</summary>
         public List<string> SelectedAreas { get; } = new();
-        public void SelectArea(string areaKey) => SelectedAreas.Add(areaKey);
+        public List<MapSceneRef> SelectedScenes { get; } = new();
+
+        public void SelectScene(MapSceneRef scene)
+        {
+            SelectedScenes.Add(scene);
+            SelectedAreas.Add(scene.ParentAreaKey);
+        }
 
         public AreaCalibration? CurrentCalibration => _cal;
         public bool IsCurrentAreaCalibrated => _cal is not null;
 
-        public string? CurrentAreaKey => null;
+        public MapSceneRef? CurrentScene => null;
         public string? CurrentAreaFriendlyName => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences =>
             Array.Empty<CalibrationReference>();

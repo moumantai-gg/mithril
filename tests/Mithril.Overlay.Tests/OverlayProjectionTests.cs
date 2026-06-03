@@ -35,7 +35,7 @@ public sealed class OverlayProjectionTests
             Snap(-5.0, 7.0, styleB),
         };
 
-        var projected = OverlayWindowService.ProjectMarkers(markers, "A", calibration, currentZoom: 1.0);
+        var projected = OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("A", null, "A"), calibration, currentZoom: 1.0);
 
         projected.Should().HaveCount(2);
         projected[0].Should().Be((new PixelPoint(20, 60), (IMarkerStyle)styleA));
@@ -49,7 +49,7 @@ public sealed class OverlayProjectionTests
         calibration.CalibratedAreas.Add("A");
 
         OverlayWindowService
-            .ProjectMarkers(Array.Empty<MarkerSnapshot>(), "A", calibration, 1.0)
+            .ProjectMarkers(Array.Empty<MarkerSnapshot>(), new MapSceneRef("A", null, "A"), calibration, 1.0)
             .Should().BeEmpty();
     }
 
@@ -72,7 +72,7 @@ public sealed class OverlayProjectionTests
             Snap(2.0, 2.0, style),
         };
 
-        var projected = OverlayWindowService.ProjectMarkers(markers, "A", calibration, 1.0);
+        var projected = OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("A", null, "A"), calibration, 1.0);
 
         projected.Should().HaveCount(2);
         projected[0].Pixel.Should().Be(new PixelPoint(1, 1));
@@ -89,7 +89,7 @@ public sealed class OverlayProjectionTests
             Snap(1.0, 1.0, style),
         };
 
-        OverlayWindowService.ProjectMarkers(markers, "AreaUncalibrated", calibration, 1.0)
+        OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("AreaUncalibrated", null, "AreaUncalibrated"), calibration, 1.0)
             .Should().BeEmpty();
     }
 
@@ -104,7 +104,7 @@ public sealed class OverlayProjectionTests
             Snap(0.0, 0.0, style),
         };
 
-        var projected = OverlayWindowService.ProjectMarkers(markers, "A", calibration, 1.0);
+        var projected = OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("A", null, "A"), calibration, 1.0);
         projected.Single().Style.Should().BeSameAs(style);
     }
 }

@@ -549,7 +549,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         {
             if (_areaCalibration?.CurrentCalibration is not { } cal) return false;
             if (Math.Abs(cal.CalibrationZoom - 1.0) > 1e-6) return false;
-            var key = _areaCalibration.CurrentAreaKey;
+            var key = _areaCalibration.CurrentScene?.ParentAreaKey;
             return key is not null && !_legacyHintDismissedAreas.Contains(key);
         }
     }
@@ -560,7 +560,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void DismissLegacyRecalibrateHint()
     {
-        var key = _areaCalibration?.CurrentAreaKey;
+        var key = _areaCalibration?.CurrentScene?.ParentAreaKey;
         if (key is null) return;
         _legacyHintDismissedAreas.Add(key);
         OnPropertyChanged(nameof(IsLegacyRecalibrateHintVisible));
@@ -689,7 +689,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // into Mithril." Skipped when the area key is unchanged (a
         // recalibrate-in-place fires Changed too; respect the user's
         // current slider value there since it equals the new stamp anyway).
-        var key = _areaCalibration?.CurrentAreaKey;
+        var key = _areaCalibration?.CurrentScene?.ParentAreaKey;
         if (key != _lastSeenAreaKey)
         {
             _lastSeenAreaKey = key;

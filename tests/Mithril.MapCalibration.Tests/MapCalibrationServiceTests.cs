@@ -26,19 +26,22 @@ public sealed class MapCalibrationServiceTests : IDisposable
         catch (IOException) { /* leave it; CI temp dir gets reaped */ }
     }
 
+    private static MapSceneRef Scene(string asset) =>
+        new(ParentAreaKey: string.Empty, SceneFriendlyName: null, MapAssetKey: asset);
+
     [Fact]
     public void Good_user_refinement_wins_over_baseline()
     {
         var baseline = new Dictionary<string, AreaCalibration>
         {
-            ["AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
+            ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
         };
         var store = new UserRefinementStore(_tempDir);
-        store.Save("AreaEltibule", MakeCal(residual: 8.0, scale: 2.0));
+        store.Save("Map_AreaEltibule", MakeCal(residual: 8.0, scale: 2.0));
 
         var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0, logger: null);
 
-        var active = svc.GetCalibration("AreaEltibule");
+        var active = svc.GetCalibration(Scene("Map_AreaEltibule"));
         active.Should().NotBeNull();
         active!.Source.Should().Be(CalibrationSource.UserRefinement);
         active.Scale.Should().Be(2.0);
@@ -49,15 +52,15 @@ public sealed class MapCalibrationServiceTests : IDisposable
     {
         var baseline = new Dictionary<string, AreaCalibration>
         {
-            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
+            ["Map_AreaEltibule"] = MakeCal(residual: 5.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
         };
         var store = new UserRefinementStore(_tempDir);
         // Above the threshold of 12 — the resolver should prefer the baseline.
-        store.Save("AreaEltibule", MakeCal(residual: 25.0, scale: 2.0));
+        store.Save("Map_AreaEltibule", MakeCal(residual: 25.0, scale: 2.0));
 
         var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0, logger: null);
 
-        var active = svc.GetCalibration("AreaEltibule");
+        var active = svc.GetCalibration(Scene("Map_AreaEltibule"));
         active.Should().NotBeNull();
         active!.Source.Should().Be(CalibrationSource.BundledBaseline);
         active.Scale.Should().Be(1.0);
@@ -68,11 +71,11 @@ public sealed class MapCalibrationServiceTests : IDisposable
     {
         var baseline = new Dictionary<string, AreaCalibration>(); // none
         var store = new UserRefinementStore(_tempDir);
-        store.Save("AreaEltibule", MakeCal(residual: 25.0, scale: 2.0));
+        store.Save("Map_AreaEltibule", MakeCal(residual: 25.0, scale: 2.0));
 
         var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0, logger: null);
 
-        var active = svc.GetCalibration("AreaEltibule");
+        var active = svc.GetCalibration(Scene("Map_AreaEltibule"));
         active.Should().NotBeNull();
         active!.Source.Should().Be(CalibrationSource.UserRefinement);
     }
@@ -85,10 +88,10 @@ public sealed class MapCalibrationServiceTests : IDisposable
             new UserRefinementStore(_tempDir),
             goodResidualThresholdPx: 12.0);
 
-        svc.IsCalibrated("AreaEltibule").Should().BeFalse();
-        svc.GetCalibration("AreaEltibule").Should().BeNull();
-        svc.WorldToWindow("AreaEltibule", new WorldCoord(1, 0, 1), 1.0).Should().BeNull();
-        svc.WindowToWorld("AreaEltibule", new PixelPoint(1, 1), 1.0).Should().BeNull();
+        svc.IsCalibrated(Scene("Map_AreaEltibule")).Should().BeFalse();
+        svc.GetCalibration(Scene("Map_AreaEltibule")).Should().BeNull();
+        svc.WorldToWindow(Scene("Map_AreaEltibule"), new WorldCoord(1, 0, 1), 1.0).Should().BeNull();
+        svc.WindowToWorld(Scene("Map_AreaEltibule"), new PixelPoint(1, 1), 1.0).Should().BeNull();
     }
 
     [Fact]
@@ -96,14 +99,14 @@ public sealed class MapCalibrationServiceTests : IDisposable
     {
         var baseline = new Dictionary<string, AreaCalibration>
         {
-            ["AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
+            ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
         };
         var store = new UserRefinementStore(_tempDir);
-        store.Save("AreaEltibule", MakeCal(residual: 8.0, scale: 2.0));
+        store.Save("Map_AreaEltibule", MakeCal(residual: 8.0, scale: 2.0));
 
         var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0);
 
-        var sources = svc.GetAllSources("AreaEltibule");
+        var sources = svc.GetAllSources(Scene("Map_AreaEltibule"));
         sources.Should().HaveCount(2);
         sources.Should().Contain(c => c.Source == CalibrationSource.UserRefinement && c.ResidualPixels == 8.0);
         sources.Should().Contain(c => c.Source == CalibrationSource.BundledBaseline && c.ResidualPixels == 4.0);
@@ -117,7 +120,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
             new UserRefinementStore(_tempDir),
             goodResidualThresholdPx: 12.0);
 
-        svc1.SaveUserRefinement("AreaEltibule", MakeCal(residual: 3.0, scale: 1.7));
+        svc1.SaveUserRefinement(Scene("Map_AreaEltibule"), MakeCal(residual: 3.0, scale: 1.7));
 
         // New service instance reading from the same directory should see it.
         var svc2 = new MapCalibrationService(
@@ -125,7 +128,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
             new UserRefinementStore(_tempDir),
             goodResidualThresholdPx: 12.0);
 
-        var loaded = svc2.GetCalibration("AreaEltibule");
+        var loaded = svc2.GetCalibration(Scene("Map_AreaEltibule"));
         loaded.Should().NotBeNull();
         loaded!.Scale.Should().Be(1.7);
         loaded.Source.Should().Be(CalibrationSource.UserRefinement);
@@ -136,16 +139,16 @@ public sealed class MapCalibrationServiceTests : IDisposable
     {
         var baseline = new Dictionary<string, AreaCalibration>
         {
-            ["AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
+            ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
         };
         var store = new UserRefinementStore(_tempDir);
         var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0);
 
-        svc.SaveUserRefinement("AreaEltibule", MakeCal(residual: 6.0, scale: 2.0));
-        svc.GetCalibration("AreaEltibule")!.Source.Should().Be(CalibrationSource.UserRefinement);
+        svc.SaveUserRefinement(Scene("Map_AreaEltibule"), MakeCal(residual: 6.0, scale: 2.0));
+        svc.GetCalibration(Scene("Map_AreaEltibule"))!.Source.Should().Be(CalibrationSource.UserRefinement);
 
-        svc.ClearUserRefinement("AreaEltibule");
-        svc.GetCalibration("AreaEltibule")!.Source.Should().Be(CalibrationSource.BundledBaseline);
+        svc.ClearUserRefinement(Scene("Map_AreaEltibule"));
+        svc.GetCalibration(Scene("Map_AreaEltibule"))!.Source.Should().Be(CalibrationSource.BundledBaseline);
     }
 
     [Fact]
@@ -157,101 +160,15 @@ public sealed class MapCalibrationServiceTests : IDisposable
             store,
             goodResidualThresholdPx: 12.0);
 
-        var notifications = new List<string>();
-        svc.Changed += (_, key) => notifications.Add(key);
+        var notifications = new List<MapSceneRef>();
+        svc.Changed += (_, scene) => notifications.Add(scene);
 
-        svc.SaveUserRefinement("AreaEltibule", MakeCal(residual: 5.0, scale: 1.0));
-        svc.ClearUserRefinement("AreaEltibule");
+        svc.SaveUserRefinement(Scene("Map_AreaEltibule"), MakeCal(residual: 5.0, scale: 1.0));
+        svc.ClearUserRefinement(Scene("Map_AreaEltibule"));
 
-        notifications.Should().Equal("AreaEltibule", "AreaEltibule");
-    }
-
-    [Fact]
-    public void ImportUserRefinements_first_run_writes_every_entry()
-    {
-        var svc = new MapCalibrationService(
-            new Dictionary<string, AreaCalibration>(),
-            new UserRefinementStore(_tempDir),
-            goodResidualThresholdPx: 12.0);
-
-        var payload = new Dictionary<string, AreaCalibration>
-        {
-            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 1.5),
-            ["AreaSerbule"] = MakeCal(residual: 5.0, scale: 2.0),
-        };
-
-        svc.ImportUserRefinements(payload).Should().Be(2);
-        svc.GetCalibration("AreaEltibule")!.Scale.Should().Be(1.5);
-        svc.GetCalibration("AreaSerbule")!.Scale.Should().Be(2.0);
-    }
-
-    [Fact]
-    public void ImportUserRefinements_is_idempotent_when_store_already_matches()
-    {
-        var svc = new MapCalibrationService(
-            new Dictionary<string, AreaCalibration>(),
-            new UserRefinementStore(_tempDir),
-            goodResidualThresholdPx: 12.0);
-
-        var cal = MakeCal(residual: 5.0, scale: 1.5);
-        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration> { ["AreaEltibule"] = cal });
-
-        // Re-running the import with the same content is a no-op; covers the
-        // every-startup re-import perf regression cited in the PR review (#3).
-        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration> { ["AreaEltibule"] = cal })
-           .Should().Be(0);
-    }
-
-    [Fact]
-    public void ImportUserRefinements_overwrites_when_legacy_value_differs()
-    {
-        // Downgrade-edit scenario from PR review #5: user calibrates via new
-        // path (both stores in sync), downgrades to legacy-only build,
-        // recalibrates (only LegolasSettings.AreaCalibrations updates), then
-        // re-upgrades. At re-upgrade the legacy entry is newer than the
-        // stored refinement — prefer it.
-        var svc = new MapCalibrationService(
-            new Dictionary<string, AreaCalibration>(),
-            new UserRefinementStore(_tempDir),
-            goodResidualThresholdPx: 12.0);
-
-        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
-        {
-            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 1.5),
-        });
-
-        // Legacy edit while downgraded — math differs.
-        var imported = svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
-        {
-            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 2.7),
-        });
-
-        imported.Should().Be(1);
-        svc.GetCalibration("AreaEltibule")!.Scale.Should().Be(2.7);
-    }
-
-    [Fact]
-    public void ImportUserRefinements_is_silent_no_Changed_event()
-    {
-        // Migration runs on the ThreadPool inside host.StartAsync; firing
-        // Changed there would cross-thread any UI subscriber attached during
-        // module bootstrap (PR review #6). The contract on the interface says
-        // ImportUserRefinements does not raise; this test pins it.
-        var svc = new MapCalibrationService(
-            new Dictionary<string, AreaCalibration>(),
-            new UserRefinementStore(_tempDir),
-            goodResidualThresholdPx: 12.0);
-
-        var fired = 0;
-        svc.Changed += (_, _) => fired++;
-
-        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
-        {
-            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 1.5),
-            ["AreaSerbule"] = MakeCal(residual: 5.0, scale: 2.0),
-        });
-
-        fired.Should().Be(0);
+        notifications.Should().HaveCount(2);
+        notifications[0].MapAssetKey.Should().Be("Map_AreaEltibule");
+        notifications[1].MapAssetKey.Should().Be("Map_AreaEltibule");
     }
 
     [Fact]
@@ -267,47 +184,21 @@ public sealed class MapCalibrationServiceTests : IDisposable
         // intentionally separate; this test pins the GetCalibration side.
         var baseline = new Dictionary<string, AreaCalibration>
         {
-            ["AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
+            ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
         };
         var svc = new MapCalibrationService(baseline, new UserRefinementStore(_tempDir), goodResidualThresholdPx: 12.0);
 
-        svc.SaveUserRefinement("AreaEltibule", MakeCal(residual: 25.0, scale: 2.0));
+        svc.SaveUserRefinement(Scene("Map_AreaEltibule"), MakeCal(residual: 25.0, scale: 2.0));
 
-        var active = svc.GetCalibration("AreaEltibule");
+        var active = svc.GetCalibration(Scene("Map_AreaEltibule"));
         active.Should().NotBeNull();
         active!.Source.Should().Be(CalibrationSource.BundledBaseline);
         active.Scale.Should().Be(1.0);
 
         // The losing user refinement is still discoverable via GetAllSources
         // (debug surface for "what did the user actually solve").
-        svc.GetAllSources("AreaEltibule")
+        svc.GetAllSources(Scene("Map_AreaEltibule"))
             .Should().ContainSingle(s => s.Source == CalibrationSource.UserRefinement && s.Scale == 2.0);
-    }
-
-    [Fact]
-    public void ImportUserRefinements_ULP_drift_does_not_re_import_on_next_run()
-    {
-        // Round-2 review #4: a one-ULP wobble between the legacy entry's
-        // doubles and the stored doubles must not be treated as "different
-        // math" — otherwise every cold start writes the file again.
-        var svc = new MapCalibrationService(
-            new Dictionary<string, AreaCalibration>(),
-            new UserRefinementStore(_tempDir),
-            goodResidualThresholdPx: 12.0);
-
-        var baseScale = 1.7333333333333334;
-        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
-        {
-            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: baseScale),
-        });
-
-        // Same logical value, shifted by one ULP — mimics a JSON round-trip
-        // wobble or cross-JIT codegen drift.
-        var wobbled = Math.BitIncrement(baseScale);
-        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
-        {
-            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: wobbled),
-        }).Should().Be(0);
     }
 
     [Fact]
@@ -321,50 +212,39 @@ public sealed class MapCalibrationServiceTests : IDisposable
         // exclusive write — the temp-write attempt inside Persist fails.
         var store = new UserRefinementStore(_tempDir);
         var initial = MakeCal(residual: 5.0, scale: 1.0);
-        store.Save("AreaEltibule", initial);
+        store.Save("Map_AreaEltibule", initial);
 
         // Hold the .tmp path exclusively so the next Save's File.WriteAllText
         // throws when it tries to open it.
         var tmpPath = Path.Combine(_tempDir, "refinements.json.tmp");
         using (var lockHandle = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            FluentActions.Invoking(() => store.Save("AreaEltibule", MakeCal(residual: 5.0, scale: 99.0)))
+            FluentActions.Invoking(() => store.Save("Map_AreaEltibule", MakeCal(residual: 5.0, scale: 99.0)))
                 .Should().Throw<IOException>();
         }
 
         // Same-session read returns the original value, not the rolled-back attempt.
-        store.TryGet("AreaEltibule", out var current).Should().BeTrue();
+        store.TryGet("Map_AreaEltibule", out var current).Should().BeTrue();
         current.Scale.Should().Be(1.0);
     }
 
     [Fact]
-    public void ImportFromLegacy_rolls_back_in_memory_state_when_Persist_throws()
+    public void AllCalibrations_returns_asset_keyed_dictionary()
     {
-        // Round-3 review #3: the whole-batch all-or-nothing invariant on the
-        // migration path is distinct from Save's per-key rollback — the
-        // snapshot is the whole pre-import dictionary, restored atomically.
-        // Provoke a persist throw by locking refinements.json.tmp exclusively
-        // and confirm neither new entry leaks into TryGet after the throw.
-        var store = new UserRefinementStore(_tempDir);
-        var preexisting = MakeCal(residual: 5.0, scale: 1.0);
-        store.Save("AreaEltibule", preexisting);
-
-        var tmpPath = Path.Combine(_tempDir, "refinements.json.tmp");
-        using (var lockHandle = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        // The persistence horizon stays string-keyed by MapAssetKey, NOT MapSceneRef-keyed —
+        // because the store doesn't know parent-area/friendly-name. Consumers needing
+        // parent-area resolution use ISceneAssetCache.
+        var baseline = new Dictionary<string, AreaCalibration>
         {
-            FluentActions.Invoking(() => store.ImportFromLegacy(new Dictionary<string, AreaCalibration>
-            {
-                ["AreaSerbule"] = MakeCal(residual: 5.0, scale: 2.0),
-                ["AreaGoblinDungeon"] = MakeCal(residual: 5.0, scale: 3.0),
-            })).Should().Throw<IOException>();
-        }
+            ["Map_AreaSerbule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
+            ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
+        };
+        var svc = new MapCalibrationService(baseline, new UserRefinementStore(_tempDir), goodResidualThresholdPx: 12.0);
 
-        // Neither new entry leaked into the in-memory dictionary.
-        store.TryGet("AreaSerbule", out _).Should().BeFalse();
-        store.TryGet("AreaGoblinDungeon", out _).Should().BeFalse();
-        // The pre-existing entry survived intact.
-        store.TryGet("AreaEltibule", out var elt).Should().BeTrue();
-        elt.Scale.Should().Be(1.0);
+        var all = svc.AllCalibrations;
+        all.Should().HaveCount(2);
+        all.Should().ContainKey("Map_AreaSerbule");
+        all.Should().ContainKey("Map_AreaEltibule");
     }
 
     private static AreaCalibration MakeCal(double residual, double scale) =>

@@ -25,6 +25,9 @@ namespace Mithril.MapCalibration.Internal;
 [JsonSerializable(typeof(UserRefinementFile))]
 [JsonSerializable(typeof(Dictionary<string, AreaCalibration>))]
 [JsonSerializable(typeof(AreaCalibration))]
+[JsonSerializable(typeof(SceneAssetCacheFile))]
+[JsonSerializable(typeof(SceneAssetCacheFileEntry))]
+[JsonSerializable(typeof(SceneAssetCacheFileEntry[]))]
 internal sealed partial class MapCalibrationJsonContext : JsonSerializerContext;
 
 /// <summary>On-disk shape for the embedded baseline JSON resource.</summary>

@@ -1,4 +1,5 @@
 using Arda.World.Player.Events;
+using Mithril.MapCalibration;
 
 namespace Arda.World.Player.Internal;
 
@@ -20,9 +21,8 @@ internal sealed class MapScope(
     public string? PreviousArea => map.PreviousArea;
     public DateTimeOffset? TransitionedAt => map.TransitionedAt;
 
-    public string? CurrentMapAsset => mapAsset.CurrentMapAsset;
-    public string? CurrentSceneFriendlyName => mapAsset.CurrentSceneFriendlyName;
-    public DateTimeOffset? MapAssetMeasuredAt => mapAsset.MapAssetMeasuredAt;
+    public MapSceneRef? CurrentMapScene => mapAsset.CurrentMapScene;
+    public DateTimeOffset? MapSceneMeasuredAt => mapAsset.MapSceneMeasuredAt;
 
     public double? X => position.X;
     public double? Y => position.Y;

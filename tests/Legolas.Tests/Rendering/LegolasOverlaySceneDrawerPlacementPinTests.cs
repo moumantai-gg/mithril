@@ -124,14 +124,14 @@ public sealed class LegolasOverlaySceneDrawerPlacementPinTests
         public AreaCalibration? CalibrateCurrentArea(
             IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
             => new(1, 0, 0, 0, placements.Count, 0);
-        public string? CurrentAreaKey => "AreaUncalibrated";
+        public MapSceneRef? CurrentScene => new MapSceneRef("AreaUncalibrated", null, "Map_AreaUncalibrated");
         public string? CurrentAreaFriendlyName => "Test";
         public bool IsCurrentAreaCalibrated => false;
         public AreaCalibration? CurrentCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => System.Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => System.Array.Empty<AreaEntry>();
         public event EventHandler? Changed { add { } remove { } }
-        public void SelectArea(string areaKey) { }
+        public void SelectScene(MapSceneRef scene) { }
         public void ClearCurrentAreaCalibration() { }
         public void NoteSurvey(string name, MetreOffset offset) { }
         public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }
@@ -161,6 +161,7 @@ public sealed class LegolasOverlaySceneDrawerPlacementPinTests
         public ID2D1RenderTarget RenderTarget => null!;
         public ID2D1Factory Factory => null!;
         public string CurrentAreaKey => "AreaUncalibrated";
+        public MapSceneRef CurrentScene => new MapSceneRef("AreaUncalibrated", null, "Map_AreaUncalibrated");
         public PixelPoint? Project(double worldX, double worldZ) => new PixelPoint(worldX, worldZ);
     }
 }

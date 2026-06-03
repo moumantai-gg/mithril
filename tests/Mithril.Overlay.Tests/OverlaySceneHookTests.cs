@@ -41,7 +41,17 @@ public sealed class OverlaySceneHookTests
         var markers = new WorldOverlayMarkers();
         var renderer = new MarkerSceneRenderer();
         var position = new StubPositionState();
-        return new OverlayWindowService(markers, renderer, calibration, areaState, position, zoom, loggerFactory);
+        // mithril#1041: OverlayWindowService now takes IMapState +
+        // ISceneAssetCache + IDomainEventSubscriber so it can resolve the
+        // composite MapSceneRef on the live render path. The scene-hook tests
+        // drive via DriveSceneForTest (which synths a scene from areaKey when
+        // IMapState.CurrentMapScene is null) so these can be no-op stubs.
+        var mapState = new StubMapState();
+        var sceneCache = new StubSceneAssetCache();
+        var bus = new StubDomainEventSubscriber();
+        return new OverlayWindowService(
+            markers, renderer, calibration, areaState, mapState, sceneCache, bus,
+            position, zoom, loggerFactory);
     }
 
     [Fact]

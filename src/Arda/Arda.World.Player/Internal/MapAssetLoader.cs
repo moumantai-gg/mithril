@@ -2,18 +2,26 @@ using Arda.Abstractions.Logs;
 using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Player.Events;
+using Mithril.MapCalibration;
 
 namespace Arda.World.Player.Internal;
 
 /// <summary>
 /// Parses the unbracketed Player.log "Downloading Map [GUID] GUID GUID for
 /// area &lt;FriendlyAreaName&gt; runtime key GUID[&lt;AssetName&gt;]" line (synthetic
-/// verb <see cref="Verbs.DownloadingMap"/>) into per-scene map state. The
-/// asset name in the runtime-key bracket is the literal Unity Texture2D
-/// name (including the <c>Map_</c> prefix) and is the calibration key
+/// verb <see cref="Verbs.DownloadingMap"/>) into per-scene <see cref="MapSceneRef"/>
+/// state. The asset name in the runtime-key bracket is the literal Unity
+/// Texture2D name (including the <c>Map_</c> prefix) and is the calibration key
 /// downstream consumers use.
 /// </summary>
 /// <remarks>
+/// <para>Builds the composite by combining the parsed friendly-name + asset-key
+/// with the parent area key supplied by <see cref="IAreaState.CurrentArea"/>.
+/// If no <c>Initializing area!</c> has fired yet, the parent area key is
+/// <see cref="string.Empty"/>; consumers treat empty as "unknown parent" and the
+/// resolution helper (see <c>SceneResolution.ResolveCurrentScene</c>) returns
+/// the strict-gate <c>null</c> for that branch.</para>
+///
 /// <para>Malformed lines (missing <c>for area </c>, missing the runtime-key
 /// bracket, empty args) are silently skipped — no state mutation, no event
 /// published. The dispatch table doesn't inspect return values; safe-degrade
@@ -21,19 +29,25 @@ namespace Arda.World.Player.Internal;
 ///
 /// <para>Idempotent: a re-parse of the same line is a no-op event (state
 /// changes once; subsequent identical parses don't fire <see cref="MapAssetChanged"/>).</para>
+///
+/// <para>Sub-zone-only transitions inside the same parent area (e.g. Hogan's
+/// Basement → Goblin Dungeon both inside <c>AreaCave1</c>) update the composite
+/// via a <c>with</c>-expression, preserving the previously-observed parent area
+/// key on the new <see cref="MapSceneRef"/>.</para>
 /// </remarks>
 internal sealed class MapAssetLoader : IFrameHandler
 {
     private readonly IDomainEventPublisher _bus;
+    private readonly IAreaState _areaState;
 
-    public MapAssetLoader(IDomainEventPublisher bus)
+    public MapAssetLoader(IDomainEventPublisher bus, IAreaState areaState)
     {
         _bus = bus;
+        _areaState = areaState;
     }
 
-    public string? CurrentMapAsset { get; private set; }
-    public string? CurrentSceneFriendlyName { get; private set; }
-    public DateTimeOffset? MapAssetMeasuredAt { get; private set; }
+    public MapSceneRef? CurrentMapScene { get; private set; }
+    public DateTimeOffset? MapSceneMeasuredAt { get; private set; }
 
     public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
@@ -61,17 +75,20 @@ internal sealed class MapAssetLoader : IFrameHandler
 
         var mapAsset = args.Slice(lastOpen + 1, lastClose - lastOpen - 1).ToString();
 
-        // Idempotent: only mutate + publish on actual change.
-        if (string.Equals(mapAsset, CurrentMapAsset, StringComparison.Ordinal)
-            && string.Equals(friendlyName, CurrentSceneFriendlyName, StringComparison.Ordinal))
-        {
-            return;
-        }
+        // Build the composite. Parent area key comes from IAreaState (set by the
+        // most-recent Initializing area! line). Empty string when no area has
+        // been observed yet — consumers treat empty as strict-gate.
+        var parentAreaKey = _areaState.CurrentArea ?? string.Empty;
+        var previous = CurrentMapScene;
+        var next = previous is { } existing && existing.ParentAreaKey == parentAreaKey
+            ? existing with { SceneFriendlyName = friendlyName, MapAssetKey = mapAsset }
+            : new MapSceneRef(parentAreaKey, friendlyName, mapAsset);
 
-        var previous = CurrentMapAsset;
-        CurrentMapAsset = mapAsset;
-        CurrentSceneFriendlyName = friendlyName;
-        MapAssetMeasuredAt = metadata.Timestamp ?? metadata.ReadOn;
-        _bus.Publish(new MapAssetChanged(previous, CurrentMapAsset, CurrentSceneFriendlyName, metadata));
+        // Idempotent: only mutate + publish on actual change.
+        if (previous is { } p && p == next) return;
+
+        CurrentMapScene = next;
+        MapSceneMeasuredAt = metadata.Timestamp ?? metadata.ReadOn;
+        _bus.Publish(new MapAssetChanged(previous, next, metadata));
     }
 }

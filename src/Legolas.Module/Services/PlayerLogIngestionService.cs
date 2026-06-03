@@ -7,6 +7,7 @@ using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
+using Mithril.MapCalibration;
 
 namespace Legolas.Services;
 
@@ -17,10 +18,13 @@ namespace Legolas.Services;
 ///
 /// <para><b>Responsibilities.</b>
 /// <list type="bullet">
-///   <item><b>Area→calibration bridge.</b> Subscribes to
-///   <see cref="AreaChanged"/> and, whenever the player's area changes,
-///   applies that area's persisted <see cref="Domain.AreaCalibration"/> via
-///   <see cref="IAreaCalibrationService.SelectArea"/>.</item>
+///   <item><b>Scene→calibration bridge.</b> Subscribes to
+///   <see cref="MapAssetChanged"/> (mithril#1041 — was <see cref="AreaChanged"/>;
+///   per-scene granularity is strictly-more-informative for aggregator areas
+///   because the same log line carries the parent area name and the per-scene
+///   asset key) and, whenever the player's scene changes, applies that scene's
+///   persisted <see cref="Domain.AreaCalibration"/> via
+///   <see cref="IAreaCalibrationService.SelectScene"/>.</item>
 ///   <item><b><see cref="MapFxObserved"/> placement.</b> Absolute
 ///   survey/treasure targets place a pin at the projected pixel; the
 ///   trailing relative-offset readout drives the calibration verify-mode
@@ -44,7 +48,6 @@ namespace Legolas.Services;
 public sealed class PlayerLogIngestionService : BackgroundService
 {
     private readonly IDomainEventSubscriber _bus;
-    private readonly IAreaState _areaState;
     private readonly IAreaCalibrationService _areaCalibration;
     private readonly SurveyFlowController _flow;
     private readonly SessionState _session;
@@ -55,15 +58,15 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private IDisposable? _mapFxSub;
     private IDisposable? _delayLoopSub;
     private IDisposable? _screenTextSub;
-    private IDisposable? _areaChangedSub;
+    private IDisposable? _mapAssetChangedSub;
 
-    // The previous area key seen — used for dedup so we don't re-apply the
-    // same area calibration on repeat events.
-    private string? _lastArea;
+    // The previous scene seen — used for dedup so we don't re-apply the
+    // same scene calibration on repeat events. Compared by MapAssetKey
+    // since that's the calibration-store key.
+    private MapSceneRef? _lastScene;
 
     public PlayerLogIngestionService(
         IDomainEventSubscriber bus,
-        IAreaState areaState,
         IAreaCalibrationService areaCalibration,
         SurveyFlowController flow,
         SessionState session,
@@ -72,7 +75,6 @@ public sealed class PlayerLogIngestionService : BackgroundService
         ILogger? logger = null)
     {
         _bus = bus;
-        _areaState = areaState;
         _areaCalibration = areaCalibration;
         _flow = flow;
         _session = session;
@@ -83,18 +85,15 @@ public sealed class PlayerLogIngestionService : BackgroundService
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        // Seed the initial area from the Arda state snapshot (replaces the
-        // IPlayerAreaState.Subscribe Snapshot replay).
-        if (_areaState.CurrentArea is { } initial)
-        {
-            _lastArea = initial;
-            _areaCalibration.SelectArea(initial);
-        }
+        // No initial-state seed — IMapState.CurrentMapScene is null until the
+        // first Downloading Map line, which Arda replays through the bus on
+        // first boot. The SceneAssetCache's recorder populates the cache during
+        // replay; the resolution helper handles cold-start downstream.
 
         _mapFxSub = _bus.Subscribe<MapFxObserved>(OnMapFxObserved);
         _delayLoopSub = _bus.Subscribe<DelayLoopStarted>(OnDelayLoopStarted);
         _screenTextSub = _bus.Subscribe<ScreenTextObserved>(OnScreenTextObserved);
-        _areaChangedSub = _bus.Subscribe<AreaChanged>(OnAreaChanged);
+        _mapAssetChangedSub = _bus.Subscribe<MapAssetChanged>(OnMapAssetChanged);
 
         _logger?.LogInformation("Subscribed to Arda domain events");
 
@@ -112,20 +111,24 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _mapFxSub?.Dispose();
         _delayLoopSub?.Dispose();
         _screenTextSub?.Dispose();
-        _areaChangedSub?.Dispose();
+        _mapAssetChangedSub?.Dispose();
         base.Dispose();
     }
 
-    private void OnAreaChanged(AreaChanged evt)
+    private void OnMapAssetChanged(MapAssetChanged evt)
     {
-        if (evt.CurrentArea is null)
+        if (evt.CurrentScene is not { } scene)
         {
-            _lastArea = null;
+            _lastScene = null;
             return;
         }
-        if (evt.CurrentArea == _lastArea) return;
-        _lastArea = evt.CurrentArea;
-        _areaCalibration.SelectArea(evt.CurrentArea);
+        // Dedup on MapAssetKey — the calibration-store key. Different parent
+        // areas + same asset shouldn't happen in practice, but if they do, the
+        // asset key is the load-bearing axis.
+        if (_lastScene is { } prev &&
+            string.Equals(prev.MapAssetKey, scene.MapAssetKey, StringComparison.Ordinal)) return;
+        _lastScene = scene;
+        _areaCalibration.SelectScene(scene);
     }
 
     private void OnMapFxObserved(MapFxObserved evt)

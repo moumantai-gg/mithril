@@ -2,6 +2,7 @@ using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Mithril.MapCalibration;
 using Mithril.Shared.Reference;
 using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
@@ -88,7 +89,7 @@ public class MapOverlayCalibrationFallbackDedupTests
 
     private sealed class StubAreaCalibrationService : IAreaCalibrationService
     {
-        public string? CurrentAreaKey => "AreaTest";
+        public MapSceneRef? CurrentScene => new MapSceneRef("AreaTest", null, "Map_AreaTest");
         public string? CurrentAreaFriendlyName => "Test";
         public bool IsCurrentAreaCalibrated => false;
         public AreaCalibration? CurrentCalibration => null;
@@ -97,7 +98,7 @@ public class MapOverlayCalibrationFallbackDedupTests
         public AreaCalibration? CalibrateCurrentArea(
             IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0) => null;
         public event EventHandler? Changed { add { } remove { } }
-        public void SelectArea(string areaKey) { }
+        public void SelectScene(MapSceneRef scene) { }
         public void ClearCurrentAreaCalibration() { }
         public void NoteSurvey(string name, MetreOffset offset) { }
         public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }

@@ -25,7 +25,7 @@ internal sealed class FakeOverlayWindow : IOverlayWindow
 
 /// <summary>No-op event bus: the trigger's hosted-service Subscribe wiring is
 /// exercised by the DI-resolution test; the gating logic is tested directly via
-/// the extracted OnAreaChangedAsync seam.</summary>
+/// the extracted OnSceneChangedAsync seam.</summary>
 internal sealed class FakeDomainEventSubscriber : IDomainEventSubscriber
 {
     public IDisposable Subscribe<T>(Action<T> handler) where T : struct => new Noop();
@@ -39,7 +39,7 @@ internal sealed class FakeAreaState : IAreaState
 }
 
 /// <summary>
-/// Flat <see cref="IMapState"/> fake for engine tests (mithril#1021). Every
+/// Flat <see cref="IMapState"/> fake for engine tests (mithril#1041). Every
 /// property is a settable init so tests construct what they need with an
 /// object initializer; un-set properties default to <c>null</c> / empty.
 /// </summary>
@@ -50,10 +50,9 @@ internal sealed class FakeMapState : IMapState
     public string? PreviousArea { get; set; }
     public DateTimeOffset? TransitionedAt { get; set; }
 
-    // --- Map asset ---
-    public string? CurrentMapAsset { get; set; }
-    public string? CurrentSceneFriendlyName { get; set; }
-    public DateTimeOffset? MapAssetMeasuredAt { get; set; }
+    // --- Map asset (composite) ---
+    public MapSceneRef? CurrentMapScene { get; set; }
+    public DateTimeOffset? MapSceneMeasuredAt { get; set; }
 
     // --- Position ---
     public double? X { get; set; }
@@ -68,6 +67,20 @@ internal sealed class FakeMapState : IMapState
 
     // --- Pins ---
     public IReadOnlyList<MapPinEntry> Pins { get; set; } = Array.Empty<MapPinEntry>();
+}
+
+/// <summary>
+/// In-memory <see cref="ISceneAssetCache"/> fake for engine tests (mithril#1041).
+/// Tests prime entries via <see cref="Add"/>; <see cref="Record"/> writes through
+/// as the real cache does.
+/// </summary>
+internal sealed class FakeSceneAssetCache : ISceneAssetCache
+{
+    private readonly Dictionary<(string, string?), MapSceneRef> _store = new();
+    public void Add(MapSceneRef scene) => _store[(scene.ParentAreaKey, scene.SceneFriendlyName)] = scene;
+    public MapSceneRef? TryResolve(string parentAreaKey, string? sceneFriendlyName) =>
+        _store.TryGetValue((parentAreaKey, sceneFriendlyName), out var s) ? s : null;
+    public void Record(MapSceneRef scene, DateTimeOffset observedAt) => Add(scene);
 }
 
 internal sealed class FakeWindowLocator : IGameWindowLocator
@@ -231,22 +244,26 @@ internal sealed class FakeCalibrationService : IMapCalibrationService
 {
     private readonly Dictionary<string, AreaCalibration> _prior = new(StringComparer.Ordinal);
     public Dictionary<string, AreaCalibration> Saved { get; } = new(StringComparer.Ordinal);
+    public List<MapSceneRef> SavedScenes { get; } = new();
 
-    public void Seed(string areaKey, AreaCalibration cal) => _prior[areaKey] = cal;
+    public void Seed(string mapAssetKey, AreaCalibration cal) => _prior[mapAssetKey] = cal;
 
-    public bool IsCalibrated(string areaKey) => Saved.ContainsKey(areaKey) || _prior.ContainsKey(areaKey);
-    public PixelPoint? WorldToWindow(string areaKey, WorldCoord world, double currentZoom) => null;
-    public WorldCoord? WindowToWorld(string areaKey, PixelPoint pixel, double currentZoom) => null;
-    public AreaCalibration? GetCalibration(string areaKey) =>
-        Saved.TryGetValue(areaKey, out var s) ? s : (_prior.TryGetValue(areaKey, out var p) ? p : null);
+    public bool IsCalibrated(MapSceneRef scene) =>
+        Saved.ContainsKey(scene.MapAssetKey) || _prior.ContainsKey(scene.MapAssetKey);
+    public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
+    public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom) => null;
+    public AreaCalibration? GetCalibration(MapSceneRef scene) =>
+        Saved.TryGetValue(scene.MapAssetKey, out var s)
+            ? s
+            : (_prior.TryGetValue(scene.MapAssetKey, out var p) ? p : null);
     public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations => Saved;
-    public IReadOnlyList<AreaCalibration> GetAllSources(string areaKey) => Array.Empty<AreaCalibration>();
-    public void SaveUserRefinement(string areaKey, AreaCalibration calibration)
+    public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
+    public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration)
     {
-        Saved[areaKey] = calibration;
-        Changed?.Invoke(this, areaKey);
+        Saved[scene.MapAssetKey] = calibration;
+        SavedScenes.Add(scene);
+        Changed?.Invoke(this, scene);
     }
-    public void ClearUserRefinement(string areaKey) => Saved.Remove(areaKey);
-    public int ImportUserRefinements(IReadOnlyDictionary<string, AreaCalibration> source) => 0;
-    public event EventHandler<string>? Changed;
+    public void ClearUserRefinement(MapSceneRef scene) => Saved.Remove(scene.MapAssetKey);
+    public event EventHandler<MapSceneRef>? Changed;
 }

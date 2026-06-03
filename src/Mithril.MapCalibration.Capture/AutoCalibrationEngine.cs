@@ -79,6 +79,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private const double ScaleRegimeRelTolerance = 0.02;
 
     private readonly IMapState _mapState;
+    private readonly ISceneAssetCache _sceneCache;
     private readonly IGameWindowLocator _windowLocator;
     private readonly IMapCaptureRegionProvider _region;
     private readonly ICaptureService _capture;
@@ -101,6 +102,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 
     public AutoCalibrationEngine(
         IMapState mapState,
+        ISceneAssetCache sceneCache,
         IGameWindowLocator windowLocator,
         IMapCaptureRegionProvider region,
         ICaptureService capture,
@@ -118,6 +120,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         string? pgVersion = null)
     {
         _mapState = mapState;
+        _sceneCache = sceneCache;
         _windowLocator = windowLocator;
         _region = region;
         _capture = capture;
@@ -159,13 +162,13 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     /// </summary>
     public async Task<AutoCalibrationOutcome> TryCalibrateCurrentAreaAsync(CancellationToken ct)
     {
-        // Strict gate (mithril#1021 D3): refuse outright when the per-scene
-        // Map_<X> asset name isn't known yet (no Downloading Map line observed
-        // in this session). No fallback to a synthesised key — keying texture
-        // + reference lookups on a guess would silently mis-calibrate aggregator
-        // sub-zones. Fires BEFORE any side effect (no bundle write, no attempt
-        // context, no texture/solver invocation).
-        if (string.IsNullOrEmpty(_mapState.CurrentMapAsset))
+        // Resolution cascade (mithril#1041 D3): live IMapState.CurrentMapScene is
+        // preferred; on null, the SceneAssetCache supplies the seeded/learned
+        // fallback for known areas; on a still-null result the strict gate
+        // refuses outright. Fires BEFORE any side effect (no bundle write, no
+        // attempt context, no texture/solver invocation).
+        var resolvedScene = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache);
+        if (resolvedScene is null)
         {
             _logger?.LogInformation(
                 "Auto-calibration refused: per-scene map asset not yet known (Area={Area}); change zones once or restart while in this scene.",
@@ -177,9 +180,10 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 OutcomeCategory: OutcomeVocabulary.MapAssetNotYetKnown);
         }
 
-        // From here on, CurrentMapAsset is the authoritative per-scene key
+        // From here on, sceneRef.MapAssetKey is the authoritative per-scene key
         // (#1021): texture lookup, sidecar requests, attempt-bundle naming.
-        var assetKey = _mapState.CurrentMapAsset;
+        var sceneRef = resolvedScene.Value;
+        var assetKey = sceneRef.MapAssetKey;
         var attempt = new CalibrationAttemptContext(assetKey, DateTimeOffset.UtcNow);
         var sink = _sinkSelector.Resolve();
         try
@@ -221,19 +225,20 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // step is slow.
         using var actSpan = MithrilActivitySources.MapCalibration.StartActivity("calibration.attempt");
 
-        // #1021: the bundle/log "Area" tag in attempt.Area is the per-scene asset
-        // key (the bundle subfolder + 01-attempt.json read it). The parent
-        // area-key and sub-zone friendly name source from IMapState so the
-        // reference filter scopes NPC lookups to the right sub-zone for
-        // aggregator scenes.
+        // #1041: the resolved scene composite carries every key the pipeline needs.
+        // The bundle/log "Area" tag in attempt.Area is the per-scene asset key (the
+        // bundle subfolder + 01-attempt.json read it); ParentAreaKey scopes the
+        // landmark/NPC filter for aggregator scenes (e.g. AreaCave1 → Hogan's
+        // Basement). Resolved upstream by TryCalibrateCurrentAreaAsync via
+        // SceneResolution.ResolveCurrentScene.
         var assetKey = attempt.Area;
-        var area = _mapState.CurrentArea ?? string.Empty;
-        var sceneRef = new MapSceneRef(area, _mapState.CurrentSceneFriendlyName);
-        if (string.IsNullOrWhiteSpace(area))
+        var resolvedScene = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache);
+        if (resolvedScene is not { } sceneRef || string.IsNullOrWhiteSpace(sceneRef.ParentAreaKey))
         {
             attempt.Outcome = OutcomeVocabulary.RejectedNoArea;
             return Fail("", "not in-world — open Project Gorgon and enter an area first", OutcomeVocabulary.RejectedNoArea);
         }
+        var area = sceneRef.ParentAreaKey;
 
         // PG-foreground gate: capture must read the game's framebuffer, not
         // another app's. (The hotkey already focus-gates; the auto path + manual
@@ -455,9 +460,9 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // RenderSizePx-16 typed-detection bar). When the regimes differ (or either
         // side has no stamped factor — pre-#1005 legacy records, or a refiner
         // returning null Metrics), skip the comparison and accept.
-        // #1021: persistence is keyed on the per-scene assetKey (Map_<X>) post-migration —
-        // baseline.json + UserRefinementStore both store under the asset key.
-        var existing = _calibrationService.GetCalibration(assetKey);
+        // #1021: persistence is keyed on the per-scene assetKey (Map_<X>) post-migration;
+        // #1041 retypes the call site to take the typed MapSceneRef.
+        var existing = _calibrationService.GetCalibration(sceneRef);
         if (existing is not null
             && IsSameScaleRegime(existing.LocatorScale, stamped.LocatorScale))
         {
@@ -477,7 +482,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         }
 
         attempt.Outcome = OutcomeVocabulary.Accepted;
-        _calibrationService.SaveUserRefinement(assetKey, stamped);
+        _calibrationService.SaveUserRefinement(sceneRef, stamped);
         _logger?.LogInformation(
             "Auto-calibration persisted for {Area} (residual {Residual:0.00} px, {Inliers} inliers).",
             area, stamped.ResidualPixels, result.InlierCount);

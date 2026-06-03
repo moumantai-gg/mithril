@@ -98,7 +98,8 @@ public sealed class AutoCalibrationEngineFeatureMatchingTests
         // CurrentMapAsset = Area to match — both pre- and post-#1021 the lookup
         // key for this fixture is "AreaKurMountains".
         var engine = new AutoCalibrationEngine(
-            new FakeMapState { CurrentArea = Area, CurrentMapAsset = Area },
+            new FakeMapState { CurrentArea = Area, CurrentMapScene = new MapSceneRef(Area, null, Area) },
+            new FakeSceneAssetCache(),
             new FakeWindowLocator(new GameWindow(1, new CaptureRect(0, 0, 1920, 1080))),
             new FakeRegionProvider(bbox),
             new SpyCapture(capture),

@@ -28,7 +28,7 @@ public sealed class AreaReferenceProviderTests
                 new Landmark { Name = "Teleport Circle", Loc = "x:1 y:0 z:2", Type = "TeleportationPlatform" })
             .WithNpc("AreaSerbule", "Marna", pos: "x:30 y:0 z:40");
 
-        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null));
+        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null, "Map_AreaSerbule"));
 
         // mithril#974: Type carries the raw PG vocabulary (the same the detector
         // keys IconTemplate.LandmarkType by); the landmark_* sprite strings are
@@ -48,7 +48,7 @@ public sealed class AreaReferenceProviderTests
                 new Landmark { Name = "NoLoc", Loc = null, Type = "Portal" },
                 new Landmark { Name = "Garbage", Loc = "not a position", Type = "Portal" });
 
-        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null));
+        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null, "Map_AreaSerbule"));
 
         refs.Should().ContainSingle(r => r.Type == "Portal");
         refs.Should().OnlyContain(r => r.Name == "Good");
@@ -67,7 +67,7 @@ public sealed class AreaReferenceProviderTests
             .WithPositionlessNpc("AreaEltibule", "Sacrificial Bowl");
 
         var logger = new ListLogger();
-        var refs = new ReferenceDataAreaReferenceProvider(refData, logger).ForArea(new MapSceneRef("AreaEltibule", null));
+        var refs = new ReferenceDataAreaReferenceProvider(refData, logger).ForArea(new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"));
 
         refs.Should().ContainSingle(r => r.Type == "Npc" && r.Name == "Braigon");
         logger.Warnings.Should().NotContain(m => m.Contains("coord", StringComparison.OrdinalIgnoreCase));
@@ -84,7 +84,7 @@ public sealed class AreaReferenceProviderTests
                 new Landmark { Name = "Garbage", Loc = "not a position", Type = "Portal" });
 
         var logger = new ListLogger();
-        new ReferenceDataAreaReferenceProvider(refData, logger).ForArea(new MapSceneRef("AreaSerbule", null));
+        new ReferenceDataAreaReferenceProvider(refData, logger).ForArea(new MapSceneRef("AreaSerbule", null, "Map_AreaSerbule"));
 
         logger.Warnings.Should().ContainSingle(m =>
             m.Contains("malformed coords") && m.Contains("1"));
@@ -100,12 +100,12 @@ public sealed class AreaReferenceProviderTests
             .WithLandmarks("AreaSerbule",
                 new Landmark { Name = "Mystery", Loc = "x:1 y:0 z:1", Type = "SomeFutureLandmark" });
 
-        new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null)).Should().BeEmpty();
+        new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null, "Map_AreaSerbule")).Should().BeEmpty();
     }
 
     [Fact]
     public void Unknown_area_yields_empty()
-        => new ReferenceDataAreaReferenceProvider(new FakeAreaReferenceData()).ForArea(new MapSceneRef("AreaNope", null)).Should().BeEmpty();
+        => new ReferenceDataAreaReferenceProvider(new FakeAreaReferenceData()).ForArea(new MapSceneRef("AreaNope", null, "Map_AreaNope")).Should().BeEmpty();
 
     [Fact]
     public void Emitted_types_are_a_subset_of_the_canonical_vocabulary()
@@ -121,7 +121,7 @@ public sealed class AreaReferenceProviderTests
                 new Landmark { Name = "T", Loc = "x:3 y:0 z:3", Type = "TeleportationPlatform" })
             .WithNpc("AreaSerbule", "Marna", pos: "x:4 y:0 z:4");
 
-        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null));
+        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea(new MapSceneRef("AreaSerbule", null, "Map_AreaSerbule"));
 
         refs.Select(r => r.Type).Distinct().Should().OnlyContain(t => CanonicalLandmarkTypes.All.Contains(t));
         refs.Should().NotBeEmpty();
@@ -139,7 +139,7 @@ public sealed class AreaReferenceProviderTests
             .WithNpc("AreaCave1", "Goblin Dungeon", "Goblin", pos: "x:300 y:0 z:400");
 
         var refs = new ReferenceDataAreaReferenceProvider(refData)
-            .ForArea(new MapSceneRef("AreaCave1", "Hogan's Basement"));
+            .ForArea(new MapSceneRef("AreaCave1", "Hogan's Basement", "Map_HogansKeepBasement"));
 
         refs.Should().ContainSingle(r => r.Name == "Gorvessa");
         refs.Should().NotContain(r => r.Name == "Goblin");
@@ -155,7 +155,7 @@ public sealed class AreaReferenceProviderTests
             .WithNpc("AreaSerbule", "Serbule", "B", pos: "x:2 y:0 z:2");
 
         var refs = new ReferenceDataAreaReferenceProvider(refData)
-            .ForArea(new MapSceneRef("AreaSerbule", SceneFriendlyName: null));
+            .ForArea(new MapSceneRef("AreaSerbule", SceneFriendlyName: null, MapAssetKey: "Map_AreaSerbule"));
 
         refs.Should().HaveCount(2);
     }
@@ -169,7 +169,7 @@ public sealed class AreaReferenceProviderTests
             .WithNpc("AreaCave1", "Goblin Dungeon", "X", pos: "x:1 y:0 z:1");
 
         var refs = new ReferenceDataAreaReferenceProvider(refData)
-            .ForArea(new MapSceneRef("AreaCave1", "Hogan's Basement"));
+            .ForArea(new MapSceneRef("AreaCave1", "Hogan's Basement", "Map_HogansKeepBasement"));
 
         refs.Should().BeEmpty();
     }

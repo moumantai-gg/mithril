@@ -89,78 +89,6 @@ internal sealed class UserRefinementStore
         }
     }
 
-    /// <summary>
-    /// Migration entry point: import each entry if the area is not already
-    /// present in the store OR if its stored value's projection math differs
-    /// from <paramref name="entries"/>'s value (the "downgrade window"
-    /// recovery: legacy entry must be newer because we just came from a build
-    /// that only wrote to the legacy field). Batched into a single persist
-    /// and silent (no <see cref="IMapCalibrationService.Changed"/>; callers
-    /// route through that interface's <c>ImportUserRefinements</c>).
-    /// Returns the count actually written.
-    /// </summary>
-    public int ImportFromLegacy(IEnumerable<KeyValuePair<string, AreaCalibration>> entries)
-    {
-        var imported = 0;
-        // Snapshot for rollback on Persist failure (same transactional invariant
-        // as Save above — batched imports must be all-or-nothing on disk; the
-        // in-memory state cannot diverge past the persisted state).
-        Dictionary<string, AreaCalibration>? snapshot = null;
-        lock (_gate)
-        {
-            foreach (var (key, cal) in entries)
-            {
-                if (_refinements.TryGetValue(key, out var existing) && MathEquals(existing, cal))
-                    continue;
-                snapshot ??= new Dictionary<string, AreaCalibration>(_refinements, StringComparer.Ordinal);
-                _refinements[key] = cal with { Source = CalibrationSource.UserRefinement };
-                imported++;
-            }
-            if (imported > 0)
-            {
-                try { Persist(); }
-                catch
-                {
-                    _refinements = snapshot!; // restore pre-import state
-                    throw;
-                }
-            }
-        }
-        return imported;
-    }
-
-    /// <summary>
-    /// Compares only the fields that determine the world&#8596;pixel
-    /// projection. Ignores <see cref="AreaCalibration.Source"/> (always
-    /// re-stamped on import), <see cref="AreaCalibration.SchemaVersion"/>,
-    /// <see cref="AreaCalibration.ReferenceCount"/>,
-    /// <see cref="AreaCalibration.ResidualPixels"/>, and
-    /// <see cref="AreaCalibration.LocatorScale"/> (all metadata, not transform).
-    ///
-    /// <para>Uses a relative tolerance instead of raw <c>==</c> so a one-ULP
-    /// drift from JSON round-trip / cross-JIT codegen does not re-trigger an
-    /// overwrite (and an unnecessary disk write) on every startup. The
-    /// tolerance is tighter than any value the calibration math can produce
-    /// in practice (scale ~1, rotation ~3, origin up to ~2000), so a real
-    /// recalibration is never mistaken for "already in sync".</para>
-    /// </summary>
-    private static bool MathEquals(AreaCalibration a, AreaCalibration b) =>
-        a.MirrorNorth == b.MirrorNorth &&
-        AlmostEqual(a.Scale, b.Scale) &&
-        AlmostEqual(a.RotationRadians, b.RotationRadians) &&
-        AlmostEqual(a.OriginX, b.OriginX) &&
-        AlmostEqual(a.OriginY, b.OriginY) &&
-        AlmostEqual(a.CalibrationZoom, b.CalibrationZoom);
-
-    private const double DoubleCompareRelTolerance = 1e-12;
-
-    private static bool AlmostEqual(double a, double b)
-    {
-        if (a == b) return true; // covers NaN-stamped infinities and exact equality fast path
-        var scale = Math.Max(1.0, Math.Max(Math.Abs(a), Math.Abs(b)));
-        return Math.Abs(a - b) <= DoubleCompareRelTolerance * scale;
-    }
-
     private void Load()
     {
         if (!File.Exists(_filePath)) return;
@@ -290,9 +218,8 @@ internal sealed class UserRefinementStore
     /// (transient AV scan lock, full disk, OneDrive placeholder hiccup) would
     /// leave the in-memory state advanced but lose the data on next process
     /// start with no surface signal. Callers (the public <see cref="Save"/> /
-    /// <see cref="Remove"/> / <see cref="ImportFromLegacy"/> entry points)
-    /// roll the in-memory state back and re-throw so the wizard / migration
-    /// sees the failure and can surface or retry.
+    /// <see cref="Remove"/> entry points) roll the in-memory state back and
+    /// re-throw so the wizard / auto-solve sees the failure and can surface or retry.
     /// </summary>
     private void Persist()
     {

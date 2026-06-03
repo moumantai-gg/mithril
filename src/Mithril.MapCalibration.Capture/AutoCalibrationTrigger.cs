@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Arda.Contracts;
+using Arda.World.Player;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -13,12 +14,13 @@ namespace Mithril.MapCalibration.Capture;
 
 /// <summary>
 /// Background auto-attempt trigger (spec §10). Subscribes to Arda's
-/// <see cref="AreaChanged"/> and, on a zone-in, fires one auto-calibration
-/// attempt <b>iff</b>:
+/// <see cref="AreaChanged"/> and <see cref="MapAssetChanged"/> and, on a
+/// zone-in or per-scene transition, fires one auto-calibration attempt
+/// <b>iff</b>:
 /// <list type="bullet">
 /// <item>a map capture bbox has been framed (<see cref="IMapCaptureRegionProvider.Current"/> != null), AND</item>
 /// <item>the game is the foreground window (<see cref="IGameWindowLocator.Locate"/> != null), AND</item>
-/// <item>the area is uncalibrated OR its active calibration is only a
+/// <item>the scene is uncalibrated OR its active calibration is only a
 /// <see cref="CalibrationSource.BundledBaseline"/> (an upgradeable fallback).</item>
 /// </list>
 ///
@@ -27,14 +29,21 @@ namespace Mithril.MapCalibration.Capture;
 /// converged transform isn't re-attempted on every zone-in. (The manual
 /// capture-&amp;-calibrate hotkey always attempts, by design.)</para>
 ///
-/// <para><b>Retry-on-re-entry (GATE-2 Fix C).</b> An area is marked "done"
+/// <para><b>Per-scene keying (mithril#1041).</b> The skip-already-persisted set
+/// is keyed on <see cref="MapSceneRef.MapAssetKey"/>, not on the parent area
+/// key. This means sub-zone transitions within an aggregator area
+/// (e.g. Hogan's Basement → Goblin Dungeon under <c>AreaCave1</c>) each get
+/// their own attempt — the prior approach keyed on <see cref="AreaChanged"/>
+/// fired only on cross-area changes and missed sub-zone transitions entirely.</para>
+///
+/// <para><b>Retry-on-re-entry (GATE-2 Fix C).</b> A scene is marked "done"
 /// (suppressing re-attempt) ONLY when the attempt persisted a transform. A
-/// non-persisted outcome (e.g. "no bbox", "not zoomed out") leaves the area
+/// non-persisted outcome (e.g. "no bbox", "not zoomed out") leaves the scene
 /// un-marked, so a genuine later re-entry — the user zones out, zooms the map
 /// properly, zones back — gets a fresh attempt. An in-flight guard prevents a
-/// burst of duplicate area-changed events from launching concurrent/looping
+/// burst of scene-changed events from launching concurrent/looping
 /// attempts; there is no timer/polling loop, retries happen only on fresh
-/// area-change events.</para>
+/// scene-change events.</para>
 ///
 /// <para>On a non-persisted, <i>actionable</i> reject the trigger surfaces the
 /// reason on the overlay status chip (spec §10/§11) so the user learns why
@@ -47,16 +56,19 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
     private readonly IMapCaptureRegionProvider _region;
     private readonly IGameWindowLocator _windowLocator;
     private readonly IMapCalibrationService _calibrationService;
+    private readonly IMapState _mapState;
+    private readonly ISceneAssetCache _sceneCache;
     private readonly IOverlayWindow _overlay;
     private readonly ILogger _logger;
 
-    private IDisposable? _subscription;
+    private IDisposable? _areaChangedSub;
+    private IDisposable? _mapAssetChangedSub;
     private readonly object _gate = new();
-    // Areas whose auto-attempt PERSISTED — never re-attempted (Fix C).
-    private readonly HashSet<string> _persistedAreas = new(StringComparer.Ordinal);
-    // Areas with an attempt currently running — skip duplicate concurrent launches
+    // Scenes (keyed on MapAssetKey) whose auto-attempt PERSISTED — never re-attempted (Fix C).
+    private readonly HashSet<string> _persistedScenes = new(StringComparer.Ordinal);
+    // Scenes (keyed on MapAssetKey) with an attempt currently running — skip duplicate concurrent launches
     // (the in-flight guard against a retry storm; Fix C).
-    private readonly HashSet<string> _inFlightAreas = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _inFlightScenes = new(StringComparer.Ordinal);
 
     public AutoCalibrationTrigger(
         IDomainEventSubscriber bus,
@@ -64,6 +76,8 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
         IMapCaptureRegionProvider region,
         IGameWindowLocator windowLocator,
         IMapCalibrationService calibrationService,
+        IMapState mapState,
+        ISceneAssetCache sceneCache,
         IOverlayWindow overlay,
         ILogger logger)
     {
@@ -72,48 +86,65 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
         _region = region;
         _windowLocator = windowLocator;
         _calibrationService = calibrationService;
+        _mapState = mapState;
+        _sceneCache = sceneCache;
         _overlay = overlay;
         _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _subscription = _bus.Subscribe<AreaChanged>(OnAreaChanged);
+        _areaChangedSub = _bus.Subscribe<AreaChanged>(OnAreaChanged);
+        _mapAssetChangedSub = _bus.Subscribe<MapAssetChanged>(OnMapAssetChanged);
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _subscription?.Dispose();
-        _subscription = null;
+        _areaChangedSub?.Dispose();
+        _areaChangedSub = null;
+        _mapAssetChangedSub?.Dispose();
+        _mapAssetChangedSub = null;
         return Task.CompletedTask;
     }
 
     private void OnAreaChanged(AreaChanged e)
     {
-        var area = e.CurrentArea;
-        if (string.IsNullOrWhiteSpace(area)) return;
+        // Resolve the scene via the cascade — when the user zones into a directly-
+        // registered area, the cache supplies the seeded MapSceneRef immediately
+        // (no need to wait for the Downloading Map event). For aggregator areas
+        // (AreaCave1 etc.), the cache miss falls through and OnMapAssetChanged
+        // handles the per-scene attempt.
+        var resolved = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache);
+        if (resolved is not { } scene) return;
         // Fire-and-forget on the thread pool — the bus delivers synchronously on
         // the ingest thread, which must not block on a capture+solve.
-        _ = Task.Run(() => OnAreaChangedAsync(area));
+        _ = Task.Run(() => OnSceneChangedAsync(scene));
+    }
+
+    private void OnMapAssetChanged(MapAssetChanged e)
+    {
+        if (e.CurrentScene is not { } scene) return;
+        _ = Task.Run(() => OnSceneChangedAsync(scene));
     }
 
     /// <summary>
     /// The gating decision, extracted for unit testing. Returns when the attempt
     /// completes (or is skipped). Awaited by the fire-and-forget path.
     /// </summary>
-    internal async Task OnAreaChangedAsync(string area)
+    internal async Task OnSceneChangedAsync(MapSceneRef scene)
     {
-        if (string.IsNullOrWhiteSpace(area)) return;
+        var key = scene.MapAssetKey;
+        if (string.IsNullOrWhiteSpace(key)) return;
 
         lock (_gate)
         {
-            // Already persisted for this area → never re-attempt (Fix C).
-            if (_persistedAreas.Contains(area)) return;
-            // An attempt is already running for this area → skip the duplicate so
-            // a burst of area-changed events can't launch a concurrent/looping
+            // Already persisted for this scene → never re-attempt (Fix C).
+            if (_persistedScenes.Contains(key)) return;
+            // An attempt is already running for this scene → skip the duplicate so
+            // a burst of scene-changed events can't launch a concurrent/looping
             // attempt (in-flight guard, Fix C).
-            if (!_inFlightAreas.Add(area)) return;
+            if (!_inFlightScenes.Add(key)) return;
         }
 
         try
@@ -121,15 +152,15 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
             if (_region.Current is null) return;                 // no bbox → can't capture
             if (_windowLocator.Locate() is null) return;         // PG not foreground
 
-            // Auto path only upgrades an uncalibrated area or a bundled baseline; it
+            // Auto path only upgrades an uncalibrated scene or a bundled baseline; it
             // never displaces a converged user/auto transform.
-            var existing = _calibrationService.GetCalibration(area);
+            var existing = _calibrationService.GetCalibration(scene);
             if (existing is not null && existing.Source != CalibrationSource.BundledBaseline)
             {
                 return;
             }
 
-            _logger.LogInformation("Auto-attempting calibration on zone-in to {Area}.", area);
+            _logger.LogInformation("Auto-attempting calibration on scene-in to {AssetKey}.", key);
             AutoCalibrationOutcome? outcome = null;
             try
             {
@@ -137,21 +168,21 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Auto-calibration attempt for {Area} threw; the area stays as-is.", area);
+                _logger.LogWarning(ex, "Auto-calibration attempt for {AssetKey} threw; the scene stays as-is.", key);
             }
 
             if (outcome is null) return; // threw → leave un-marked so a later re-entry retries
 
             if (outcome.Persisted)
             {
-                lock (_gate) { _persistedAreas.Add(area); }
+                lock (_gate) { _persistedScenes.Add(key); }
                 // Silent upgrade (spec §10): a successful auto-persist clears any
                 // prior status chip. Idempotent on the concrete overlay.
                 _overlay.SetStatusMessage(null);
             }
             else
             {
-                // Non-persisted → leave the area un-marked so a genuine later
+                // Non-persisted → leave the scene un-marked so a genuine later
                 // re-entry retries (Fix C). Surface the actionable reason so the
                 // user learns why auto-cal isn't engaging (spec §10/§11). Setting
                 // the same string is idempotent (the concrete overlay no-ops it).
@@ -160,9 +191,13 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
         }
         finally
         {
-            lock (_gate) { _inFlightAreas.Remove(area); }
+            lock (_gate) { _inFlightScenes.Remove(key); }
         }
     }
 
-    public void Dispose() => _subscription?.Dispose();
+    public void Dispose()
+    {
+        _areaChangedSub?.Dispose();
+        _mapAssetChangedSub?.Dispose();
+    }
 }

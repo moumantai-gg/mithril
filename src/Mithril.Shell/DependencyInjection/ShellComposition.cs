@@ -109,7 +109,15 @@ public static class ShellComposition
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
             .AddMithrilReferenceData(o.ReferenceCacheDir)
             .AddMithrilCommunityCalibration(o.CommunityCalibrationCacheDir)
-            .AddMithrilMapCalibration(o.MapCalibrationDir)
+            .AddMithrilMapCalibration(
+                o.MapCalibrationDir,
+                // mithril#1041: seed the SceneAssetCache from areas.json so cold-start
+                // resolution can fall back when CurrentMapScene isn't yet observed
+                // (e.g. fresh install, log truncated past the Downloading Map line,
+                // long offline period). IReferenceDataService.Areas is populated
+                // synchronously in the constructor, so resolution is safe at first use.
+                seedAreaKeys: sp => sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>()
+                                      .Areas.Keys.ToHashSet(StringComparer.Ordinal))
             // #835 step 3: wires Mithril.Overlay's shared overlay window
             // (IOverlayWindow), marker registry (IWorldOverlayMarkers), and
             // MarkerSceneRenderer. Consumer modules (Legolas today, Gwaihir

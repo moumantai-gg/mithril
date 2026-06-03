@@ -484,8 +484,8 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
             // failure would be a fully silent no-op for the user
             // (round-4 review #1).
             _logger?.LogWarning(ex,
-                "Calibration persist failed for area {AreaKey}; PersistError set, coordinator stays armed.",
-                _service.CurrentAreaKey ?? "(unknown)");
+                "Calibration persist failed for scene {AssetKey}; PersistError set, coordinator stays armed.",
+                _service.CurrentScene?.MapAssetKey ?? "(unknown)");
             PersistError = $"Couldn't save calibration: {ex.Message}. Retry once the file lock clears.";
             return null;
         }

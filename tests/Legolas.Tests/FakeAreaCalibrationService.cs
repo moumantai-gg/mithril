@@ -1,5 +1,6 @@
 using Legolas.Domain;
 using Legolas.Services;
+using Mithril.MapCalibration;
 using Mithril.Shared.Reference;
 
 namespace Legolas.Tests;
@@ -35,7 +36,7 @@ public sealed class FakeAreaCalibrationService : IAreaCalibrationService
 
     public AreaCalibration? CurrentCalibration => _calibration;
     public bool IsCurrentAreaCalibrated => _calibration is not null;
-    public string? CurrentAreaKey => _calibration is null ? null : "AreaTest";
+    public MapSceneRef? CurrentScene => _calibration is null ? null : new MapSceneRef("AreaTest", null, "Map_AreaTest");
     public string? CurrentAreaFriendlyName => _calibration is null ? null : "Test Area";
     public IReadOnlyList<CalibrationReference> CurrentAreaReferences => _references;
     public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
@@ -43,7 +44,7 @@ public sealed class FakeAreaCalibrationService : IAreaCalibrationService
     public event EventHandler? Changed;
     public event EventHandler<CalibrationSurveyObservation>? SurveyObserved;
 
-    public void SelectArea(string areaKey) { }
+    public void SelectScene(MapSceneRef scene) { }
     public AreaCalibration? CalibrateCurrentArea(
         IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0) => null;
     public void ClearCurrentAreaCalibration() { }

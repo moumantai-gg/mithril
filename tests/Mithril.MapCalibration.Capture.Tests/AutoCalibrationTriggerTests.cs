@@ -8,21 +8,24 @@ using Xunit;
 namespace Mithril.MapCalibration.Capture.Tests;
 
 /// <summary>
-/// Task 26 (#914): the auto-attempt trigger. On area-change, fire the engine iff
-/// a bbox is set AND the game is focused AND the area is uncalibrated OR carries
+/// Task 26 (#914): the auto-attempt trigger. On scene-change, fire the engine iff
+/// a bbox is set AND the game is focused AND the scene is uncalibrated OR carries
 /// only a BundledBaseline. NEVER overwrite an existing UserRefinement/AutoCapture
 /// on the auto path (the manual hotkey always attempts). Debounce repeats.
 /// </summary>
 public sealed class AutoCalibrationTriggerTests
 {
     private const string Area = "AreaEltibule";
+    private const string AssetKey = "Map_AreaEltibule";
+
+    private static MapSceneRef Scene() => new(Area, null, AssetKey);
 
     [Fact]
     public async Task Does_not_attempt_when_no_bbox()
     {
         var engine = new SpyAutoCalibrationEngine();
         var trigger = Build(engine, bbox: null, focused: true);
-        await trigger.OnAreaChangedAsync(Area);
+        await trigger.OnSceneChangedAsync(Scene());
         engine.Calls.Should().Be(0);
     }
 
@@ -31,7 +34,7 @@ public sealed class AutoCalibrationTriggerTests
     {
         var engine = new SpyAutoCalibrationEngine();
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true);
-        await trigger.OnAreaChangedAsync(Area);
+        await trigger.OnSceneChangedAsync(Scene());
         engine.Calls.Should().Be(1);
     }
 
@@ -40,7 +43,7 @@ public sealed class AutoCalibrationTriggerTests
     {
         var engine = new SpyAutoCalibrationEngine();
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: false);
-        await trigger.OnAreaChangedAsync(Area);
+        await trigger.OnSceneChangedAsync(Scene());
         engine.Calls.Should().Be(0);
     }
 
@@ -49,9 +52,9 @@ public sealed class AutoCalibrationTriggerTests
     {
         var engine = new SpyAutoCalibrationEngine();
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, new AreaCalibration(1, 0, 0, 0, 4, 3) { Source = CalibrationSource.BundledBaseline });
+        svc.Seed(AssetKey, new AreaCalibration(1, 0, 0, 0, 4, 3) { Source = CalibrationSource.BundledBaseline });
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
-        await trigger.OnAreaChangedAsync(Area);
+        await trigger.OnSceneChangedAsync(Scene());
         engine.Calls.Should().Be(1, "a bundled baseline is upgradeable by the auto path");
     }
 
@@ -60,9 +63,9 @@ public sealed class AutoCalibrationTriggerTests
     {
         var engine = new SpyAutoCalibrationEngine();
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, new AreaCalibration(1, 0, 0, 0, 6, 0.5) { Source = CalibrationSource.UserRefinement });
+        svc.Seed(AssetKey, new AreaCalibration(1, 0, 0, 0, 6, 0.5) { Source = CalibrationSource.UserRefinement });
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
-        await trigger.OnAreaChangedAsync(Area);
+        await trigger.OnSceneChangedAsync(Scene());
         engine.Calls.Should().Be(0, "the auto path never displaces a user refinement");
     }
 
@@ -71,9 +74,9 @@ public sealed class AutoCalibrationTriggerTests
     {
         var engine = new SpyAutoCalibrationEngine();
         var svc = new FakeCalibrationService();
-        svc.Seed(Area, new AreaCalibration(1, 0, 0, 0, 6, 0.5) { Source = CalibrationSource.AutoCapture });
+        svc.Seed(AssetKey, new AreaCalibration(1, 0, 0, 0, 6, 0.5) { Source = CalibrationSource.AutoCapture });
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
-        await trigger.OnAreaChangedAsync(Area);
+        await trigger.OnSceneChangedAsync(Scene());
         engine.Calls.Should().Be(0, "an existing auto-capture is not re-attempted on every zone-in");
     }
 
@@ -85,8 +88,8 @@ public sealed class AutoCalibrationTriggerTests
         // now keyed on a SUCCESSFUL persist, not merely on having attempted).
         var engine = new SpyAutoCalibrationEngine(persisted: true);
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true);
-        await trigger.OnAreaChangedAsync(Area);
-        await trigger.OnAreaChangedAsync(Area); // genuine later re-entry to the same area
+        await trigger.OnSceneChangedAsync(Scene());
+        await trigger.OnSceneChangedAsync(Scene()); // genuine later re-entry to the same scene
         engine.Calls.Should().Be(1, "a persisted success is never re-attempted on re-entry");
     }
 
@@ -98,8 +101,8 @@ public sealed class AutoCalibrationTriggerTests
         // (the "user zones out, zooms the map, zones back" recovery path).
         var engine = new SpyAutoCalibrationEngine(persisted: false);
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true);
-        await trigger.OnAreaChangedAsync(Area);
-        await trigger.OnAreaChangedAsync(Area); // later re-entry after the reject
+        await trigger.OnSceneChangedAsync(Scene());
+        await trigger.OnSceneChangedAsync(Scene()); // later re-entry after the reject
         engine.Calls.Should().Be(2, "a rejected auto-attempt must retry on a fresh re-entry");
     }
 
@@ -110,7 +113,7 @@ public sealed class AutoCalibrationTriggerTests
         var overlay = new FakeOverlayWindow();
         overlay.SetStatusMessage("a stale message");
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, overlay: overlay);
-        await trigger.OnAreaChangedAsync(Area);
+        await trigger.OnSceneChangedAsync(Scene());
         overlay.StatusMessage.Should().BeNull("a silent upgrade clears the chip on persist (spec §10)");
     }
 
@@ -120,7 +123,7 @@ public sealed class AutoCalibrationTriggerTests
         var engine = new SpyAutoCalibrationEngine(persisted: false);
         var overlay = new FakeOverlayWindow();
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, overlay: overlay);
-        await trigger.OnAreaChangedAsync(Area);
+        await trigger.OnSceneChangedAsync(Scene());
         overlay.StatusMessage.Should().NotBeNullOrWhiteSpace("an actionable auto-reject tells the user why auto-cal isn't engaging");
     }
 
@@ -133,6 +136,8 @@ public sealed class AutoCalibrationTriggerTests
             new FakeRegionProvider(bbox),
             new FakeWindowLocator(focused ? new GameWindow(1, new CaptureRect(0, 0, 1920, 1080)) : null),
             service ?? new FakeCalibrationService(),
+            new FakeMapState { CurrentArea = Area, CurrentMapScene = new MapSceneRef(Area, null, AssetKey) },
+            new FakeSceneAssetCache(),
             overlay ?? new FakeOverlayWindow(),
             NullLogger.Instance);
 }

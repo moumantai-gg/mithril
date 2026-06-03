@@ -142,8 +142,12 @@ public sealed class CaptureDependencyInjectionTests
         services.AddSingleton<IMapState>(new FakeMapState
         {
             CurrentArea = "AreaSerbule",
-            CurrentMapAsset = "Map_AreaSerbule",
+            CurrentMapScene = new MapSceneRef("AreaSerbule", null, "Map_AreaSerbule"),
         });
+        // #1041: the engine + trigger now consume an ISceneAssetCache. The real
+        // composition wires it through AddMithrilMapCalibration; this test stops
+        // short of that, so we register the in-memory fake directly.
+        services.AddSingleton<ISceneAssetCache>(new FakeSceneAssetCache());
         services.AddSingleton<IReferenceDataService>(new FakeAreaReferenceData());
         services.AddSingleton<IMapCalibrationService>(new FakeCalibrationService());
 

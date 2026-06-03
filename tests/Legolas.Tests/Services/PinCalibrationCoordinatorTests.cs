@@ -4,6 +4,7 @@ using Legolas.Domain;
 using Legolas.Services;
 using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
+using Mithril.MapCalibration;
 using Mithril.Shared.Reference;
 using Xunit;
 
@@ -399,7 +400,7 @@ public class PinCalibrationCoordinatorTests
             return new AreaCalibration(1, 0, 0, 0, placements.Count, 0) { CalibrationZoom = calibrationZoom };
         }
 
-        public string? CurrentAreaKey => "AreaTest";
+        public MapSceneRef? CurrentScene => new MapSceneRef("AreaTest", null, "Map_AreaTest");
         public string? CurrentAreaFriendlyName => "Test";
         // Default true so existing PinCalibrationCoordinatorTests (which
         // pre-date the #835 step 6 review-iter-1 B2 Arm gate) stay green:
@@ -410,7 +411,7 @@ public class PinCalibrationCoordinatorTests
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
         public event EventHandler? Changed;
-        public void SelectArea(string areaKey) { }
+        public void SelectScene(MapSceneRef scene) { }
         public void ClearCurrentAreaCalibration() { }
         public void NoteSurvey(string name, MetreOffset offset) { }
         public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }

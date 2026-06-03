@@ -96,7 +96,7 @@ public sealed class LegolasCalibrationMarkerSnapshotTests
         snapshot.Should().HaveCount(1, "the registered marker must reach the snapshot.");
 
         var projected = OverlayWindowService.ProjectMarkers(
-            snapshot, "AreaTest", new IdentityCalibrationService(), currentZoom: 1.0);
+            snapshot, new MapSceneRef("AreaTest", null, "Map_AreaTest"), new IdentityCalibrationService(), currentZoom: 1.0);
         projected.Should().HaveCount(1, "the identity calibration projects the only marker.");
 
         var renderer = new MarkerSceneRenderer();
@@ -159,18 +159,17 @@ public sealed class LegolasCalibrationMarkerSnapshotTests
 
     private sealed class IdentityCalibrationService : IMapCalibrationService
     {
-        public bool IsCalibrated(string areaKey) => true;
-        public PixelPoint? WorldToWindow(string areaKey, WorldCoord world, double currentZoom)
+        public bool IsCalibrated(MapSceneRef scene) => true;
+        public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom)
             => new PixelPoint(world.X, world.Z);
-        public WorldCoord? WindowToWorld(string areaKey, PixelPoint pixel, double currentZoom)
+        public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom)
             => new WorldCoord(pixel.X, 0, pixel.Y);
-        public AreaCalibration? GetCalibration(string areaKey) => null;
+        public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
         public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations
             => new Dictionary<string, AreaCalibration>();
-        public IReadOnlyList<AreaCalibration> GetAllSources(string areaKey) => Array.Empty<AreaCalibration>();
-        public void SaveUserRefinement(string areaKey, AreaCalibration calibration) { }
-        public void ClearUserRefinement(string areaKey) { }
-        public int ImportUserRefinements(IReadOnlyDictionary<string, AreaCalibration> source) => 0;
-        public event EventHandler<string>? Changed { add { } remove { } }
+        public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
+        public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration) { }
+        public void ClearUserRefinement(MapSceneRef scene) { }
+        public event EventHandler<MapSceneRef>? Changed { add { } remove { } }
     }
 }
