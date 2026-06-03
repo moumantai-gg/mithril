@@ -12,4 +12,13 @@ namespace Mithril.MapCalibration.Capture;
 public interface IAutoCalibrationRunner
 {
     Task<AutoCalibrationOutcome> TryCalibrateCurrentAreaAsync(CancellationToken ct);
+
+    /// <summary>
+    /// Verify the stored calibration against fresh locator + icon-detector output
+    /// (mithril#1046 §6). Returns a <see cref="DriftCheckOutcome"/> the
+    /// <c>ManualCalibrationCoordinator</c> branches on to decide
+    /// (a) chip-only no-op, (b) arm-and-warn, or (c) fall-through to a cold
+    /// solve. Never persists.
+    /// </summary>
+    Task<DriftCheckOutcome> CheckDriftAsync(CancellationToken ct);
 }

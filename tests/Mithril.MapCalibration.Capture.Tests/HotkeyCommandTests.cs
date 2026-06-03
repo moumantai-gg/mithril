@@ -94,6 +94,9 @@ internal sealed class SpyAutoCalibrationEngine : IAutoCalibrationRunner
         Calls++;
         return Task.FromResult(new AutoCalibrationOutcome(_persisted, "AreaSerbule", _persisted ? null : _rejectReason));
     }
+
+    public Task<DriftCheckOutcome> CheckDriftAsync(CancellationToken ct) =>
+        throw new NotImplementedException("Implemented in Task B4.");
 }
 
 internal sealed class SpyBboxDrawController : IMapBboxDrawController

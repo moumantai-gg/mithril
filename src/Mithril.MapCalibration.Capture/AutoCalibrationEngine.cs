@@ -153,6 +153,10 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         return File.Exists(tpk) ? tpk : null;
     }
 
+    /// <inheritdoc/>
+    public Task<DriftCheckOutcome> CheckDriftAsync(CancellationToken ct) =>
+        throw new NotImplementedException("Implemented in Task B4.");
+
     /// <summary>
     /// Thin public entry point. Wraps <see cref="RunAttemptCoreAsync"/> in a
     /// <c>try/finally</c> so <see cref="ICalibrationAttemptBundleSink.Write"/> is
