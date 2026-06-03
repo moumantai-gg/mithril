@@ -46,24 +46,48 @@ internal sealed class MapCalibrationService : IMapCalibrationService
     {
         if (string.IsNullOrWhiteSpace(scene.MapAssetKey)) return null;
 
-        if (_userStore.TryGet(scene.MapAssetKey, out var user)
-            && user.ResidualPixels <= _goodResidualThresholdPx)
+        var candidates = new List<AreaCalibration>(capacity: 2);
+        if (_userStore.TryGet(scene.MapAssetKey, out var user)) candidates.Add(user);
+        if (_baseline.TryGetValue(scene.MapAssetKey, out var baseline)) candidates.Add(baseline);
+        // CommunitySync slot reserved.
+
+        if (candidates.Count == 0) return null;
+
+        var eligible = candidates.Where(c => c.ReferenceCount >= MinReferences).ToList();
+        AreaCalibration picked;
+        if (eligible.Count == 0)
         {
-            return user;
+            picked = candidates.OrderByDescending(SourceRank).First();
+            _logger?.LogInformation(
+                "GetCalibration({MapAssetKey}): no candidate cleared MinReferences={Floor}; returning best-source-precedence fallback (source={Source}, residual={Residual:0.00}px, refs={Refs}).",
+                scene.MapAssetKey, MinReferences, picked.Source, picked.ResidualPixels, picked.ReferenceCount);
         }
-
-        // CommunitySync slot reserved here; not yet wired.
-
-        if (_baseline.TryGetValue(scene.MapAssetKey, out var baseline)) return baseline;
-
-        // A user refinement above the threshold loses to a usable baseline.
-        // When no baseline exists, fall back to the user refinement anyway —
-        // a high-residual transform is better than nothing for the consumer's
-        // degradation UX (chip + render).
-        if (_userStore.TryGet(scene.MapAssetKey, out var fallbackUser)) return fallbackUser;
-
-        return null;
+        else
+        {
+            picked = eligible.OrderBy(c => c.ResidualPixels).ThenByDescending(SourceRank).First();
+            _logger?.LogTrace(
+                "GetCalibration({MapAssetKey}): {Eligible}/{Total} eligible, picked source={Source} residual={Residual:0.00}px refs={Refs}.",
+                scene.MapAssetKey, eligible.Count, candidates.Count, picked.Source, picked.ResidualPixels, picked.ReferenceCount);
+        }
+        return picked;
     }
+
+    /// <summary>
+    /// Minimum <see cref="AreaCalibration.ReferenceCount"/> required for a candidate to be
+    /// considered in the residual-ordered pick. Fits below this floor are excluded from the
+    /// eligible set because a closed-form similarity solve at N=2 has residual ≈ 0 by
+    /// construction and is therefore not statistically meaningful.
+    /// </summary>
+    internal const int MinReferences = 4;
+
+    private static int SourceRank(AreaCalibration c) => c.Source switch
+    {
+        CalibrationSource.UserRefinement  => 4,
+        CalibrationSource.AutoCapture     => 3,
+        CalibrationSource.CommunitySync   => 2,
+        CalibrationSource.BundledBaseline => 1,
+        _ => 0,
+    };
 
     public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom) =>
         GetCalibration(scene)?.WorldToWindow(world, currentZoom);

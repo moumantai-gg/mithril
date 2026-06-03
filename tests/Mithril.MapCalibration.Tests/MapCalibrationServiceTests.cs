@@ -32,12 +32,14 @@ public sealed class MapCalibrationServiceTests : IDisposable
     [Fact]
     public void Good_user_refinement_wins_over_baseline()
     {
+        // New picker: lower residual wins when both candidates meet the ref-count floor.
+        // User residual (2.0) < baseline residual (4.0) → user wins.
         var baseline = new Dictionary<string, AreaCalibration>
         {
             ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
         };
         var store = new UserRefinementStore(_tempDir);
-        store.Save("Map_AreaEltibule", MakeCal(residual: 8.0, scale: 2.0));
+        store.Save("Map_AreaEltibule", MakeCal(residual: 2.0, scale: 2.0));
 
         var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0, logger: null);
 
@@ -137,6 +139,8 @@ public sealed class MapCalibrationServiceTests : IDisposable
     [Fact]
     public void ClearUserRefinement_returns_to_baseline()
     {
+        // User residual (2.0) < baseline residual (4.0) → user wins before clear;
+        // after clear, only baseline remains.
         var baseline = new Dictionary<string, AreaCalibration>
         {
             ["Map_AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
@@ -144,7 +148,7 @@ public sealed class MapCalibrationServiceTests : IDisposable
         var store = new UserRefinementStore(_tempDir);
         var svc = new MapCalibrationService(baseline, store, goodResidualThresholdPx: 12.0);
 
-        svc.SaveUserRefinement(Scene("Map_AreaEltibule"), MakeCal(residual: 6.0, scale: 2.0));
+        svc.SaveUserRefinement(Scene("Map_AreaEltibule"), MakeCal(residual: 2.0, scale: 2.0));
         svc.GetCalibration(Scene("Map_AreaEltibule"))!.Source.Should().Be(CalibrationSource.UserRefinement);
 
         svc.ClearUserRefinement(Scene("Map_AreaEltibule"));
@@ -253,6 +257,6 @@ public sealed class MapCalibrationServiceTests : IDisposable
             RotationRadians: 0,
             OriginX: 100,
             OriginY: 100,
-            ReferenceCount: 3,
+            ReferenceCount: 6,
             ResidualPixels: residual);
 }
