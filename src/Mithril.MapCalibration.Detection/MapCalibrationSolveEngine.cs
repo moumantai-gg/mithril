@@ -369,6 +369,15 @@ public sealed class MapCalibrationSolveEngine
         }
         var devImage = new GrayImage(w, h, deviation);
 
+        // PG ships icon sprites at native resolution (~256 px) but renders map icons
+        // at a single small on-screen size (~16 px). Single-scale NCC only correlates
+        // at matching size, so the templates MUST be downscaled to the render size
+        // before sliding — otherwise every native-res template is larger than its
+        // viable search area and produces a mostly-zero L_t (mithril#1022). Mirrors
+        // DeviationBlobCalibrationDetector.cs:52. Returns templates unchanged when
+        // they're already small (the synthetic-fixture path).
+        var rescaled = IconRenderScaler.RenderSized(screenshot, templates.Templates, typeFloor, renderSizePx);
+
         // One template per landmark-type — the per-type L_t fields are keyed by
         // LandmarkType. If a type has multiple templates (e.g. variants), the
         // LAST in iteration order wins, matching the probe's path at
@@ -376,7 +385,7 @@ public sealed class MapCalibrationSolveEngine
         // inside a foreach). Production must match this so Task 17's L_t equality
         // test holds in any future multi-template-per-type scenario.
         var perType = new Dictionary<string, IconTemplate>(StringComparer.Ordinal);
-        foreach (var template in templates.Templates)
+        foreach (var template in rescaled)
         {
             perType[template.LandmarkType] = template;
         }
