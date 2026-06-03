@@ -83,7 +83,7 @@ public sealed class AutoCaptureCalibrationSourceTests
             // skipped it before or after key transformation.
             foreach (var lookupKey in new[] { "AreaSerbule", "Map_AreaSerbule" })
             {
-                var poisoned = service.GetCalibration(lookupKey);
+                var poisoned = service.GetCalibration(new MapSceneRef(string.Empty, null, lookupKey));
                 (poisoned is null || poisoned.OriginX != 10 || poisoned.Source != CalibrationSource.UserRefinement)
                     .Should().BeTrue($"the unparseable user-store refinement must not be served (key={lookupKey})");
             }
@@ -92,7 +92,7 @@ public sealed class AutoCaptureCalibrationSourceTests
             // adds. Looked up under the migrated "Map_AreaEltibule" key per the
             // v1→v2 prefix migrator. Bare "AreaEltibule" is intentionally NOT
             // resolvable post-migration — that's the new keying contract.
-            var survivor = service.GetCalibration("Map_AreaEltibule");
+            var survivor = service.GetCalibration(new MapSceneRef(string.Empty, null, "Map_AreaEltibule"));
             survivor.Should().NotBeNull("a poisoned sibling entry must not wipe the whole store");
             survivor!.OriginX.Should().Be(42, "the valid entry's transform is preserved verbatim");
             survivor.OriginY.Should().Be(99);
