@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mithril.MapCalibration.Internal;
 using Xunit;
@@ -118,5 +119,39 @@ public sealed class MapCalibrationServicePickerTests
         var svc = NewSvc(
             userRefs: new Dictionary<string, AreaCalibration> { [Key] = Cal(0.3, 2, CalibrationSource.UserRefinement) });
         svc.GetCalibration(Scene)!.Source.Should().Be(CalibrationSource.UserRefinement);
+    }
+
+    [Fact]
+    public void Picker_LogsTraceOnPickAndInfoOnFallback()
+    {
+        var logger = new CapturingLogger();
+
+        // Normal pick: both candidates clear MinReferences=4. Auto wins by lower residual.
+        var svc = new MapCalibrationService(
+            baseline: new Dictionary<string, AreaCalibration> { [Key] = Cal(2.1, 6, CalibrationSource.BundledBaseline) },
+            userStore: UserRefinementStore.ForTests(new Dictionary<string, AreaCalibration> { [Key] = Cal(0.6, 5, CalibrationSource.AutoCapture) }),
+            logger: logger);
+        svc.GetCalibration(Scene);
+
+        logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Trace && e.Message.Contains("picked source=AutoCapture"));
+
+        // Fallback: both below floor → highest source precedence wins, log Information.
+        var fallbackSvc = new MapCalibrationService(
+            baseline: new Dictionary<string, AreaCalibration> { [Key] = Cal(0.5, 3, CalibrationSource.BundledBaseline) },
+            userStore: UserRefinementStore.ForTests(new Dictionary<string, AreaCalibration> { [Key] = Cal(0.3, 2, CalibrationSource.UserRefinement) }),
+            logger: logger);
+        fallbackSvc.GetCalibration(Scene);
+
+        logger.Entries.Should().Contain(e => e.Level == LogLevel.Information && e.Message.Contains("best-source-precedence fallback"));
+    }
+
+    private sealed class CapturingLogger : ILogger
+    {
+        public readonly List<(LogLevel Level, string Message)> Entries = new();
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception)));
+        private sealed class NullScope : IDisposable { public static readonly NullScope Instance = new(); public void Dispose() { } }
     }
 }
