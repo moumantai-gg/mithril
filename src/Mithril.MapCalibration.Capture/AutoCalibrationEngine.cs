@@ -59,24 +59,10 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private static readonly BlobOptions BlobOpts = new(
         MinArea: 12, MaxIconArea: 900, MinSolidity: 0.35, MaxAspect: 2.5, MinPeak: 0.7);
 
-    // #988 monotonicity gate: when a stored calibration exists for the area,
-    // a new fit must not regress quality by more than these tolerances.
-    // Tuned from the Eltibule 03:11:05 (0.79 px / 10 inliers, GOOD) vs
-    // 03:11:30 (4.03 px / 4 inliers, WRONG) pair surfaced by PR #986: ratio
-    // 2.0× catches the 5× residual blow-up; delta 2 catches the 6-inlier
-    // drop. Both gates conservative on the cold-start floor (4 inliers /
-    // residual already <12 px) so a marginal-but-correct re-fit still wins.
-    private const double MonotonicResidualRatio = 2.0;
-    private const int MonotonicInlierDelta = 2;
-
-    /// <summary>
-    /// Relative tolerance for <see cref="IsSameScaleRegime"/>: a new candidate's
-    /// <c>LocatorScale</c> must be within ±2% of the stored one to count as the
-    /// same in-game zoom regime. Generous over the
-    /// <c>FeatureMatchingRefiner</c>'s sub-percent stability for repeated
-    /// captures at the same zoom (see #1005).
-    /// </summary>
-    private const double ScaleRegimeRelTolerance = 0.02;
+    // mithril#1046 §6.3: drift-check thresholds.
+    private const double DriftToleranceFactor = 3.0;
+    private const double DriftMatchGatePx = 20.0;
+    private const int DriftMinMatchedReferences = 3;
 
     private readonly IMapState _mapState;
     private readonly ISceneAssetCache _sceneCache;
@@ -151,6 +137,210 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (string.IsNullOrWhiteSpace(_assetCacheDir)) return null;
         var tpk = Path.Combine(_assetCacheDir, ClassDataTpkProvisioner.TpkFileName);
         return File.Exists(tpk) ? tpk : null;
+    }
+
+    /// <inheritdoc/>
+    public async Task<DriftCheckOutcome> CheckDriftAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        using var span = MithrilActivitySources.MapCalibration.StartActivity("calibration.drift_check");
+
+        // Step 1: resolve scene.
+        var resolvedScene = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache);
+        if (resolvedScene is null)
+        {
+            span?.SetTag("outcome", "NoStoredCalibration");
+            return new DriftCheckOutcome.NoStoredCalibration();
+        }
+        var sceneRef = resolvedScene.Value;
+        span?.SetTag("map.area", sceneRef.MapAssetKey);
+
+        // Step 2: resolve stored calibration.
+        var stored = _calibrationService.GetCalibration(sceneRef);
+        if (stored is null)
+        {
+            span?.SetTag("outcome", "NoStoredCalibration");
+            return new DriftCheckOutcome.NoStoredCalibration();
+        }
+
+        // Step 3a: bbox gate.
+        var bbox = _region.Current;
+        if (bbox is null)
+        {
+            var capReason = "no map bbox set — use the draw-map-bbox hotkey first";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "capture-failed", capReason);
+            span?.SetTag("outcome", "CaptureFailed");
+            return new DriftCheckOutcome.CaptureFailed(capReason);
+        }
+
+        // Step 3b: PG-foreground gate.
+        if (_windowLocator.Locate() is null)
+        {
+            var capReason = "Project Gorgon is not the foreground window";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "capture-failed", capReason);
+            span?.SetTag("outcome", "CaptureFailed");
+            return new DriftCheckOutcome.CaptureFailed(capReason);
+        }
+
+        // Step 5: resolve references (logged with starting message below).
+        var references = _references.ForArea(sceneRef);
+        _logger?.LogInformation(
+            "Drift check starting for {MapAssetKey}: {Refs} references, tolerance factor {Factor}× of stored {Residual:0.00}px.",
+            sceneRef.MapAssetKey, references.Count, DriftToleranceFactor, stored.ResidualPixels);
+
+        // Step 3c: capture gate.
+        var captureResult = await _capture.CaptureMapAsync(bbox.Value, ct).ConfigureAwait(false);
+        if (captureResult.Gray is null)
+        {
+            var capReason = "map capture failed (black/wrong-size frame)";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "capture-failed", capReason);
+            span?.SetTag("outcome", "CaptureFailed");
+            return new DriftCheckOutcome.CaptureFailed(capReason);
+        }
+        var gray = captureResult.Gray;
+
+        // Base-texture gate.
+        var baseTexture = await ResolveBaseTextureAsync(sceneRef.MapAssetKey, ct).ConfigureAwait(false);
+        if (baseTexture is null)
+        {
+            var texReason = "base texture unavailable";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "map-not-located", texReason);
+            span?.SetTag("outcome", "MapNotLocated");
+            return new DriftCheckOutcome.MapNotLocated(texReason);
+        }
+
+        // Step 4: run locator/refiner.
+        if (_refiner is FeatureMatchingRefiner fmDrift)
+            fmDrift.SetAreaKey(sceneRef.ParentAreaKey);
+        var refineResult = _refiner.Refine(gray, baseTexture);
+        if (refineResult.AcceptedRect is null || refineResult.Metrics is null)
+        {
+            var locReason = refineResult.Metrics is { } failM
+                ? $"locator inliers={failM.InlierCount}/{failM.CandidateCount} scale={failM.Scale:0.00}"
+                : "no fit";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "map-not-located", locReason);
+            span?.SetTag("outcome", "MapNotLocated");
+            return new DriftCheckOutcome.MapNotLocated(locReason);
+        }
+        var loc = refineResult.Metrics;
+        _logger?.LogInformation(
+            "Drift check {MapAssetKey}: locator scale={Scale:0.000}, rotation={Rot:0.00}°, inliers={Inliers}/{Cand}, locator residual={LocResid:0.00}px.",
+            sceneRef.MapAssetKey, loc.Scale, loc.RotationDegrees, loc.InlierCount, loc.CandidateCount, loc.ResidualPixels);
+
+        // Build aligned detection inputs (mirrors RunAttemptCoreAsync §978).
+        var templates = await EnsureIconTemplatesAsync(ct).ConfigureAwait(false);
+        var clamped = ClampToFrame(refineResult.AcceptedRect, gray.Width, gray.Height);
+        if (clamped is null)
+        {
+            var clampReason = "the located map rect fell outside the captured frame";
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: {Failure} ({Reason}). No arming; chip shows actionable reason.",
+                sceneRef.MapAssetKey, "map-not-located", clampReason);
+            span?.SetTag("outcome", "MapNotLocated");
+            return new DriftCheckOutcome.MapNotLocated(clampReason);
+        }
+        var crop = ImageOps.Crop(gray, clamped.OriginX, clamped.OriginY, clamped.Width, clamped.Height);
+        var alignedTexture = ImageOps.Resize(baseTexture, clamped.Width, clamped.Height);
+        var alignedRect = new MapRect(0, 0, clamped.Width, clamped.Height, clamped.TextureWidth, clamped.TextureHeight);
+        var detectionRequest = new DetectionRequest(
+            Screenshot: crop,
+            BaseTexture: alignedTexture,
+            MapRect: alignedRect,
+            Templates: templates,
+            RimMask: RimMaskMode.DeviationFlood,
+            LowNcc: LowNcc,
+            TypeFloor: TypeFloor,
+            BlobOptions: BlobOpts)
+        {
+            RenderSizePx = RenderSizePx,
+        };
+
+        // Step 6: run typed icon detector only (no geometric solve).
+        var detections = _solver.DetectOnly(detectionRequest);
+        if (detections.Count == 0)
+        {
+            span?.SetTag("outcome", "NoIconDetections");
+            return new DriftCheckOutcome.NoIconDetections();
+        }
+
+        // Step 7: pair each reference against nearest detection within the gate.
+        // Each detection may claim at most one reference (greedy nearest-first
+        // prevents a single detection from boosting the matched count artificially
+        // when references are close together).
+        var usedDetectionIndices = new HashSet<int>(detections.Count);
+        var residuals = new List<double>(references.Count);
+        foreach (var r in references)
+        {
+            var predTex = stored.WorldToWindow(r.World, currentZoom: 1.0);
+            var predScreenX = predTex.X * loc.Scale + loc.Tx;
+            var predScreenY = predTex.Y * loc.Scale + loc.Ty;
+            double? best = null;
+            double bestDx = 0, bestDy = 0;
+            int bestIdx = -1;
+            for (int di = 0; di < detections.Count; di++)
+            {
+                if (usedDetectionIndices.Contains(di)) continue;
+                var d = detections[di];
+                var dist = Math.Sqrt(
+                    (d.AnchorX - predScreenX) * (d.AnchorX - predScreenX) +
+                    (d.AnchorY - predScreenY) * (d.AnchorY - predScreenY));
+                if (dist < (best ?? double.MaxValue))
+                {
+                    best = dist;
+                    bestDx = d.AnchorX;
+                    bestDy = d.AnchorY;
+                    bestIdx = di;
+                }
+            }
+            if (best is null || best.Value > DriftMatchGatePx) continue;
+            usedDetectionIndices.Add(bestIdx);
+            residuals.Add(best.Value);
+            _logger?.LogTrace(
+                "Drift check {MapAssetKey}: ref '{Name}' predicted=({Px:0.0},{Py:0.0}), nearest detection=({Dx:0.0},{Dy:0.0}) at {Dist:0.00}px.",
+                sceneRef.MapAssetKey, r.Name, predScreenX, predScreenY, bestDx, bestDy, best.Value);
+        }
+
+        span?.SetTag("refs.matched", residuals.Count);
+
+        // Step 8: aggregate.
+        if (residuals.Count < DriftMinMatchedReferences)
+        {
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: inconclusive — {Reason} ({Matched} refs matched, need ≥{Min}). No arming.",
+                sceneRef.MapAssetKey, "too few visible landmarks", residuals.Count, DriftMinMatchedReferences);
+            span?.SetTag("outcome", "Inconclusive");
+            return new DriftCheckOutcome.Inconclusive("too few visible landmarks", residuals.Count);
+        }
+
+        var maxResidual = residuals.Max();
+        var threshold = DriftToleranceFactor * stored.ResidualPixels;
+        span?.SetTag("max_residual_px", maxResidual);
+        span?.SetTag("threshold_px", threshold);
+
+        if (maxResidual > threshold)
+        {
+            _logger?.LogWarning(
+                "Drift check {MapAssetKey}: DRIFT detected ({Matched} refs matched, max residual {MaxResid:0.00}px exceeds threshold {Threshold:0.00}px). Hotkey armed for {Arm}s — re-press to recalibrate.",
+                sceneRef.MapAssetKey, residuals.Count, maxResidual, threshold, ManualCalibrationCoordinator.ArmingSeconds);
+            span?.SetTag("outcome", "Drift");
+            return new DriftCheckOutcome.Drift(maxResidual, residuals.Count, threshold);
+        }
+
+        _logger?.LogInformation(
+            "Drift check {MapAssetKey}: OK ({Matched} refs matched, max residual {MaxResid:0.00}px, threshold {Threshold:0.00}px). No recalibration needed.",
+            sceneRef.MapAssetKey, residuals.Count, maxResidual, threshold);
+        span?.SetTag("outcome", "Ok");
+        return new DriftCheckOutcome.Ok(maxResidual, residuals.Count);
     }
 
     /// <summary>
@@ -444,42 +634,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         }
 
         // Gate-accept: persist through the user store stamped AutoCapture, which
-        // inherits user-store precedence by construction (Task 20). Stamp
-        // LocatorScale from the FeatureMatchingRefiner's recovered partial-affine
-        // scale (#1005) so the next attempt's regime comparison has an anchor.
+        // inherits user-store precedence by construction (Task 20).
         var stamped = result.Calibration with
         {
             Source = CalibrationSource.AutoCapture,
-            LocatorScale = refineResult.Metrics?.Scale,
         };
-
-        // #988 monotonicity gate, scale-aware (#1005). A new fit must not regress
-        // residual/inlier quality vs. an existing calibration at the SAME zoom
-        // regime — comparing across regimes is invalid because the per-attempt
-        // inlier count tracks visible-icon size, not fit quality (the
-        // RenderSizePx-16 typed-detection bar). When the regimes differ (or either
-        // side has no stamped factor — pre-#1005 legacy records, or a refiner
-        // returning null Metrics), skip the comparison and accept.
-        // #1021: persistence is keyed on the per-scene assetKey (Map_<X>) post-migration;
-        // #1041 retypes the call site to take the typed MapSceneRef.
-        var existing = _calibrationService.GetCalibration(sceneRef);
-        if (existing is not null
-            && IsSameScaleRegime(existing.LocatorScale, stamped.LocatorScale))
-        {
-            var monotonicReason = CheckMonotonicAccept(existing, stamped, result.InlierCount);
-            if (monotonicReason is not null)
-            {
-                attempt.Outcome = OutcomeVocabulary.RejectedNotMonotonic;
-                _logger?.LogInformation(
-                    "Auto-calibration rejected for {Area}: monotonicity gate — {Reason}. Prior calibration kept (residual {PriorResidual:0.00}px, refs {PriorRefs}).",
-                    area, monotonicReason, existing.ResidualPixels, existing.ReferenceCount);
-                return new AutoCalibrationOutcome(
-                    Persisted: false,
-                    AreaKey: area,
-                    RejectReason: monotonicReason,
-                    OutcomeCategory: OutcomeVocabulary.RejectedNotMonotonic);
-            }
-        }
 
         attempt.Outcome = OutcomeVocabulary.Accepted;
         _calibrationService.SaveUserRefinement(sceneRef, stamped);
@@ -637,55 +796,6 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         return new AutoCalibrationOutcome(Persisted: false, AreaKey: area, RejectReason: reason, OutcomeCategory: outcomeCategory);
     }
 
-    /// <summary>
-    /// True when an existing stored calibration and a new candidate were both
-    /// solved at the same in-game zoom regime &#8212; i.e. the locator's
-    /// <see cref="LocateMetrics.Scale"/> values agree within
-    /// <see cref="ScaleRegimeRelTolerance"/> (currently 2%, generous over the
-    /// <c>FeatureMatchingRefiner</c>'s sub-percent stability for repeated
-    /// captures at the same zoom).
-    ///
-    /// <para>Returns <see langword="false"/> when either side is <see langword="null"/>
-    /// (legacy record stamped pre-#1005, or a candidate whose locator didn't
-    /// populate the factor) OR non-positive/non-finite. "Regime unknown" routes
-    /// to "skip the gate, accept the new fit" at the call site &#8212; the
-    /// monotonicity check is only valid when both fits saw the same icon-size
-    /// regime, and we have no basis to claim that when the data is missing or
-    /// degenerate.</para>
-    /// </summary>
-    internal static bool IsSameScaleRegime(double? existing, double? candidate)
-    {
-        if (existing is not { } e || candidate is not { } c) return false;
-        if (!double.IsFinite(e) || !double.IsFinite(c) || e <= 0 || c <= 0) return false;
-        return Math.Abs(c / e - 1.0) <= ScaleRegimeRelTolerance;
-    }
-
-    /// <summary>
-    /// #988 monotonicity gate. A new fit may REPLACE an existing stored
-    /// calibration only if it isn't meaningfully worse. Rejects when the new
-    /// residual exceeds the existing by <see cref="MonotonicResidualRatio"/>×
-    /// OR the new inlier count is below the existing by more than
-    /// <see cref="MonotonicInlierDelta"/>. Returns null on accept, or a
-    /// human-readable reason on reject.
-    ///
-    /// <para>Cold start (no <paramref name="existing"/>) is the caller's
-    /// problem — this helper is consulted only after the engine looks up a
-    /// prior calibration and finds one. The cold-start accept path is
-    /// unchanged per the issue's out-of-scope list.</para>
-    /// </summary>
-    internal static string? CheckMonotonicAccept(AreaCalibration existing, AreaCalibration candidate, int candidateInlierCount)
-    {
-        if (existing.ResidualPixels > 0
-            && candidate.ResidualPixels > existing.ResidualPixels * MonotonicResidualRatio)
-        {
-            return $"new residual {candidate.ResidualPixels:0.00}px exceeds existing {existing.ResidualPixels:0.00}px × {MonotonicResidualRatio:0.0}";
-        }
-        if (candidateInlierCount < existing.ReferenceCount - MonotonicInlierDelta)
-        {
-            return $"new inlier count {candidateInlierCount} below existing {existing.ReferenceCount} − {MonotonicInlierDelta}";
-        }
-        return null;
-    }
 }
 
 /// <summary>
@@ -694,8 +804,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 /// (<see cref="CalibrationStatusFormatter"/>), and the structured outcome
 /// category (one of the constants on <see cref="Diagnostics.OutcomeVocabulary"/>).
 ///
-/// <para><see cref="OutcomeCategory"/> is nullable for backward-compat with
-/// callers that pre-date #1005; <see cref="CalibrationStatusFormatter.ForOutcome"/>
+/// <para><see cref="OutcomeCategory"/> is nullable; <see cref="CalibrationStatusFormatter.ForOutcome"/>
 /// routes structurally when it is set and falls back to substring-matching
 /// the <see cref="RejectReason"/> when null. New engine return sites MUST
 /// populate it.</para>

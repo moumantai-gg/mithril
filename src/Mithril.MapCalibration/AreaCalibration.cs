@@ -60,26 +60,6 @@ public sealed record AreaCalibration(
     public int SchemaVersion { get; init; } = 1;
 
     /// <summary>
-    /// The texture&#8594;screenshot scale the <c>FeatureMatchingRefiner</c>
-    /// RANSAC-recovered when this calibration was solved &#8212; the
-    /// <c>LocateMetrics.Scale</c> of the locator's partial-affine fit.
-    /// Intrinsic to the capture: larger = more zoomed in (texture pixels
-    /// expanded into the captured frame), smaller = more zoomed out. The
-    /// <c>AutoCalibrationEngine</c> monotonicity gate compares this between a
-    /// new fit and the stored one and skips the quality comparison when the
-    /// two regimes differ &#8212; pixel residual and inlier count are not
-    /// commensurable across zoom regimes (see #1005).
-    ///
-    /// <para><b>Additive:</b> nullable, defaults to <see langword="null"/>.
-    /// Records written by pre-#1005 builds load with <see langword="null"/>; the
-    /// gate treats null as "regime unknown &#8594; skip the gate". No
-    /// <see cref="SchemaVersion"/> bump &#8212; per the <c>CalibrationSource</c>
-    /// precedent (additive property, downgraded builds ignore unknown JSON,
-    /// upgraded builds default missing property to null).</para>
-    /// </summary>
-    public double? LocatorScale { get; init; }
-
-    /// <summary>
     /// Absolute world&#8594;overlay-pixel projection. Maps a raw area-local
     /// world coordinate to a pixel on the 1:1 map overlay using the full solved
     /// transform (origin + scale + rotation + the <see cref="MirrorNorth"/>

@@ -6,9 +6,8 @@ namespace Mithril.MapCalibration.Capture.Tests.Fixtures;
 /// <summary>
 /// Shared test-helper factories for engine-level unit tests. Originally lived
 /// privately inside <c>AutoCalibrationEngineTests</c>; lifted to the Fixtures
-/// folder so new test classes (e.g. <c>AutoCalibrationEngineOutcomeCategoryTests</c>,
-/// <c>AutoCalibrationEngineZoomChangeRegressionTests</c>) can share the same
-/// vocabulary without copy-pasting.
+/// folder so new test classes (e.g. <c>AutoCalibrationEngineOutcomeCategoryTests</c>)
+/// can share the same vocabulary without copy-pasting.
 /// </summary>
 internal static class TestHelpers
 {

@@ -48,23 +48,6 @@ public sealed class CalibrationStatusFormatterTests
     // ── #1005: structural OutcomeCategory route ──────────────────────────────
 
     [Fact]
-    public void RejectedNotMonotonic_outcome_gets_its_own_message_not_zoom_out_instruction()
-    {
-        var outcome = new AutoCalibrationOutcome(
-            Persisted: false,
-            AreaKey: "AreaTest",
-            RejectReason: "new inlier count 4 below existing 10 − 2",
-            OutcomeCategory: OutcomeVocabulary.RejectedNotMonotonic);
-
-        var msg = CalibrationStatusFormatter.ForOutcome(outcome);
-
-        msg.Should().NotBeNull();
-        msg.Should().Contain("Calibration unchanged");
-        msg.Should().Contain("clear");
-        msg.Should().NotContain("zoom the in-game map all the way out");
-    }
-
-    [Fact]
     public void Null_OutcomeCategory_falls_back_to_substring_route_for_legacy_callers()
     {
         // A caller that hasn't been updated to populate OutcomeCategory still

@@ -8,20 +8,46 @@ using Xunit;
 namespace Mithril.MapCalibration.Capture.Tests;
 
 /// <summary>
-/// Task 25 (#914): the two hotkeys. Capture-&-calibrate respects the focus gate
-/// (fire only with PG focused, spec §10) and invokes the engine; draw-map-bbox
-/// does NOT respect the focus gate (the drag setup happens with the overlay
-/// focused). Id / gate / wiring are unit-tested; the drag interaction itself is
-/// WPF/manual-verify (Task 28).
+/// Task 25 (#914): the two hotkeys. Capture-&amp;-calibrate respects the focus gate
+/// (fire only with PG focused, spec §10) and invokes the engine via the
+/// <see cref="ManualCalibrationCoordinator"/> (mithril#1046 C4 rewire);
+/// draw-map-bbox does NOT respect the focus gate (the drag setup happens with the
+/// overlay focused). Id / gate / wiring are unit-tested; the drag interaction
+/// itself is WPF/manual-verify (Task 28).
 /// </summary>
 public sealed class HotkeyCommandTests
 {
+    // ── helpers ────────────────────────────────────────────────────────────────
+
+    private static readonly MapSceneRef TestScene =
+        new("AreaTest", null, "Map_AreaTest");
+
+    /// <summary>
+    /// Build a coordinator with no stored calibration (cold path: every hotkey
+    /// press runs a full solve) backed by the given engine spy.
+    /// </summary>
+    private static ManualCalibrationCoordinator ColdCoordinator(
+        SpyAutoCalibrationEngine engine,
+        FakeOverlayWindow overlay)
+    {
+        var svc = new FakeCalibrationService(); // no stored calibration
+        return new ManualCalibrationCoordinator(
+            runner: engine,
+            calibrationService: svc,
+            mapState: new FakeMapState { CurrentMapScene = TestScene },
+            sceneCache: new FakeSceneAssetCache(),
+            overlay: overlay,
+            timeProvider: TimeProvider.System);
+    }
+
+    // ── CaptureCalibrateCommand metadata + focus gate ──────────────────────────
+
     [Fact]
     public async Task Capture_command_respects_focus_gate_and_invokes_the_engine()
     {
         var engine = new SpyAutoCalibrationEngine();
         var overlay = new FakeOverlayWindow();
-        var cmd = new CaptureCalibrateCommand(engine, overlay);
+        var cmd = new CaptureCalibrateCommand(ColdCoordinator(engine, overlay));
 
         cmd.RespectsFocusGate.Should().BeTrue();
         cmd.Id.Should().Be("mapcalibration.capture");
@@ -39,7 +65,7 @@ public sealed class HotkeyCommandTests
         var overlay = new FakeOverlayWindow();
         overlay.SetStatusMessage("a stale prior message");
 
-        await new CaptureCalibrateCommand(engine, overlay).ExecuteAsync(default);
+        await new CaptureCalibrateCommand(ColdCoordinator(engine, overlay)).ExecuteAsync(default);
 
         overlay.StatusMessage.Should().BeNull("a persisted success clears the chip");
     }
@@ -50,12 +76,14 @@ public sealed class HotkeyCommandTests
         var engine = new SpyAutoCalibrationEngine(persisted: false, rejectReason: "no map bbox set — use the draw-map-bbox hotkey first");
         var overlay = new FakeOverlayWindow();
 
-        await new CaptureCalibrateCommand(engine, overlay).ExecuteAsync(default);
+        await new CaptureCalibrateCommand(ColdCoordinator(engine, overlay)).ExecuteAsync(default);
 
         overlay.StatusMessage.Should().NotBeNullOrWhiteSpace("a reject must surface an actionable chip");
         overlay.StatusMessage.Should().Be(CalibrationStatusFormatter.ForOutcome(
-            new AutoCalibrationOutcome(false, "AreaSerbule", "no map bbox set — use the draw-map-bbox hotkey first")));
+            new AutoCalibrationOutcome(false, "Map_AreaTest", "no map bbox set — use the draw-map-bbox hotkey first")));
     }
+
+    // ── DrawMapBboxCommand ─────────────────────────────────────────────────────
 
     [Fact]
     public void Draw_bbox_command_does_not_respect_focus_gate()
@@ -92,8 +120,11 @@ internal sealed class SpyAutoCalibrationEngine : IAutoCalibrationRunner
     public Task<AutoCalibrationOutcome> TryCalibrateCurrentAreaAsync(CancellationToken ct)
     {
         Calls++;
-        return Task.FromResult(new AutoCalibrationOutcome(_persisted, "AreaSerbule", _persisted ? null : _rejectReason));
+        return Task.FromResult(new AutoCalibrationOutcome(_persisted, "Map_AreaTest", _persisted ? null : _rejectReason));
     }
+
+    public Task<DriftCheckOutcome> CheckDriftAsync(CancellationToken ct) =>
+        throw new NotImplementedException("Implemented in Task B4.");
 }
 
 internal sealed class SpyBboxDrawController : IMapBboxDrawController

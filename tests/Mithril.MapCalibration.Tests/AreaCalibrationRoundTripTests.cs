@@ -85,49 +85,22 @@ public sealed class AreaCalibrationRoundTripTests
     }
 
     [Fact]
-    public void Roundtrip_preserves_LocatorScale()
+    public void Load_IgnoresUnknownLocatorScaleProperty_FromPre1046Records()
     {
-        var original = new AreaCalibration(
-            Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
-            ReferenceCount: 5, ResidualPixels: 0.5)
-        {
-            LocatorScale = 0.408,
-        };
+        // Pre-#1046 records carry "LocatorScale" in their JSON. System.Text.Json
+        // source-gen silently ignores unknown properties on load; the field must
+        // not re-emit on save (property no longer exists on the type).
+        const string legacyJson = """{"scale":1.0,"rotationRadians":0.0,"originX":100.0,"originY":100.0,"referenceCount":6,"residualPixels":0.7,"mirrorNorth":false,"calibrationZoom":1.0,"source":"AutoCapture","schemaVersion":1,"locatorScale":0.762}""";
 
-        var json = JsonSerializer.Serialize(original, MapCalibrationJsonContext.Default.AreaCalibration);
-        var rt = JsonSerializer.Deserialize(json, MapCalibrationJsonContext.Default.AreaCalibration);
+        var cal = JsonSerializer.Deserialize(legacyJson, MapCalibrationJsonContext.Default.AreaCalibration)!;
 
-        rt.Should().NotBeNull();
-        rt!.LocatorScale.Should().Be(0.408);
-    }
+        cal.Should().NotBeNull();
+        cal.ResidualPixels.Should().Be(0.7);
+        cal.ReferenceCount.Should().Be(6);
 
-    [Fact]
-    public void Roundtrip_omits_LocatorScale_from_JSON_when_null()
-    {
-        var original = new AreaCalibration(1.0, 0.0, 0.0, 0.0, 5, 0.5);
-
-        var json = JsonSerializer.Serialize(original, MapCalibrationJsonContext.Default.AreaCalibration);
-
-        // DefaultIgnoreCondition = WhenWritingDefault means null nullable doubles
-        // are omitted. This is the downgrade-safety guarantee.
-        json.Should().NotContain("locatorScale", "null nullable doubles should be omitted");
-
-        var rt = JsonSerializer.Deserialize(json, MapCalibrationJsonContext.Default.AreaCalibration);
-        rt!.LocatorScale.Should().BeNull();
-    }
-
-    [Fact]
-    public void Roundtrip_accepts_legacy_JSON_without_LocatorScale_field()
-    {
-        const string legacyJson = """
-            {"scale":1.0,"rotationRadians":0.0,"originX":0.0,"originY":0.0,
-             "referenceCount":5,"residualPixels":0.5}
-            """;
-
-        var rt = JsonSerializer.Deserialize(legacyJson, MapCalibrationJsonContext.Default.AreaCalibration);
-
-        rt.Should().NotBeNull();
-        rt!.LocatorScale.Should().BeNull();
+        var roundTripped = JsonSerializer.Serialize(cal, MapCalibrationJsonContext.Default.AreaCalibration);
+        roundTripped.Should().NotContain("LocatorScale");
+        roundTripped.Should().NotContain("locatorScale");
     }
 
     [Fact]

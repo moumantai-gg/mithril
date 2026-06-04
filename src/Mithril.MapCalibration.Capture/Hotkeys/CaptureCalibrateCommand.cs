@@ -1,16 +1,15 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
-using Mithril.Overlay;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Hotkeys;
 
 namespace Mithril.MapCalibration.Capture.Hotkeys;
 
 /// <summary>
-/// "Capture &amp; calibrate the current map" hotkey (spec §10). Runs one
-/// <see cref="IAutoCalibrationRunner.TryCalibrateCurrentAreaAsync"/> attempt and
-/// surfaces the outcome on the overlay status chip — this is the user-initiated
-/// path where feedback matters most: on reject the actionable reason
-/// (<see cref="CalibrationStatusFormatter"/>); on success the chip is cleared.
+/// "Capture &amp; calibrate the current map" hotkey (spec §10). Delegates to
+/// <see cref="ManualCalibrationCoordinator.HandleHotkeyAsync"/> which owns the
+/// drift-check + arming + chip routing state machine (mithril#1046 §6.4).
 /// <see cref="RespectsFocusGate"/> is <see langword="true"/>: it must fire only
 /// with Project Gorgon focused, so the capture reads the game's framebuffer (not
 /// Mithril's or another app's). No default binding (Legolas convention —
@@ -18,13 +17,13 @@ namespace Mithril.MapCalibration.Capture.Hotkeys;
 /// </summary>
 public sealed class CaptureCalibrateCommand : IHotkeyCommand
 {
-    private readonly IAutoCalibrationRunner _runner;
-    private readonly IOverlayWindow _overlay;
+    private readonly ManualCalibrationCoordinator _coordinator;
+    private readonly ILogger? _logger;
 
-    public CaptureCalibrateCommand(IAutoCalibrationRunner runner, IOverlayWindow overlay)
+    public CaptureCalibrateCommand(ManualCalibrationCoordinator coordinator, ILogger<CaptureCalibrateCommand>? logger = null)
     {
-        _runner = runner;
-        _overlay = overlay;
+        _coordinator = coordinator;
+        _logger = logger;
     }
 
     public string Id => "mapcalibration.capture";
@@ -35,10 +34,28 @@ public sealed class CaptureCalibrateCommand : IHotkeyCommand
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var outcome = await _runner.TryCalibrateCurrentAreaAsync(cancellationToken).ConfigureAwait(false);
-        // Always surface the outcome on the manual path. ForOutcome maps a
-        // persisted success to null (clear the chip) and a reject to the
-        // actionable reason string.
-        _overlay.SetStatusMessage(CalibrationStatusFormatter.ForOutcome(outcome));
+        try
+        {
+            await _coordinator.HandleHotkeyAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal shutdown flow; rethrow so the host's cancellation handler sees it.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Hotkey thread: never let an exception escape into the Win32 message
+            // pump; log + swallow. If _logger is null (defensive), fall back to a
+            // last-resort sink so the failure isn't completely invisible.
+            if (_logger is not null)
+            {
+                _logger.LogWarning(ex, "Manual calibrate hotkey threw; chip will not update.");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"[CaptureCalibrateCommand] {ex}");
+            }
+        }
     }
 }

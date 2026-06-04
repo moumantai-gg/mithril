@@ -8,11 +8,13 @@ namespace Mithril.MapCalibration.DependencyInjection;
 public static class MapCalibrationServiceCollectionExtensions
 {
     /// <summary>
-    /// Default residual threshold (px) at or below which a user refinement is
-    /// preferred over the bundled baseline. Mirrors Legolas's long-standing
-    /// <c>CalibrationGoodResidualPx</c> default; surfaced as an override on
-    /// <see cref="AddMithrilMapCalibration"/> so callers can re-use whatever
-    /// the user has configured in <c>LegolasSettings</c>.
+    /// Default residual threshold (px) below which a calibration is considered
+    /// "good". Consumed by <see cref="Mithril.MapCalibration.Detection.CalibrationConfidenceGate"/>
+    /// (the auto-capture accept gate) and by <c>PinCalibrationCoordinator.IsResidualGood</c>
+    /// (the Legolas calibration wizard's Confirm gate). Not used by
+    /// <see cref="AddMithrilMapCalibration"/> — the picker in
+    /// <c>MapCalibrationService.GetCalibration</c> uses <c>ReferenceCount</c> +
+    /// <c>ResidualPixels</c> ordering, not a fixed threshold.
     /// </summary>
     public const double DefaultGoodResidualThresholdPx = 12.0;
 
@@ -33,14 +35,13 @@ public static class MapCalibrationServiceCollectionExtensions
     public static IServiceCollection AddMithrilMapCalibration(
         this IServiceCollection services,
         string storageDirectory,
-        double goodResidualThresholdPx = DefaultGoodResidualThresholdPx,
         Func<IServiceProvider, IReadOnlySet<string>>? seedAreaKeys = null)
     {
         if (string.IsNullOrWhiteSpace(storageDirectory))
             throw new ArgumentException("storageDirectory required", nameof(storageDirectory));
 
         services.AddSingleton<IMapCalibrationService>(sp =>
-            Build(storageDirectory, goodResidualThresholdPx, sp.GetService<ILoggerFactory>()));
+            Build(storageDirectory, sp.GetService<ILoggerFactory>()));
 
         // Scene-asset cache (mithril#1041) — composite-key cache of observed /
         // seeded (ParentArea, SceneFriendlyName?) → MapAssetKey pairings. Cold-
@@ -87,7 +88,6 @@ public static class MapCalibrationServiceCollectionExtensions
     /// </summary>
     public static IMapCalibrationService Build(
         string storageDirectory,
-        double goodResidualThresholdPx = DefaultGoodResidualThresholdPx,
         ILoggerFactory? loggerFactory = null)
     {
         if (string.IsNullOrWhiteSpace(storageDirectory))
@@ -98,6 +98,6 @@ public static class MapCalibrationServiceCollectionExtensions
         Directory.CreateDirectory(storageDirectory);
         var store = new UserRefinementStore(storageDirectory, storeLogger);
         var baseline = BundledBaselineLoader.Load(serviceLogger);
-        return new MapCalibrationService(baseline, store, goodResidualThresholdPx, serviceLogger);
+        return new MapCalibrationService(baseline, store, serviceLogger);
     }
 }

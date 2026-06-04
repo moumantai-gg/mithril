@@ -64,6 +64,7 @@ Once `TelemetrySettings.EnableOtlpExport` is enabled (Settings → Diagnostics �
 | `arda_compose` | [`DomainEventBus.Publish`](../src/Arda/Arda.Dispatch/DomainEventBus.cs) (L4 and below) | One span per subscriber-callback per published event; gated on `ActivitySource.HasListeners()` |
 | `overlay_project` | [`OverlayWindowService.OnSurfaceRender`](../src/Mithril.Overlay/Internal/OverlayWindowService.cs) (#835) | One span per per-tick projection; tag `area`, `marker_count`. Scaffold-only — fires only after a migration PR shows the overlay. |
 | `calibration_synthesis_rerank` | Map auto-calibration Detection layer (synthesis-J re-rank) via [`MapCalibrationDiagnostics`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) | One span per solve carrying the synthesis-J re-rank outcome. Tag list TBD per Task 16 of the synthesis-rerank plan. Scaffold-only — producer wiring lands in Task 16. |
+| `calibration.drift_check` | [`AutoCalibrationEngine.CheckDriftAsync`](../src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs) via `MithrilActivitySources.MapCalibration` (mithril#1046) | One span per hotkey-triggered drift check on a scene with a stored calibration; `outcome` tag distinguishes early-exit vs `Ok` vs `Drift`. |
 | `meter_counter` | All `Meter`-counter producers (Arda lines/verb-unmatched/grammar-break, reference fetch_outcome, domain-event-published, overlay projection.latency_ms + frame.markers, map-calibration synthesis-J histograms + disagree counter) | Sums per (instrument, tag-set) flushed once per second |
 | `scope` | _ad-hoc_ | Fallback record kind for any `Mithril.*` Activity that doesn't match a dedicated dispatch arm. Reaches via the `scope` arm until a dedicated `overlay_*` dispatch arm lands in `PerfFileExporter`. |
 
@@ -315,6 +316,25 @@ The canonical map-calibration *attempt-outcome* string vocabulary lives in [`Out
 - `rejected-not-monotonic` — post-solve monotonicity gate refusal.
 - `map_asset_not_known` — autocal invoked before any `Downloading Map` line was observed in this session (no per-scene asset key known). Added with #1021's per-scene keying; the user-facing hint is "change zones once or restart while in this scene."
 - `error` — unexpected exception in the attempt pipeline.
+
+### `calibration.drift_check` (mithril#1046)
+
+One span per `AutoCalibrationEngine.CheckDriftAsync` invocation. Emitted on every manual hotkey press over a scene that has a stored calibration (mithril#1046 §9.5). Lives on [`MithrilActivitySources.MapCalibration`](../src/Mithril.Shared/Diagnostics/Telemetry/MithrilActivitySources.cs).
+
+| Tag | Type | Notes |
+|---|---|---|
+| `map.area` | string | `MapSceneRef.MapAssetKey` for the resolved scene (e.g. `"Map_AreaSerbule"`). |
+| `refs.matched` | int | Count of reference landmarks that paired with a typed detection within the 20 px match gate. |
+| `max_residual_px` | double | Worst predicted-vs-detected residual across the matched references. Compared against the threshold. |
+| `threshold_px` | double | `DriftToleranceFactor × stored.ResidualPixels` (currently 3.0×). |
+| `outcome` | string | One of `"NoStoredCalibration"`, `"CaptureFailed"`, `"MapNotLocated"`, `"NoIconDetections"`, `"Inconclusive"`, `"Ok"`, `"Drift"`. |
+
+Early exits (`NoStoredCalibration`, `CaptureFailed`, `MapNotLocated`, `NoIconDetections`) set the `outcome` tag and stop before the residual comparison; `refs.matched`, `max_residual_px`, and `threshold_px` are not emitted on those paths.
+
+```powershell
+# Drift-check pass rate per area
+Get-Content $Path | jq -c 'select(.Kind=="scope" and .Name=="calibration.drift_check") | {area:.Tags."map.area", outcome:.Tags.outcome}'
+```
 
 ### `meter_counter`
 

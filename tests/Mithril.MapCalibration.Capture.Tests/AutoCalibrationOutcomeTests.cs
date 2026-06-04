@@ -25,8 +25,8 @@ public sealed class AutoCalibrationOutcomeTests
             Persisted: false,
             AreaKey: "AreaTest",
             RejectReason: "x",
-            OutcomeCategory: OutcomeVocabulary.RejectedNotMonotonic);
+            OutcomeCategory: OutcomeVocabulary.RejectedSolveResidual);
 
-        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.RejectedNotMonotonic);
+        outcome.OutcomeCategory.Should().Be(OutcomeVocabulary.RejectedSolveResidual);
     }
 }

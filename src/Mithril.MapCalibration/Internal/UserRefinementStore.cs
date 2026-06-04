@@ -34,6 +34,24 @@ internal sealed class UserRefinementStore
         Load();
     }
 
+    /// <summary>
+    /// Test-only factory. Creates a store backed by a throw-away temp file and
+    /// optionally pre-seeds it with <paramref name="seed"/> entries. The backing
+    /// file is written into <see cref="Path.GetTempPath"/> and is left for
+    /// normal OS temp-dir reaping.
+    /// </summary>
+    internal static UserRefinementStore ForTests(IDictionary<string, AreaCalibration>? seed = null)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"mithril-mapcal-fortests-{Guid.NewGuid():N}");
+        var store = new UserRefinementStore(dir);
+        if (seed is not null)
+        {
+            foreach (var kvp in seed)
+                store.Save(kvp.Key, kvp.Value);
+        }
+        return store;
+    }
+
     public IReadOnlyDictionary<string, AreaCalibration> All
     {
         get
@@ -52,7 +70,12 @@ internal sealed class UserRefinementStore
 
     public void Save(string areaKey, AreaCalibration calibration)
     {
-        var stamped = calibration with { Source = CalibrationSource.UserRefinement };
+        // Preserve UserRefinement and AutoCapture verbatim; stamp everything else as
+        // UserRefinement (guards against a caller passing a BundledBaseline or
+        // CommunitySync record into the user store by mistake).
+        var stamped = calibration.Source is CalibrationSource.UserRefinement or CalibrationSource.AutoCapture
+            ? calibration
+            : calibration with { Source = CalibrationSource.UserRefinement };
         lock (_gate)
         {
             // Snapshot the prior value before mutating; if Persist throws
@@ -157,12 +180,15 @@ internal sealed class UserRefinementStore
                         {
                             key = "Map_" + key;
                         }
-                        // Stamp Source on every surviving entry; lifted records from
-                        // older shapes may not carry it explicitly and the default on
-                        // the record is UserRefinement, which matches this store's
-                        // contents — but be defensive in case a future shape change
-                        // reorders defaults.
-                        loaded[key] = cal with { Source = CalibrationSource.UserRefinement };
+                        // Stamp Source on surviving entries that don't carry an explicit
+                        // user-store source. Older shapes may not carry it and the record
+                        // default is UserRefinement, which matches; AutoCapture is
+                        // preserved verbatim (it IS a valid user-store source). Anything
+                        // else (BundledBaseline, CommunitySync) that somehow ended up
+                        // persisted here is rewritten to UserRefinement defensively.
+                        loaded[key] = cal.Source is CalibrationSource.UserRefinement or CalibrationSource.AutoCapture
+                            ? cal
+                            : cal with { Source = CalibrationSource.UserRefinement };
                     }
                     catch (JsonException ex)
                     {

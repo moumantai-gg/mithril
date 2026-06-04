@@ -211,6 +211,10 @@ internal sealed class SpySolver : IMapCalibrationSolver
         SolveCalls++;
         return _result;
     }
+
+    /// <summary>Not used by the calibration path; throws to guard accidental invocation.</summary>
+    public IReadOnlyList<TypedDetection> DetectOnly(DetectionRequest request) =>
+        throw new InvalidOperationException("SpySolver.DetectOnly must not be called from the calibration path.");
 }
 
 /// <summary>
@@ -243,10 +247,20 @@ internal sealed class ThrowingAssetExtractor : IAssetExtractor
 internal sealed class FakeCalibrationService : IMapCalibrationService
 {
     private readonly Dictionary<string, AreaCalibration> _prior = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<AreaCalibration>> _allSources = new(StringComparer.Ordinal);
     public Dictionary<string, AreaCalibration> Saved { get; } = new(StringComparer.Ordinal);
     public List<MapSceneRef> SavedScenes { get; } = new();
 
     public void Seed(string mapAssetKey, AreaCalibration cal) => _prior[mapAssetKey] = cal;
+
+    /// <summary>
+    /// Seeds the list returned by <see cref="GetAllSources"/> independently from
+    /// <see cref="GetCalibration"/>. Use this when the picker and the store should
+    /// return different shapes (e.g. the picker prefers Baseline but the store also
+    /// holds an AutoCapture record).
+    /// </summary>
+    public void SeedAllSources(string mapAssetKey, IReadOnlyList<AreaCalibration> sources)
+        => _allSources[mapAssetKey] = sources;
 
     public bool IsCalibrated(MapSceneRef scene) =>
         Saved.ContainsKey(scene.MapAssetKey) || _prior.ContainsKey(scene.MapAssetKey);
@@ -257,7 +271,10 @@ internal sealed class FakeCalibrationService : IMapCalibrationService
             ? s
             : (_prior.TryGetValue(scene.MapAssetKey, out var p) ? p : null);
     public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations => Saved;
-    public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
+    public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) =>
+        _allSources.TryGetValue(scene.MapAssetKey, out var sources)
+            ? sources
+            : Array.Empty<AreaCalibration>();
     public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration)
     {
         Saved[scene.MapAssetKey] = calibration;
