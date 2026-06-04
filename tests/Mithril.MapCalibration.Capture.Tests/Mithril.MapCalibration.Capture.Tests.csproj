@@ -17,5 +17,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="Fixtures/CalibrationBundles/**/*.*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- mithril#1061: the HogansKeep-223119 corpus regression loads its capture +
+         base texture from %LocalAppData%/Mithril/ at test time (PG art, not
+         shippable). Only the README ships in the repo; no CopyToOutputDirectory
+         rule is needed. See Fixtures/HogansKeep223119/README.md. -->
   </ItemGroup>
 </Project>

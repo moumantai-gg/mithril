@@ -40,6 +40,12 @@ public static class CalibrationStatusFormatter
         // Map_<X> asset name is unknown. Tell the user how to recover.
         OutcomeVocabulary.MapAssetNotYetKnown =>
             "Map asset not yet known — change zones once or restart while in this scene.",
+        // mithril#1061: the Sobel-padded-pyramid fallback found a fit but the
+        // NCC peak was below the floor — input pathology rather than framing
+        // problem. Different actionable advice than the ORB primary's
+        // RejectedMapNotLocated ("redraw the bbox" — which won't help here).
+        OutcomeVocabulary.RejectedMapLowConfidence =>
+            "Couldn't locate the map confidently — try a different zoom or explore more of the area first.",
         // Other categories deliberately not routed here yet — they fall through
         // to the substring path so today's wording is preserved by default.
         _ => null,

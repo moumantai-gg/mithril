@@ -30,7 +30,7 @@ namespace Mithril.MapCalibration.Detection;
 /// engine sees the same shape as "no fit found", surfaces the
 /// rejected-map-not-located outcome.</para>
 /// </summary>
-public sealed class FeatureMatchingRefiner : IMapRegionRefiner
+public sealed class FeatureMatchingRefiner : IMapRegionRefiner, IAreaContextualRefiner
 {
     private readonly MapCalibrationLocateOptions _options;
     private readonly ILogger? _logger;
@@ -223,7 +223,9 @@ public sealed class FeatureMatchingRefiner : IMapRegionRefiner
                 RotationDegrees: rotationDegrees,
                 Mirror: false,                            // AffinePartial2D never flips
                 Tx: tx, Ty: ty,
-                ResidualPixels: residualPixels);
+                ResidualPixels: residualPixels,
+                Provenance: LocateProvenance.OrbRansac,
+                Confidence: null);
 
             // Gate
             string? rejectReason =

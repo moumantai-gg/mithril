@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration;
 using Mithril.MapCalibration.Detection;
 
 namespace Mithril.MapCalibration.Capture.Diagnostics;
@@ -27,12 +28,28 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
     private readonly string _root;
     private readonly ILogger? _logger;
     private readonly IAttemptBundleVisualizer _visualizer;
+    // mithril#1061: the sink reads FallbackPadPx live so the bundle's LocatorBest.padPx
+    // reflects the actual pad the refiner used, not the option default. Optional so test
+    // graphs that don't supply MapCalibrationLocateOptions still construct the sink (the
+    // pad value falls back to the static default in that path — same behaviour as before
+    // the wiring landed).
+    private readonly MapCalibrationLocateOptions? _options;
 
     public FilesystemCalibrationAttemptBundleSink(string root, ILogger? logger, IAttemptBundleVisualizer visualizer)
+        : this(root, logger, visualizer, options: null)
+    {
+    }
+
+    public FilesystemCalibrationAttemptBundleSink(
+        string root,
+        ILogger? logger,
+        IAttemptBundleVisualizer visualizer,
+        MapCalibrationLocateOptions? options)
     {
         _root = root;
         _logger = logger;
         _visualizer = visualizer;
+        _options = options;
     }
 
     public void Write(CalibrationAttemptContext context)
@@ -244,12 +261,25 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
     // present on the context. The production FeatureMatchingRefiner populates both
     // on accept; legacy/test contexts may omit Metrics, in which case LocatorBest
     // stays null in the bundle.
-    private static LocatorBestJson? ToLocatorBestJson(CalibrationAttemptContext ctx)
+    // Non-static so the v2 PadPx field can read from the injected
+    // MapCalibrationLocateOptions singleton (mithril#1061). Pre-PR it was static
+    // because every input came from ctx; the option-reading change requires an
+    // instance member.
+    private LocatorBestJson? ToLocatorBestJson(CalibrationAttemptContext ctx)
     {
         if (ctx.LocatorRawFit is not { } rect || ctx.LocatorMetrics is not { } metrics)
             return null;
+        // mithril#1061: schema v2 surfaces which algorithm produced this fit
+        // (orb-lowe primary vs sobel-padded-pyramid fallback) plus the fallback-only
+        // diagnostic fields (NCC peak + pad). PadPx reads MapCalibrationLocateOptions.
+        // FallbackPadPx so a user who customises the pad sees that value in the
+        // bundle — not the option-default literal. Test graphs that don't inject the
+        // options resolve to the static default (100), preserving pre-injection
+        // behaviour.
+        var isFallback = metrics.Provenance == LocateProvenance.SobelPaddedPyramid;
+        var padPx = isFallback ? (_options?.FallbackPadPx ?? 100) : (int?)null;
         return new LocatorBestJson(
-            SchemaVersion: 1,
+            SchemaVersion: 2,
             OriginX: rect.OriginX,
             OriginY: rect.OriginY,
             Width: rect.Width,
@@ -265,7 +295,10 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             Ty: metrics.Ty,
             ResidualPixels: metrics.ResidualPixels,
             GateAccepted: ctx.Outcome == OutcomeVocabulary.Accepted,
-            GateRejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo);
+            GateRejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo,
+            Algorithm: isFallback ? "sobel-padded-pyramid" : "orb-lowe",
+            FallbackNcc: isFallback ? metrics.Confidence : null,
+            PadPx: padPx);
     }
 
     private static string WritePng(string dir, string name, BitmapSource src)

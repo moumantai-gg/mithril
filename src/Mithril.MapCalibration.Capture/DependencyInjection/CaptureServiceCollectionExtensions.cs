@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration.Detection.DependencyInjection;
 using Mithril.MapCalibration.Internal;
+using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 
@@ -72,10 +73,25 @@ public static partial class CaptureServiceCollectionExtensions
     public static IServiceCollection AddMithrilMapCalibrationCapture(
         this IServiceCollection services,
         string assetCacheDir,
+        string? settingsDir = null,
         string? pgVersion = null)
     {
         if (string.IsNullOrWhiteSpace(assetCacheDir))
             throw new System.ArgumentException("assetCacheDir required", nameof(assetCacheDir));
+
+        // mithril#1061: persisted locate-stage knobs. Registered BEFORE the
+        // Detection tier so Detection's TryAddSingleton<MapCalibrationLocateOptions>
+        // becomes a no-op fallback and the JSON-backed + migrate-dispatched +
+        // SettingsAutoSaver-wired singleton wins. settingsDir is optional so unit
+        // tests that don't care about persistence (most engine-fakes graphs) can
+        // still wire Capture without a real LocalAppData path — when null, the
+        // Detection fallback registers a plain-defaults singleton.
+        if (!string.IsNullOrWhiteSpace(settingsDir))
+        {
+            services.AddMithrilVersionedSettings<MapCalibrationLocateOptions>(
+                Path.Combine(settingsDir, "map-calibration-locate.json"),
+                MapCalibrationLocateOptionsJsonContext.Default.MapCalibrationLocateOptions);
+        }
 
         // Detection tier (Phase-1 detect→solve engine + #931 cache providers +
         // FeatureMatchingRefiner + ORB descriptor cache) — spec: detection project split.
@@ -119,7 +135,11 @@ public static partial class CaptureServiceCollectionExtensions
             new Diagnostics.FilesystemCalibrationAttemptBundleSink(
                 root: Diagnostics.CalibrationBundleDirectories.DefaultRoot,
                 logger: sp.GetService<ILoggerFactory>()?.CreateLogger("MapCalibration.Bundle"),
-                visualizer: sp.GetRequiredService<Diagnostics.IAttemptBundleVisualizer>()));
+                visualizer: sp.GetRequiredService<Diagnostics.IAttemptBundleVisualizer>(),
+                // mithril#1061: optional so unit test graphs without options still resolve;
+                // when present, the sink reads FallbackPadPx live so the bundle reflects
+                // the user's customised pad instead of the option default literal.
+                options: sp.GetService<MapCalibrationLocateOptions>()));
         services.AddSingleton(sp => new Diagnostics.CalibrationAttemptBundleSinkSelector(
             sp.GetRequiredService<CaptureDiagnosticsOptions>(),
             sp.GetRequiredService<Diagnostics.FilesystemCalibrationAttemptBundleSink>(),

@@ -69,6 +69,60 @@ public sealed class CalibrationBundleJsonTests
     }
 
     [Fact]
+    public void LocatorBestJson_round_trips_v2_fallback_fields()
+    {
+        // mithril#1061: schema v2 carries Algorithm + FallbackNcc + PadPx for
+        // attempts produced by the Sobel-padded-pyramid fallback refiner.
+        var sut = new LocatorBestJson(
+            SchemaVersion: 2,
+            OriginX: 127, OriginY: 35,
+            Width: 591, Height: 740,
+            TextureWidth: 819, TextureHeight: 1024,
+            InlierCount: 0, CandidateCount: 0, InlierRatio: 0,
+            Scale: 0.7227, RotationDegrees: 0, Tx: 127.5, Ty: 35.8, ResidualPixels: 0,
+            GateAccepted: true, GateRejectReason: null,
+            Algorithm: "sobel-padded-pyramid",
+            FallbackNcc: 0.680,
+            PadPx: 100);
+
+        var json = JsonSerializer.Serialize(sut, CalibrationBundleJsonContext.Default.LocatorBestJson);
+        var round = JsonSerializer.Deserialize(json, CalibrationBundleJsonContext.Default.LocatorBestJson);
+
+        round.Should().NotBeNull();
+        round!.Algorithm.Should().Be("sobel-padded-pyramid");
+        round.FallbackNcc.Should().Be(0.680);
+        round.PadPx.Should().Be(100);
+        round.SchemaVersion.Should().Be(2);
+    }
+
+    [Fact]
+    public void LocatorBestJson_reads_v1_payload_with_default_orb_lowe_algorithm()
+    {
+        // v1 payload — none of the new fields present. STJ source-gen must use
+        // the record's optional-parameter defaults when the JSON keys are missing.
+        var v1Payload = """
+        {
+          "schemaVersion": 1,
+          "originX": 0, "originY": 0,
+          "width": 100, "height": 100,
+          "textureWidth": 100, "textureHeight": 100,
+          "inlierCount": 50, "candidateCount": 60, "inlierRatio": 0.83,
+          "scale": 1.0, "rotationDegrees": 0.0,
+          "tx": 0, "ty": 0, "residualPixels": 1.5,
+          "gateAccepted": true, "gateRejectReason": null
+        }
+        """;
+
+        var round = JsonSerializer.Deserialize(v1Payload, CalibrationBundleJsonContext.Default.LocatorBestJson);
+
+        round.Should().NotBeNull();
+        round!.Algorithm.Should().Be("orb-lowe");
+        round.FallbackNcc.Should().BeNull();
+        round.PadPx.Should().BeNull();
+        round.SchemaVersion.Should().Be(1);
+    }
+
+    [Fact]
     public void DetectionsJson_round_trips()
     {
         var sut = new DetectionsJson(1, 16,

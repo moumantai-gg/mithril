@@ -26,8 +26,18 @@ public sealed class OutcomeVocabularyTests
     [InlineData("rejected-no-base-texture", true)]
     [InlineData("accepted", true)]
     [InlineData("error", true)]
+    [InlineData("rejected-map-low-confidence", true)]
     public void ShouldWriteBundle_skips_pre_capture_outcomes(string outcome, bool expected)
     {
         OutcomeVocabulary.ShouldWriteBundle(outcome).Should().Be(expected);
+    }
+
+    [Fact]
+    public void RejectedMapLowConfidence_constant_is_stable()
+    {
+        // mithril#1061: callers consume the literal string as bundle-subdir suffix
+        // + daily-JSON category; locking it here keeps the diagnostic vocabulary
+        // stable across refactors.
+        OutcomeVocabulary.RejectedMapLowConfidence.Should().Be("rejected-map-low-confidence");
     }
 }

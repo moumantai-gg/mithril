@@ -17,6 +17,13 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <!-- mithril#1061: MapCalibrationLocateOptions implements IVersionedState<T>
+         so the locate-stage knobs persist to map-calibration-locate.json with
+         schema-versioned Migrate dispatch. Mithril.Persistence has zero
+         dependencies; pulling it in does not break the "Detection does NOT
+         reference Mithril.Shared" layering rule (Capture does the AddMithrilVersionedSettings
+         wiring because that extension lives in Mithril.Shared). -->
+    <ProjectReference Include="..\Mithril.Persistence\Mithril.Persistence.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Mithril.MapCalibration.Capture.Tests" />

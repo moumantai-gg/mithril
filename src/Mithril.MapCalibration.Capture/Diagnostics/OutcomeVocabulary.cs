@@ -16,6 +16,16 @@ public static class OutcomeVocabulary
     public const string RejectedCaptureFailed = "rejected-capture-failed";
     public const string RejectedNoBaseTexture = "rejected-no-base-texture";
     public const string RejectedMapNotLocated = "rejected-map-not-located";
+
+    /// <summary>
+    /// mithril#1061: the Sobel-padded-pyramid fallback produced a fit but the
+    /// refined NCC fell below <c>MapCalibrationLocateOptions.FallbackNccFloor</c>.
+    /// Distinct from <see cref="RejectedMapNotLocated"/> (which signals "no fit
+    /// at all" → framing problem); this category surfaces input-pathology rejects
+    /// (try a different zoom / explore more) and is bundle-worthy so the on-disk
+    /// LocatorBest still carries the low-confidence transform for triage.
+    /// </summary>
+    public const string RejectedMapLowConfidence = "rejected-map-low-confidence";
     public const string RejectedClampDegenerate = "rejected-clamp-degenerate";
     public const string RejectedSolve = "rejected-solve";
     public const string RejectedSolveNoDetections = "rejected-solve-no-detections";
