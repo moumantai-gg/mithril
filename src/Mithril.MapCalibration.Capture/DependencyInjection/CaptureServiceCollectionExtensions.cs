@@ -145,11 +145,11 @@ public static partial class CaptureServiceCollectionExtensions
             sp.GetRequiredService<Diagnostics.FilesystemCalibrationAttemptBundleSink>(),
             Diagnostics.NullCalibrationAttemptBundleSink.Instance));
 
-        // Overlay blanking + the capture orchestration over it.
-        services.AddSingleton<IOverlayBlanker, OverlayBlanker>();
+        // Capture orchestration. Overlay windows are excluded from screen capture
+        // at their own construction (Mithril.Shared.Wpf.WindowCaptureExclusion,
+        // #965), so CaptureService has no overlay dependency.
         services.AddSingleton<ICaptureService>(sp => new CaptureService(
             sp.GetRequiredService<IScreenCapture>(),
-            sp.GetRequiredService<IOverlayBlanker>(),
             sp.GetRequiredService<CaptureValidation>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Service")));
 
