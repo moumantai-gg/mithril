@@ -73,6 +73,7 @@ internal static class SparseLocateSpike
             RunOne("ORB+Lowe",            () => FeatureMatch(cap, tex, FeatureKind.Orb),    b, outDir);
             // Round 1 also-rans — kept for tx/ty/scale comparison vs the new methods.
             RunOne("matchTemplate (edge)",() => TemplateMatchScaleLadder(cap, tex, edgesOnly: true),  b, outDir);
+            RunOne("matchTemplate (edge,pyr)", () => TemplateMatchPyramidEdge(cap, tex),              b, outDir);
             RunOne("Chamfer (dist-NCC, broken)", () => ChamferMatchScaleLadder(cap, tex),   b, outDir);
             // Round 2 new methods: subset-aware matchers that score correspondences
             // without penalizing un-revealed pixels.
@@ -402,6 +403,114 @@ internal static class SparseLocateSpike
         var mask = RenderTransparentEdgeMask(cap, tex, refinedLoc.X, refinedLoc.Y, refinedScale);
         return new SpikeResult(refinedLoc.X, refinedLoc.Y, refinedScale, refinedScore,
             $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  coarse={coarse.Scale:0.00}  {refineNote}",
+            Overlay: overlay, TransparentEdges: mask);
+    }
+
+    // ---- matchTemplate(edge) with 2-level pyramid search ----
+    //
+    // Stage 1: coarse ladder at half resolution (4x cheaper per matchTemplate
+    // call). Stage 2: narrow ladder at full resolution centered on the coarse
+    // winner. Stage 3: parabolic peak refinement. Stage 4: re-match at refined
+    // scale for refined translation. Aims for sub-100ms per locate attempt
+    // on production-sized inputs without losing the parabolic-precision
+    // recovery.
+
+    private static SpikeResult TemplateMatchPyramidEdge(Mat cap, Mat tex)
+    {
+        using var capE = new Mat(); Cv2.Canny(cap, capE, 50, 150);
+        using var texE = new Mat(); Cv2.Canny(tex, texE, 50, 150);
+        using var capHalf = new Mat(); Cv2.PyrDown(capE, capHalf);
+        using var texHalf = new Mat(); Cv2.PyrDown(texE, texHalf);
+
+        // Stage 1: coarse ladder at half resolution.
+        var ladderCoarse = new List<(double S, double Score)>(64);
+        for (double s = ScaleMin; s <= ScaleMax + 1e-6; s += ScaleStep)
+        {
+            int sw = (int)Math.Round(texHalf.Width * s);
+            int sh = (int)Math.Round(texHalf.Height * s);
+            if (sw < 10 || sh < 10 || sw > capHalf.Width || sh > capHalf.Height) continue;
+            using var scaled = new Mat();
+            Cv2.Resize(texHalf, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+            using var result = new Mat();
+            Cv2.MatchTemplate(capHalf, scaled, result, TemplateMatchModes.CCoeffNormed);
+            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out _);
+            ladderCoarse.Add((s, maxVal));
+        }
+
+        if (ladderCoarse.Count == 0)
+            return new SpikeResult(null, null, null, 0, "no valid scale at half res");
+
+        int coarseIdx = 0;
+        for (int i = 1; i < ladderCoarse.Count; i++)
+            if (ladderCoarse[i].Score > ladderCoarse[coarseIdx].Score) coarseIdx = i;
+        double coarseScale = ladderCoarse[coarseIdx].S;
+
+        // Stage 2: fine ladder at full resolution centered on coarseScale ±2 steps.
+        var ladderFine = new List<(double S, double Score, Point Loc)>(8);
+        double fineMin = coarseScale - 2 * ScaleStep;
+        double fineMax = coarseScale + 2 * ScaleStep;
+        for (double s = fineMin; s <= fineMax + 1e-6; s += ScaleStep)
+        {
+            if (s <= 0) continue;
+            int sw = (int)Math.Round(texE.Width * s);
+            int sh = (int)Math.Round(texE.Height * s);
+            if (sw < 20 || sh < 20 || sw > capE.Width || sh > capE.Height) continue;
+            using var scaled = new Mat();
+            Cv2.Resize(texE, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+            using var result = new Mat();
+            Cv2.MatchTemplate(capE, scaled, result, TemplateMatchModes.CCoeffNormed);
+            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+            ladderFine.Add((s, maxVal, maxLoc));
+        }
+
+        if (ladderFine.Count == 0)
+            return new SpikeResult(null, null, null, 0, "no valid scale at full res near coarse winner");
+
+        int fineIdx = 0;
+        for (int i = 1; i < ladderFine.Count; i++)
+            if (ladderFine[i].Score > ladderFine[fineIdx].Score) fineIdx = i;
+        var fineWinner = ladderFine[fineIdx];
+
+        // Stage 3 + 4: parabolic refinement + re-match at refined scale.
+        double refinedScale = fineWinner.S;
+        Point refinedLoc = fineWinner.Loc;
+        double refinedScore = fineWinner.Score;
+        string refineNote = "discrete";
+
+        if (fineIdx > 0 && fineIdx < ladderFine.Count - 1)
+        {
+            double y1 = ladderFine[fineIdx - 1].Score;
+            double y2 = ladderFine[fineIdx].Score;
+            double y3 = ladderFine[fineIdx + 1].Score;
+            double denom = y1 - 2 * y2 + y3;
+            if (denom < -1e-9)
+            {
+                double subStep = 0.5 * (y1 - y3) / denom;
+                if (Math.Abs(subStep) <= 1.0)
+                {
+                    refinedScale = fineWinner.S + ScaleStep * subStep;
+                    int sw = (int)Math.Round(texE.Width * refinedScale);
+                    int sh = (int)Math.Round(texE.Height * refinedScale);
+                    if (sw >= 20 && sh >= 20 && sw <= capE.Width && sh <= capE.Height)
+                    {
+                        using var scaled = new Mat();
+                        Cv2.Resize(texE, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+                        using var result = new Mat();
+                        Cv2.MatchTemplate(capE, scaled, result, TemplateMatchModes.CCoeffNormed);
+                        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                        refinedLoc = maxLoc;
+                        refinedScore = maxVal;
+                        refineNote = $"parabolic ds={subStep:+0.00;-0.00;0.00}";
+                    }
+                }
+            }
+        }
+
+        var overlay = RenderFitOverlay(cap, tex, refinedLoc.X, refinedLoc.Y, refinedScale,
+            $"matchTemplate(edge,pyr)  ({refinedLoc.X},{refinedLoc.Y},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
+        var mask = RenderTransparentEdgeMask(cap, tex, refinedLoc.X, refinedLoc.Y, refinedScale);
+        return new SpikeResult(refinedLoc.X, refinedLoc.Y, refinedScale, refinedScore,
+            $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  coarse(half)={coarseScale:0.00}  {refineNote}",
             Overlay: overlay, TransparentEdges: mask);
     }
 
