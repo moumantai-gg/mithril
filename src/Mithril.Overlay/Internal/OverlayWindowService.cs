@@ -264,6 +264,8 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         if (_window is not null) return;
         using var act = MithrilActivitySources.Overlay.StartActivity("window.create");
         _window = new OverlayWindow();
+        Mithril.Shared.Wpf.WindowCaptureExclusion.ExcludeFromCapture( // #965
+            _window, _loggerFactory?.CreateLogger("Mithril.Overlay.Capture"));
         _window.DataContext = this;
         _window.OverlaySurface.Render += OnSurfaceRender;
         _window.OverlaySurface.Logger = _loggerFactory?.CreateLogger("Mithril.Overlay.Surface");
