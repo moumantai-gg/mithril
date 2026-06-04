@@ -22,6 +22,7 @@ public partial class CalibrationOverlayView : Window
     public CalibrationOverlayView()
     {
         InitializeComponent();
+        Mithril.Shared.Wpf.WindowCaptureExclusion.ExcludeFromCapture(this); // #965
     }
 
     public CalibrationOverlayView(LegolasSettings settings, SettingsAutoSaver<LegolasSettings> saver) : this()
