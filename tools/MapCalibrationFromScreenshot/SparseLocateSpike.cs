@@ -26,7 +26,7 @@ internal static class SparseLocateSpike
     private const double LoweRatio = 0.75;
     private const double ScaleMin = 0.30;
     private const double ScaleMax = 1.20;
-    private const double ScaleStep = 0.05;
+    private const double ScaleStep = 0.01;
 
     public static int Run()
     {
@@ -169,7 +169,7 @@ internal static class SparseLocateSpike
 
     private sealed record SpikeResult(
         double? Tx, double? Ty, double? Scale, double Confidence, string Note,
-        Mat? Overlay = null);
+        Mat? Overlay = null, Mat? TransparentEdges = null);
 
     private static void RunOne(string name, Func<SpikeResult> body, Bundle b, string outDir)
     {
@@ -194,6 +194,13 @@ internal static class SparseLocateSpike
             var alg = name.Replace(' ', '_').Replace('(', '_').Replace(')', '_').Replace('+', '_');
             Cv2.ImWrite(Path.Combine(outDir, $"{safe}__{alg}.png"), ov);
             ov.Dispose();
+        }
+        if (r.TransparentEdges is { } edges)
+        {
+            var safe = b.Name.Replace(':', '-').Replace(' ', '_').Replace('(', '_').Replace(')', '_');
+            var alg = name.Replace(' ', '_').Replace('(', '_').Replace(')', '_').Replace('+', '_');
+            Cv2.ImWrite(Path.Combine(outDir, $"{safe}__{alg}__edges.png"), edges);
+            edges.Dispose();
         }
     }
 
@@ -337,8 +344,12 @@ internal static class SparseLocateSpike
 
         if (bestScale == 0)
             return new SpikeResult(null, null, null, 0, "no valid scale (texture too large at all rungs)");
+        var overlay = RenderFitOverlay(cap, tex, bestLoc.X, bestLoc.Y, bestScale,
+            $"matchTemplate({(edgesOnly ? "edge" : "raw")})  ({bestLoc.X},{bestLoc.Y},{bestScale:0.00})  NCC={bestScore:0.000}");
+        var mask = RenderTransparentEdgeMask(cap, tex, bestLoc.X, bestLoc.Y, bestScale);
         return new SpikeResult(bestLoc.X, bestLoc.Y, bestScale, bestScore,
-            $"best NCC peak {bestScore:0.000} @ scale {bestScale:0.00}");
+            $"best NCC peak {bestScore:0.000} @ scale {bestScale:0.00}",
+            Overlay: overlay, TransparentEdges: mask);
     }
 
     // ---- chamfer matching: Canny -> distanceTransform on both -> NCC scale ladder ----
@@ -521,8 +532,82 @@ internal static class SparseLocateSpike
 
         // Confidence: invert the cost (lower is better). Saturate so it's in [0, 1].
         double confidence = 1.0 / (1.0 + bestCost / 5.0);
+        var overlay = RenderFitOverlay(cap, tex, bestTx, bestTy, bestScale,
+            $"Borgefors  ({bestTx:0},{bestTy:0},{bestScale:0.00})  dist={bestCost:0.0}px  inB={bestInBounds}/{texEdgePts.Count}");
+        var mask = RenderTransparentEdgeMask(cap, tex, bestTx, bestTy, bestScale);
         return new SpikeResult(bestTx, bestTy, bestScale, confidence,
-            $"mean chamfer dist={bestCost:0.00}px  inBounds={bestInBounds}/{texEdgePts.Count}");
+            $"mean chamfer dist={bestCost:0.00}px  inBounds={bestInBounds}/{texEdgePts.Count}",
+            Overlay: overlay, TransparentEdges: mask);
+    }
+
+    // Paint the texture's Canny edges in red onto the grayscale capture at the
+    // recovered (tx, ty, scale), plus a cyan bounding box and a label header.
+    // Eyeball-check helper: a "real" fit overlays texture edges on top of
+    // screenshot edges; a basin-of-attraction false-positive overlays them in
+    // gray fog. PNG output via the harness's RunOne.
+    private static Mat RenderFitOverlay(Mat cap, Mat tex, double tx, double ty, double scale, string label)
+    {
+        var overlay = new Mat();
+        Cv2.CvtColor(cap, overlay, ColorConversionCodes.GRAY2BGR);
+
+        int sw = (int)Math.Round(tex.Width * scale);
+        int sh = (int)Math.Round(tex.Height * scale);
+        if (sw < 4 || sh < 4) return overlay;
+        using var texS = new Mat();
+        Cv2.Resize(tex, texS, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+        using var texE = new Mat();
+        Cv2.Canny(texS, texE, 50, 150);
+
+        int x0 = (int)Math.Round(tx);
+        int y0 = (int)Math.Round(ty);
+        var texEIdx = texE.GetGenericIndexer<byte>();
+        var overlayIdx = overlay.GetGenericIndexer<Vec3b>();
+        for (int y = 0; y < texE.Rows; y++)
+        {
+            for (int x = 0; x < texE.Cols; x++)
+            {
+                if (texEIdx[y, x] == 0) continue;
+                int cx = x0 + x;
+                int cy = y0 + y;
+                if (cx < 0 || cy < 0 || cx >= overlay.Cols || cy >= overlay.Rows) continue;
+                overlayIdx[cy, cx] = new Vec3b(0, 0, 255); // red
+            }
+        }
+
+        Cv2.Rectangle(overlay, new Rect(x0, y0, sw, sh), new Scalar(255, 255, 0), 2);
+        Cv2.PutText(overlay, label, new Point(8, 24), HersheyFonts.HersheySimplex, 0.55, new Scalar(0, 0, 0), 4);
+        Cv2.PutText(overlay, label, new Point(8, 24), HersheyFonts.HersheySimplex, 0.55, new Scalar(0, 255, 255), 1);
+        return overlay;
+    }
+
+    // Transparent-background standalone edge sprite: cropped tight to the
+    // texture's scaled bbox (sw × sh), red pixels where the texture has Canny
+    // edges, fully transparent elsewhere. Position-free — drop it as a layer
+    // in GIMP and slide freely to find the true offset. The recovered
+    // (tx, ty) is in the filename so you can read the delta from the editor's
+    // layer offset back to the algorithm's hypothesis.
+    private static Mat RenderTransparentEdgeMask(Mat _cap, Mat tex, double _tx, double _ty, double scale)
+    {
+        int sw = (int)Math.Round(tex.Width * scale);
+        int sh = (int)Math.Round(tex.Height * scale);
+        if (sw < 4 || sh < 4) return new Mat(1, 1, MatType.CV_8UC4, Scalar.All(0));
+        using var texS = new Mat();
+        Cv2.Resize(tex, texS, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+        using var texE = new Mat();
+        Cv2.Canny(texS, texE, 50, 150);
+
+        var mask = new Mat(sh, sw, MatType.CV_8UC4, Scalar.All(0));
+        var texEIdx = texE.GetGenericIndexer<byte>();
+        var maskIdx = mask.GetGenericIndexer<Vec4b>();
+        for (int y = 0; y < sh; y++)
+        {
+            for (int x = 0; x < sw; x++)
+            {
+                if (texEIdx[y, x] == 0) continue;
+                maskIdx[y, x] = new Vec4b(0, 0, 255, 255); // red, opaque
+            }
+        }
+        return mask;
     }
 
     // ---- Generalized Hough Transform on edge points (axis-aligned isotropic similarity) ----
