@@ -83,7 +83,9 @@ public sealed class ManualCalibrationCoordinator
 
         if (armed)
         {
-            _logger?.LogInformation("Manual calibrate hotkey: armed re-press confirmed; running full solve.");
+            _logger?.LogInformation(
+                "Manual calibrate hotkey: armed re-press confirmed for {MapAssetKey}; running full solve.",
+                scene?.MapAssetKey ?? "<none>");
             var outcome = await _runner.TryCalibrateCurrentAreaAsync(ct).ConfigureAwait(false);
             _overlay.SetStatusMessage(outcome.Persisted
                 ? CalibrationStatusFormatter.RecalibratedSuccessfully()
@@ -131,6 +133,12 @@ public sealed class ManualCalibrationCoordinator
                 // Race: stored existed at our pre-check but engine saw null. Fall through to solve.
                 var fallback = await _runner.TryCalibrateCurrentAreaAsync(ct).ConfigureAwait(false);
                 _overlay.SetStatusMessage(CalibrationStatusFormatter.ForOutcome(fallback));
+                break;
+            default:
+                _logger?.LogError(
+                    "Unhandled DriftCheckOutcome variant: {Type}. Coordinator setting generic chip; this is a bug.",
+                    drift.GetType().Name);
+                _overlay.SetStatusMessage("Drift check: internal error (see logs).");
                 break;
         }
     }

@@ -12,9 +12,8 @@ using Xunit;
 namespace Mithril.MapCalibration.Capture.Tests;
 
 /// <summary>
-/// Failing tests for <see cref="ManualCalibrationCoordinator"/> state machine
-/// (mithril#1046 §6.4). ManualCalibrationCoordinator does not exist yet —
-/// Task C3 creates it. These tests define the expected contract.
+/// Covers the <see cref="ManualCalibrationCoordinator"/> state machine
+/// (mithril#1046 §6.4).
 /// </summary>
 public sealed class ManualCalibrationCoordinatorTests
 {
