@@ -1,19 +1,17 @@
 namespace Mithril.MapCalibration;
 
 /// <summary>
-/// Diagnostic + gate-feeding metrics from one
-/// <see cref="FeatureMatchingRefiner"/> run. Populated whenever RANSAC
-/// converged on a fit; null on the result type means "no fit found at all".
-/// <list type="bullet">
-/// <item><c>InlierCount</c> + <c>InlierRatio</c> are the gate floors
-/// (spec §"Gate criteria").</item>
-/// <item><c>RotationDegrees</c> is the small-rotation gate — PG's UI is
-/// axis-aligned, so anything &gt; ~0.5° indicates a wrong fit, not a real
-/// rotated map.</item>
-/// <item><c>ResidualPixels</c> is the median per-inlier reprojection error
-/// in screenshot pixels — diagnostic only, not gated (the inlier mask is
-/// already the answer the gate cares about).</item>
-/// </list>
+/// Diagnostic + gate-feeding metrics from one <see cref="IMapRegionRefiner"/>
+/// run. Populated whenever the refiner produced a fit (gate-pass-or-not);
+/// <c>null</c> on <see cref="MapRegionRefineResult"/> means "no fit found at all".
+///
+/// <para><b>Provenance.</b>
+/// <see cref="LocateProvenance.OrbRansac"/> populates Inlier* / RotationDegrees /
+/// ResidualPixels; <see cref="Confidence"/> is null because the gate reads
+/// InlierCount/InlierRatio.
+/// <see cref="LocateProvenance.SobelPaddedPyramid"/> populates Scale + Tx + Ty +
+/// <see cref="Confidence"/>; Inlier* / RotationDegrees / ResidualPixels are zero
+/// — consumers route on <see cref="Provenance"/>.</para>
 /// </summary>
 public sealed record LocateMetrics(
     int InlierCount,
@@ -24,4 +22,6 @@ public sealed record LocateMetrics(
     bool Mirror,
     double Tx,
     double Ty,
-    double ResidualPixels);
+    double ResidualPixels,
+    LocateProvenance Provenance = LocateProvenance.OrbRansac,
+    double? Confidence = null);

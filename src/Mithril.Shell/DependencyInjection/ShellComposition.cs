@@ -147,7 +147,9 @@ public static class ShellComposition
             // IMapCalibrationService). The GameConfig-wired confidence gate
             // override inside this call wins over the engine's default gate
             // (last-registration-wins).
-            .AddMithrilMapCalibrationCapture(o.AssetCacheDir)
+            // mithril#1061: settingsDir threads through to AddMithrilVersionedSettings<MapCalibrationLocateOptions>
+            // so locate-stage knobs persist to <settingsDir>/map-calibration-locate.json.
+            .AddMithrilMapCalibrationCapture(o.AssetCacheDir, o.ShellSettingsDir)
             // #960: BCL-only provisioner that one-click downloads the third-party
             // UABEA classdata.tpk into the asset cache (same dir the sidecar reads),
             // so icon decoding can engage without bundling the artifact. Needs the
