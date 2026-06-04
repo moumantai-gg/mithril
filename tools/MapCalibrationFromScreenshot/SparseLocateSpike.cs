@@ -313,9 +313,9 @@ internal static class SparseLocateSpike
         }
         else { capPrep = cap; texPrep = tex; }
 
-        double bestScore = double.MinValue;
-        double bestScale = 0;
-        Point bestLoc = default;
+        // Coarse search collects (scale, NCC) for every evaluated rung so we can
+        // do parabolic peak refinement on the winning scale's neighborhood.
+        var ladder = new List<(double Scale, double Score, Point Loc)>(64);
         try
         {
             for (double s = ScaleMin; s <= ScaleMax + 1e-6; s += ScaleStep)
@@ -329,12 +329,7 @@ internal static class SparseLocateSpike
                 using var result = new Mat();
                 Cv2.MatchTemplate(capPrep, scaled, result, TemplateMatchModes.CCoeffNormed);
                 Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
-                if (maxVal > bestScore)
-                {
-                    bestScore = maxVal;
-                    bestScale = s;
-                    bestLoc = maxLoc;
-                }
+                ladder.Add((s, maxVal, maxLoc));
             }
         }
         finally
@@ -342,13 +337,71 @@ internal static class SparseLocateSpike
             if (edgesOnly) { capPrep.Dispose(); texPrep.Dispose(); }
         }
 
-        if (bestScale == 0)
+        if (ladder.Count == 0)
             return new SpikeResult(null, null, null, 0, "no valid scale (texture too large at all rungs)");
-        var overlay = RenderFitOverlay(cap, tex, bestLoc.X, bestLoc.Y, bestScale,
-            $"matchTemplate({(edgesOnly ? "edge" : "raw")})  ({bestLoc.X},{bestLoc.Y},{bestScale:0.00})  NCC={bestScore:0.000}");
-        var mask = RenderTransparentEdgeMask(cap, tex, bestLoc.X, bestLoc.Y, bestScale);
-        return new SpikeResult(bestLoc.X, bestLoc.Y, bestScale, bestScore,
-            $"best NCC peak {bestScore:0.000} @ scale {bestScale:0.00}",
+
+        // Discrete winner.
+        int bestIdx = 0;
+        for (int i = 1; i < ladder.Count; i++)
+            if (ladder[i].Score > ladder[bestIdx].Score) bestIdx = i;
+        var coarse = ladder[bestIdx];
+
+        // Parabolic peak refinement: fit a parabola through (y_{i-1}, y_i, y_{i+1})
+        // along the scale axis; vertex offset gives the sub-step scale. Only valid
+        // when the winner has neighbors AND the curvature is concave-down (true
+        // peak, not edge of the search). Falls back to coarse winner otherwise.
+        double refinedScale = coarse.Scale;
+        Point refinedLoc = coarse.Loc;
+        double refinedScore = coarse.Score;
+        string refineNote = "discrete";
+
+        if (bestIdx > 0 && bestIdx < ladder.Count - 1)
+        {
+            double y1 = ladder[bestIdx - 1].Score;
+            double y2 = ladder[bestIdx].Score;
+            double y3 = ladder[bestIdx + 1].Score;
+            double denom = y1 - 2 * y2 + y3;
+            if (denom < -1e-9)  // concave-down peak
+            {
+                double subStep = 0.5 * (y1 - y3) / denom;  // in units of step
+                if (Math.Abs(subStep) <= 1.0)
+                {
+                    refinedScale = coarse.Scale + ScaleStep * subStep;
+                    // Re-run matchTemplate at the refined scale to get refined
+                    // translation (the discrete winner's loc was computed at a
+                    // slightly-wrong scale).
+                    Mat refinedCap = edgesOnly ? new Mat() : cap;
+                    Mat refinedTex = edgesOnly ? new Mat() : tex;
+                    if (edgesOnly) { Cv2.Canny(cap, refinedCap, 50, 150); Cv2.Canny(tex, refinedTex, 50, 150); }
+                    try
+                    {
+                        int sw = (int)Math.Round(refinedTex.Width * refinedScale);
+                        int sh = (int)Math.Round(refinedTex.Height * refinedScale);
+                        if (sw >= 20 && sh >= 20 && sw <= refinedCap.Width && sh <= refinedCap.Height)
+                        {
+                            using var scaled = new Mat();
+                            Cv2.Resize(refinedTex, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+                            using var result = new Mat();
+                            Cv2.MatchTemplate(refinedCap, scaled, result, TemplateMatchModes.CCoeffNormed);
+                            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                            refinedLoc = maxLoc;
+                            refinedScore = maxVal;
+                            refineNote = $"parabolic ds={subStep:+0.00;-0.00;0.00}";
+                        }
+                    }
+                    finally
+                    {
+                        if (edgesOnly) { refinedCap.Dispose(); refinedTex.Dispose(); }
+                    }
+                }
+            }
+        }
+
+        var overlay = RenderFitOverlay(cap, tex, refinedLoc.X, refinedLoc.Y, refinedScale,
+            $"matchTemplate({(edgesOnly ? "edge" : "raw")})  ({refinedLoc.X},{refinedLoc.Y},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
+        var mask = RenderTransparentEdgeMask(cap, tex, refinedLoc.X, refinedLoc.Y, refinedScale);
+        return new SpikeResult(refinedLoc.X, refinedLoc.Y, refinedScale, refinedScore,
+            $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  coarse={coarse.Scale:0.00}  {refineNote}",
             Overlay: overlay, TransparentEdges: mask);
     }
 
