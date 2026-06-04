@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Diagnostics;
 
 namespace Mithril.MapCalibration.Detection;
 
@@ -35,13 +36,43 @@ public sealed class CompositeMapRegionRefiner : IMapRegionRefiner, IAreaContextu
 
     public MapRegionRefineResult Refine(GrayImage capturedGray, GrayImage baseTexture)
     {
-        var primary = _primary.Refine(capturedGray, baseTexture);
+        // mithril#1061: emit per-branch spans so Seq/OTLP can split "what fraction
+        // of attempts hit fallback" without parsing logs. Spans are zero-cost when
+        // no listener is attached (StartActivity returns null), so the producer
+        // emits unconditionally per CLAUDE.md instrumentation convention.
+        MapRegionRefineResult primary;
+        using (var primaryAct = MapCalibrationDiagnostics.ActivitySource
+            .StartActivity("calibration.refine.primary"))
+        {
+            primary = _primary.Refine(capturedGray, baseTexture);
+            primaryAct?.SetTag("outcome",
+                primary.AcceptedRect is not null ? "accepted"
+                : primary.RawFitRect is not null ? "rejected"
+                : "no_fit");
+        }
         if (primary.AcceptedRect is not null) return primary;
 
         _logger?.LogInformation(
             "Composite locate: primary did not accept (raw fit {HasFit}); trying fallback.",
             primary.RawFitRect is not null);
-        return _fallback.Refine(capturedGray, baseTexture);
+
+        MapRegionRefineResult fallback;
+        using (var fallbackAct = MapCalibrationDiagnostics.ActivitySource
+            .StartActivity("calibration.refine.fallback"))
+        {
+            fallback = _fallback.Refine(capturedGray, baseTexture);
+            if (fallback.Metrics is { } m)
+            {
+                if (m.Confidence is double ncc) fallbackAct?.SetTag("ncc", ncc);
+                fallbackAct?.SetTag("scale", m.Scale);
+            }
+            fallbackAct?.SetTag("outcome",
+                fallback.AcceptedRect is not null ? "accepted"
+                : fallback.Metrics?.Confidence is double c && c < 0.20 ? "rejected_low_confidence"
+                : fallback.RawFitRect is not null ? "rejected"
+                : "no_fit");
+        }
+        return fallback;
     }
 
     public void SetAreaKey(string? areaKey)

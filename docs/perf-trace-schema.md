@@ -65,6 +65,7 @@ Once `TelemetrySettings.EnableOtlpExport` is enabled (Settings → Diagnostics �
 | `overlay_project` | [`OverlayWindowService.OnSurfaceRender`](../src/Mithril.Overlay/Internal/OverlayWindowService.cs) (#835) | One span per per-tick projection; tag `area`, `marker_count`. Scaffold-only — fires only after a migration PR shows the overlay. |
 | `calibration_synthesis_rerank` | Map auto-calibration Detection layer (synthesis-J re-rank) via [`MapCalibrationDiagnostics`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) | One span per solve carrying the synthesis-J re-rank outcome. Tag list TBD per Task 16 of the synthesis-rerank plan. Scaffold-only — producer wiring lands in Task 16. |
 | `calibration.drift_check` | [`AutoCalibrationEngine.CheckDriftAsync`](../src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs) via `MithrilActivitySources.MapCalibration` (mithril#1046) | One span per hotkey-triggered drift check on a scene with a stored calibration; `outcome` tag distinguishes early-exit vs `Ok` vs `Drift`. |
+| `calibration.refine.primary` / `calibration.refine.fallback` | [`CompositeMapRegionRefiner`](../src/Mithril.MapCalibration.Detection/CompositeMapRegionRefiner.cs) via [`MapCalibrationDiagnostics.ActivitySource`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) (mithril#1061) | Per-branch spans from the locate dispatcher. Primary wraps `FeatureMatchingRefiner` (ORB+Lowe); fallback wraps `SobelPaddedPyramidRefiner`. Tags below. |
 | `meter_counter` | All `Meter`-counter producers (Arda lines/verb-unmatched/grammar-break, reference fetch_outcome, domain-event-published, overlay projection.latency_ms + frame.markers, map-calibration synthesis-J histograms + disagree counter) | Sums per (instrument, tag-set) flushed once per second |
 | `scope` | _ad-hoc_ | Fallback record kind for any `Mithril.*` Activity that doesn't match a dedicated dispatch arm. Reaches via the `scope` arm until a dedicated `overlay_*` dispatch arm lands in `PerfFileExporter`. |
 
@@ -315,7 +316,23 @@ The canonical map-calibration *attempt-outcome* string vocabulary lives in [`Out
 - `rejected-solve` / `rejected-solve-no-detections` / `rejected-solve-insufficient-inliers` / `rejected-solve-residual` — solver-stage refusals (free-form `RejectReason` is mapped to a fixed sub-category by `OutcomeVocabulary.RejectSolveSubcategory`).
 - `rejected-not-monotonic` — post-solve monotonicity gate refusal.
 - `map_asset_not_known` — autocal invoked before any `Downloading Map` line was observed in this session (no per-scene asset key known). Added with #1021's per-scene keying; the user-facing hint is "change zones once or restart while in this scene."
+- `rejected-map-low-confidence` — the Sobel-padded-pyramid fallback (mithril#1061) found a fit but the refined NCC fell below `MapCalibrationLocateOptions.FallbackNccFloor` (default 0.20). Distinct from `rejected-map-not-located` ("no fit at all"); the user-facing hint is "try a different zoom or explore more of the area first." Bundle-worthy so triage can read the low-confidence transform from `01-attempt.json.locatorBest`.
 - `error` — unexpected exception in the attempt pipeline.
+
+### `calibration.refine.primary` / `calibration.refine.fallback` (mithril#1061)
+
+Per-branch spans from `CompositeMapRegionRefiner` — the locate-stage dispatcher that tries ORB+Lowe first and falls back to the Sobel-padded-pyramid refiner. Both spans live on [`MapCalibrationDiagnostics.ActivitySource`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) (`"Mithril.MapCalibration.Detection"`). The fallback span fires only when the primary returns no `AcceptedRect` (either "no fit at all" or "fit but gate rejected"), so its occurrence in a trace is itself the answer to "what fraction of attempts hit fallback."
+
+| Span | Tag | Type | Notes |
+|---|---|---|---|
+| both | `outcome` | string | Primary: `"accepted"` / `"rejected"` / `"no_fit"`. Fallback: `"accepted"` / `"rejected_low_confidence"` / `"rejected"` / `"no_fit"`. |
+| `calibration.refine.fallback` only | `ncc` | double | NCC peak from the L0 refined re-match (the floor-gated confidence number). Only emitted when `LocateMetrics.Confidence` is non-null. |
+| `calibration.refine.fallback` only | `scale` | double | Recovered scale parameter (texture display size = texture-native × scale). |
+
+```powershell
+# Fallback hit-rate per area-attempt across a session
+Get-Content $Path | jq -c 'select(.Kind=="scope" and .Name=="calibration.refine.fallback") | {outcome:.Tags.outcome, ncc:.Tags.ncc, scale:.Tags.scale}'
+```
 
 ### `calibration.drift_check` (mithril#1046)
 
