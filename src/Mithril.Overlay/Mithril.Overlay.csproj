@@ -45,5 +45,6 @@
     <!-- Canonical ActivitySource + Meter catalogs (CLAUDE.md telemetry rule:
          never `new ActivitySource(...)` at a call site). -->
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
+    <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
   </ItemGroup>
 </Project>
