@@ -11,6 +11,7 @@ public partial class InventoryOverlayView : Window
     public InventoryOverlayView()
     {
         InitializeComponent();
+        Mithril.Shared.Wpf.WindowCaptureExclusion.ExcludeFromCapture(this); // #965
     }
 
     public InventoryOverlayView(LegolasSettings settings, SettingsAutoSaver<LegolasSettings> saver) : this()
