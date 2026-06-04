@@ -24,9 +24,9 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 internal static class SparseLocateSpike
 {
     private const double LoweRatio = 0.75;
-    private const double ScaleMin = 0.30;
+    private const double ScaleMin = 0.20;
     private const double ScaleMax = 1.20;
-    private const double ScaleStep = 0.01;
+    private const double ScaleStep = 0.02;
 
     public static int Run()
     {
