@@ -302,6 +302,31 @@ internal static class SparseLocateSpike
             $"kp={capKp.Length}/{texKp.Length} surv={survivors.Length} inliers={inliers} rot={rotDeg:0.00}°");
     }
 
+    // ---- sub-pixel translation refinement (2D parabolic on NCC response map) ----
+    //
+    // Given an NCC response map and the integer peak location from MinMaxLoc,
+    // fit a 1D parabola on each axis through the peak's immediate neighbors and
+    // return the sub-pixel offset of each parabola's vertex from the integer
+    // peak. Final translation = (peakLoc.X + dx, peakLoc.Y + dy).
+    //
+    // Returns (0, 0) at boundary peaks (no neighbors on one side) and clamps to
+    // |dx|, |dy| <= 1.0 to avoid runaway when the curvature is near-zero.
+    private static (double dx, double dy) RefineLocationSubPixel(Mat ncc, Point peakLoc)
+    {
+        int px = peakLoc.X, py = peakLoc.Y;
+        if (px <= 0 || py <= 0 || px >= ncc.Cols - 1 || py >= ncc.Rows - 1)
+            return (0, 0);
+        var idx = ncc.GetGenericIndexer<float>();
+        double c = idx[py, px];
+        double left = idx[py, px - 1], right = idx[py, px + 1];
+        double up = idx[py - 1, px], down = idx[py + 1, px];
+        double denomX = left - 2 * c + right;
+        double denomY = up - 2 * c + down;
+        double dx = denomX < -1e-9 ? 0.5 * (left - right) / denomX : 0;
+        double dy = denomY < -1e-9 ? 0.5 * (up - down) / denomY : 0;
+        return (Math.Max(-1.0, Math.Min(1.0, dx)), Math.Max(-1.0, Math.Min(1.0, dy)));
+    }
+
     // ---- matchTemplate over scale ladder, optional edge preprocessing ----
 
     private static SpikeResult TemplateMatchScaleLadder(Mat cap, Mat tex, bool edgesOnly)
@@ -352,7 +377,8 @@ internal static class SparseLocateSpike
         // when the winner has neighbors AND the curvature is concave-down (true
         // peak, not edge of the search). Falls back to coarse winner otherwise.
         double refinedScale = coarse.Scale;
-        Point refinedLoc = coarse.Loc;
+        double refinedTx = coarse.Loc.X;
+        double refinedTy = coarse.Loc.Y;
         double refinedScore = coarse.Score;
         string refineNote = "discrete";
 
@@ -370,7 +396,8 @@ internal static class SparseLocateSpike
                     refinedScale = coarse.Scale + ScaleStep * subStep;
                     // Re-run matchTemplate at the refined scale to get refined
                     // translation (the discrete winner's loc was computed at a
-                    // slightly-wrong scale).
+                    // slightly-wrong scale). 2D parabolic peak interpolation on
+                    // the response map's 3x3 neighborhood gives sub-pixel (tx, ty).
                     Mat refinedCap = edgesOnly ? new Mat() : cap;
                     Mat refinedTex = edgesOnly ? new Mat() : tex;
                     if (edgesOnly) { Cv2.Canny(cap, refinedCap, 50, 150); Cv2.Canny(tex, refinedTex, 50, 150); }
@@ -385,9 +412,11 @@ internal static class SparseLocateSpike
                             using var result = new Mat();
                             Cv2.MatchTemplate(refinedCap, scaled, result, TemplateMatchModes.CCoeffNormed);
                             Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
-                            refinedLoc = maxLoc;
+                            var (sdx, sdy) = RefineLocationSubPixel(result, maxLoc);
+                            refinedTx = maxLoc.X + sdx;
+                            refinedTy = maxLoc.Y + sdy;
                             refinedScore = maxVal;
-                            refineNote = $"parabolic ds={subStep:+0.00;-0.00;0.00}";
+                            refineNote = $"parabolic ds={subStep:+0.00;-0.00;0.00} subpx=({sdx:+0.00;-0.00;0.00},{sdy:+0.00;-0.00;0.00})";
                         }
                     }
                     finally
@@ -398,10 +427,10 @@ internal static class SparseLocateSpike
             }
         }
 
-        var overlay = RenderFitOverlay(cap, tex, refinedLoc.X, refinedLoc.Y, refinedScale,
-            $"matchTemplate({(edgesOnly ? "edge" : "raw")})  ({refinedLoc.X},{refinedLoc.Y},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
-        var mask = RenderTransparentEdgeMask(cap, tex, refinedLoc.X, refinedLoc.Y, refinedScale);
-        return new SpikeResult(refinedLoc.X, refinedLoc.Y, refinedScale, refinedScore,
+        var overlay = RenderFitOverlay(cap, tex, refinedTx, refinedTy, refinedScale,
+            $"matchTemplate({(edgesOnly ? "edge" : "raw")})  ({refinedTx:0.0},{refinedTy:0.0},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
+        var mask = RenderTransparentEdgeMask(cap, tex, refinedTx, refinedTy, refinedScale);
+        return new SpikeResult(refinedTx, refinedTy, refinedScale, refinedScore,
             $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  coarse={coarse.Scale:0.00}  {refineNote}",
             Overlay: overlay, TransparentEdges: mask);
     }
@@ -471,9 +500,11 @@ internal static class SparseLocateSpike
             if (ladderFine[i].Score > ladderFine[fineIdx].Score) fineIdx = i;
         var fineWinner = ladderFine[fineIdx];
 
-        // Stage 3 + 4: parabolic refinement + re-match at refined scale.
+        // Stage 3 + 4: parabolic scale refinement + sub-pixel translation
+        // refinement via 2D parabolic on the response map at the re-match.
         double refinedScale = fineWinner.S;
-        Point refinedLoc = fineWinner.Loc;
+        double refinedTx = fineWinner.Loc.X;
+        double refinedTy = fineWinner.Loc.Y;
         double refinedScore = fineWinner.Score;
         string refineNote = "discrete";
 
@@ -498,18 +529,20 @@ internal static class SparseLocateSpike
                         using var result = new Mat();
                         Cv2.MatchTemplate(capE, scaled, result, TemplateMatchModes.CCoeffNormed);
                         Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
-                        refinedLoc = maxLoc;
+                        var (sdx, sdy) = RefineLocationSubPixel(result, maxLoc);
+                        refinedTx = maxLoc.X + sdx;
+                        refinedTy = maxLoc.Y + sdy;
                         refinedScore = maxVal;
-                        refineNote = $"parabolic ds={subStep:+0.00;-0.00;0.00}";
+                        refineNote = $"parabolic ds={subStep:+0.00;-0.00;0.00} subpx=({sdx:+0.00;-0.00;0.00},{sdy:+0.00;-0.00;0.00})";
                     }
                 }
             }
         }
 
-        var overlay = RenderFitOverlay(cap, tex, refinedLoc.X, refinedLoc.Y, refinedScale,
-            $"matchTemplate(edge,pyr)  ({refinedLoc.X},{refinedLoc.Y},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
-        var mask = RenderTransparentEdgeMask(cap, tex, refinedLoc.X, refinedLoc.Y, refinedScale);
-        return new SpikeResult(refinedLoc.X, refinedLoc.Y, refinedScale, refinedScore,
+        var overlay = RenderFitOverlay(cap, tex, refinedTx, refinedTy, refinedScale,
+            $"matchTemplate(edge,pyr)  ({refinedTx:0.0},{refinedTy:0.0},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
+        var mask = RenderTransparentEdgeMask(cap, tex, refinedTx, refinedTy, refinedScale);
+        return new SpikeResult(refinedTx, refinedTy, refinedScale, refinedScore,
             $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  coarse(half)={coarseScale:0.00}  {refineNote}",
             Overlay: overlay, TransparentEdges: mask);
     }
