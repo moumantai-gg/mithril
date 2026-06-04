@@ -68,12 +68,26 @@ public static class DetectionServiceCollectionExtensions
                 orbParamsHash: ComputeOrbParamsHash(opts),
                 logger: sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.OrbCache"));
         });
-        services.AddSingleton<IMapRegionRefiner>(sp =>
+        // mithril#1061: register both concrete refiners + the composite that
+        // dispatches between them. The composite resolves as the IMapRegionRefiner
+        // singleton; existing consumers see the same interface but get the
+        // ORB-primary, Sobel-fallback behaviour automatically. The concrete types
+        // stay singleton-registered so tests + future direct consumers can opt in.
+        services.AddSingleton<FeatureMatchingRefiner>(sp =>
             new FeatureMatchingRefiner(
                 options: sp.GetRequiredService<MapCalibrationLocateOptions>(),
                 logger: sp.GetService<ILogger<FeatureMatchingRefiner>>(),
                 cachedDescriptors: sp.GetService<CachedOrbDescriptorProvider>(),
                 writer: sp.GetService<OrbDescriptorWriter>()));
+        services.AddSingleton<SobelPaddedPyramidRefiner>(sp =>
+            new SobelPaddedPyramidRefiner(
+                options: sp.GetRequiredService<MapCalibrationLocateOptions>(),
+                logger: sp.GetService<ILogger<SobelPaddedPyramidRefiner>>()));
+        services.AddSingleton<IMapRegionRefiner>(sp =>
+            new CompositeMapRegionRefiner(
+                primary: sp.GetRequiredService<FeatureMatchingRefiner>(),
+                fallback: sp.GetRequiredService<SobelPaddedPyramidRefiner>(),
+                logger: sp.GetService<ILogger<CompositeMapRegionRefiner>>()));
         return services;
     }
 

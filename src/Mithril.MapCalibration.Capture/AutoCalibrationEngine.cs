@@ -218,8 +218,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         }
 
         // Step 4: run locator/refiner.
-        if (_refiner is FeatureMatchingRefiner fmDrift)
-            fmDrift.SetAreaKey(sceneRef.ParentAreaKey);
+        // mithril#1061: IAreaContextualRefiner replaces the concrete-type cast so
+        // CompositeMapRegionRefiner can transparently forward to its inner FM
+        // refiner (which is what populates the per-area ORB-descriptor cache key).
+        if (_refiner is IAreaContextualRefiner driftCtx)
+            driftCtx.SetAreaKey(sceneRef.ParentAreaKey);
         var refineResult = _refiner.Refine(gray, baseTexture);
         if (refineResult.AcceptedRect is null || refineResult.Metrics is null)
         {
@@ -497,9 +500,12 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // runtime cast because there's exactly one production refiner type, and
         // any other IMapRegionRefiner (test fakes, legacy NCC) safely skips the
         // cache pre-warm.
-        if (_refiner is FeatureMatchingRefiner fmRefiner)
+        // mithril#1061: IAreaContextualRefiner replaces the concrete-type cast so
+        // CompositeMapRegionRefiner can transparently forward to its inner FM
+        // refiner (which is what populates the per-area ORB-descriptor cache key).
+        if (_refiner is IAreaContextualRefiner refinerCtx)
         {
-            fmRefiner.SetAreaKey(area);
+            refinerCtx.SetAreaKey(area);
         }
         using (var refineAct = MithrilActivitySources.MapCalibration.StartActivity("calibration.refine"))
         {
