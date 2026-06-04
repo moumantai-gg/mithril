@@ -114,8 +114,13 @@ public sealed class ReplayFixtureTests
         }
 
         var baseline = Mithril.MapCalibration.Internal.BundledBaselineLoader.Load(logger: null);
-        baseline.Should().ContainKey(area, "the area must have a committed baseline to compare against");
-        var expected = baseline[area];
+        // PR #1048 (closes #1041) migrated baseline keys from bare area names to
+        // per-scene Map_<X> keys. Screenshot/refs file paths still key off the bare
+        // area name (study/screenshots/<area>.png, study/refs/<area>.json), so the
+        // Map_ prefix is local to the baseline lookup.
+        var assetKey = "Map_" + area;
+        baseline.Should().ContainKey(assetKey, "the area must have a committed baseline to compare against");
+        var expected = baseline[assetKey];
 
         var shot = WicImageLoader.LoadGray(screenshotPath);
         var tex = WicImageLoader.LoadGray(texturePath);
