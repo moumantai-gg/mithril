@@ -74,6 +74,27 @@ internal static class SparseLocateSpike
             // Round 1 also-rans — kept for tx/ty/scale comparison vs the new methods.
             RunOne("matchTemplate (edge)",() => TemplateMatchScaleLadder(cap, tex, edgesOnly: true),  b, outDir);
             RunOne("matchTemplate (edge,pyr)", () => TemplateMatchPyramidEdge(cap, tex),              b, outDir);
+            // Exploration: Sobel gradient magnitude instead of binary Canny.
+            // Smooth continuous-valued inputs may handle renderer-blur asymmetry
+            // more gracefully than the gradient-of-binary coincidence.
+            RunOne("matchTemplate (sobel,mag)", () => TemplateMatchSobelMagnitude(cap, tex),          b, outDir);
+            // Anisotropic refinement on top of the isotropic Sobel winner —
+            // tests whether some PG maps actually display with sx != sy.
+            RunOne("matchTemplate (sobel,aniso)", () => TemplateMatchSobelAniso(cap, tex),            b, outDir);
+            // Extended scale range — when scale > capture/texture fit limit,
+            // invert matchTemplate so the capture is the template and the
+            // upscaled texture is the image. Necessary for high-zoom captures
+            // where the texture is bigger than the screenshot.
+            RunOne("matchTemplate (sobel,ext)", () => TemplateMatchSobelExtended(cap, tex),          b, outDir);
+            // Padded matchTemplate — pad the capture with zeros so the template
+            // can be placed at negative offsets or past the far edge. Handles
+            // cases where the displayed texture extends past the captured panel,
+            // which standard matchTemplate cannot represent.
+            RunOne("matchTemplate (sobel,pad)", () => TemplateMatchSobelPadded(cap, tex),            b, outDir);
+            // Exploration: 3-level Gaussian pyramid (full / half / quarter).
+            // Tests whether deeper pyramid gives more runtime headroom and/or
+            // better basin-of-attraction at moderate scales.
+            RunOne("matchTemplate (edge,pyr3)", () => TemplateMatchPyramid3Edge(cap, tex),            b, outDir);
             RunOne("Chamfer (dist-NCC, broken)", () => ChamferMatchScaleLadder(cap, tex),   b, outDir);
             // Round 2 new methods: subset-aware matchers that score correspondences
             // without penalizing un-revealed pixels.
@@ -544,6 +565,612 @@ internal static class SparseLocateSpike
         var mask = RenderTransparentEdgeMask(cap, tex, refinedTx, refinedTy, refinedScale);
         return new SpikeResult(refinedTx, refinedTy, refinedScale, refinedScore,
             $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  coarse(half)={coarseScale:0.00}  {refineNote}",
+            Overlay: overlay, TransparentEdges: mask);
+    }
+
+    // ---- matchTemplate on Sobel gradient magnitude (continuous, not binary) ----
+    //
+    // Hypothesis: binary Canny edges + Resize(INTER_AREA) produces a gradient
+    // artifact that COINCIDENTALLY matches PG's renderer-blurred screenshot
+    // edges. Sobel magnitude is continuous from the start — no binary
+    // thresholding artifact, no resize-of-binary trap. If Sobel beats Canny
+    // across the corpus, the "gradient coincidence" was load-bearing in a way
+    // we can do without; if it loses, the coincidence is doing real work.
+
+    private static SpikeResult TemplateMatchSobelMagnitude(Mat cap, Mat tex)
+    {
+        Mat capPrep = SobelMagnitude8U(cap);
+        Mat texPrep = SobelMagnitude8U(tex);
+
+        var ladder = new List<(double Scale, double Score, Point Loc)>(64);
+        try
+        {
+            for (double s = ScaleMin; s <= ScaleMax + 1e-6; s += ScaleStep)
+            {
+                int sw = (int)Math.Round(texPrep.Width * s);
+                int sh = (int)Math.Round(texPrep.Height * s);
+                if (sw < 20 || sh < 20 || sw > capPrep.Width || sh > capPrep.Height) continue;
+                using var scaled = new Mat();
+                Cv2.Resize(texPrep, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+                using var result = new Mat();
+                Cv2.MatchTemplate(capPrep, scaled, result, TemplateMatchModes.CCoeffNormed);
+                Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                ladder.Add((s, maxVal, maxLoc));
+            }
+        }
+        finally { capPrep.Dispose(); texPrep.Dispose(); }
+
+        if (ladder.Count == 0)
+            return new SpikeResult(null, null, null, 0, "no valid scale");
+
+        int bestIdx = 0;
+        for (int i = 1; i < ladder.Count; i++)
+            if (ladder[i].Score > ladder[bestIdx].Score) bestIdx = i;
+        var coarse = ladder[bestIdx];
+
+        double refinedScale = coarse.Scale;
+        double refinedTx = coarse.Loc.X;
+        double refinedTy = coarse.Loc.Y;
+        double refinedScore = coarse.Score;
+        string refineNote = "discrete";
+
+        if (bestIdx > 0 && bestIdx < ladder.Count - 1)
+        {
+            double y1 = ladder[bestIdx - 1].Score;
+            double y2 = ladder[bestIdx].Score;
+            double y3 = ladder[bestIdx + 1].Score;
+            double denom = y1 - 2 * y2 + y3;
+            if (denom < -1e-9)
+            {
+                double subStep = 0.5 * (y1 - y3) / denom;
+                if (Math.Abs(subStep) <= 1.0)
+                {
+                    refinedScale = coarse.Scale + ScaleStep * subStep;
+                    using var refinedCap = SobelMagnitude8U(cap);
+                    using var refinedTex = SobelMagnitude8U(tex);
+                    int sw = (int)Math.Round(refinedTex.Width * refinedScale);
+                    int sh = (int)Math.Round(refinedTex.Height * refinedScale);
+                    if (sw >= 20 && sh >= 20 && sw <= refinedCap.Width && sh <= refinedCap.Height)
+                    {
+                        using var scaled = new Mat();
+                        Cv2.Resize(refinedTex, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+                        using var result = new Mat();
+                        Cv2.MatchTemplate(refinedCap, scaled, result, TemplateMatchModes.CCoeffNormed);
+                        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                        var (sdx, sdy) = RefineLocationSubPixel(result, maxLoc);
+                        refinedTx = maxLoc.X + sdx;
+                        refinedTy = maxLoc.Y + sdy;
+                        refinedScore = maxVal;
+                        refineNote = $"parabolic ds={subStep:+0.00;-0.00;0.00} subpx=({sdx:+0.00;-0.00;0.00},{sdy:+0.00;-0.00;0.00})";
+                    }
+                }
+            }
+        }
+
+        var overlay = RenderFitOverlay(cap, tex, refinedTx, refinedTy, refinedScale,
+            $"matchTemplate(sobel,mag)  ({refinedTx:0.0},{refinedTy:0.0},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
+        var mask = RenderTransparentEdgeMask(cap, tex, refinedTx, refinedTy, refinedScale);
+        return new SpikeResult(refinedTx, refinedTy, refinedScale, refinedScore,
+            $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  coarse={coarse.Scale:0.00}  {refineNote}",
+            Overlay: overlay, TransparentEdges: mask);
+    }
+
+    // Sobel gradient magnitude normalized to 8U range [0, 255]. Smooth
+    // continuous-valued response; no binary thresholding artifact.
+    private static Mat SobelMagnitude8U(Mat src)
+    {
+        using var gx = new Mat(); Cv2.Sobel(src, gx, MatType.CV_32F, 1, 0, ksize: 3);
+        using var gy = new Mat(); Cv2.Sobel(src, gy, MatType.CV_32F, 0, 1, ksize: 3);
+        using var mag = new Mat(); Cv2.Magnitude(gx, gy, mag);
+        var dst = new Mat();
+        Cv2.Normalize(mag, dst, 0, 255, NormTypes.MinMax, MatType.CV_8U);
+        return dst;
+    }
+
+    // ---- Sobel + padded matchTemplate (template can extend past capture edges) ----
+    //
+    // Standard matchTemplate(image, template) requires template <= image in both
+    // dimensions, so the template's top-left can only land at positions where
+    // the whole template fits inside the image. This silently caps the search
+    // space when the texture's display position would put part of it past the
+    // capture's edge — common at high zoom even when the texture's scaled
+    // dimensions are smaller than the capture (HogansKeepBasement-223119:
+    // texture 740x740 at scale 0.72, fits within capture 982x741, but the
+    // truth position ty=35 puts the bottom at y=775 = 34px past capture).
+    //
+    // Fix: pad the capture's Sobel magnitude with zeros on all four sides by a
+    // generous margin (default 300 px). Then matchTemplate at the padded
+    // capture allows template placement at effective offsets in
+    // [-pad, cap.W + pad] x [-pad, cap.H + pad]. Recovered (tx_padded, ty_padded)
+    // gets pad subtracted to translate back to original capture coords.
+    //
+    // CCoeffNormed depresses slightly when the template overlaps the zero-pad
+    // region, but the peak location is still correct because the in-capture
+    // overlap drives the numerator and the zero region only depresses the
+    // denominator proportionally.
+
+    private static SpikeResult TemplateMatchSobelPadded(Mat cap, Mat tex)
+    {
+        const int pad = 300;
+        using var capSobel = SobelMagnitude8U(cap);
+        using var texSobel = SobelMagnitude8U(tex);
+        using var capPadded = new Mat();
+        Cv2.CopyMakeBorder(capSobel, capPadded, pad, pad, pad, pad, BorderTypes.Constant, Scalar.All(0));
+
+        var ladder = new List<(double Scale, double Score, Point Loc)>(64);
+        for (double s = ScaleMin; s <= ScaleMax + 1e-6; s += ScaleStep)
+        {
+            int sw = (int)Math.Round(texSobel.Width * s);
+            int sh = (int)Math.Round(texSobel.Height * s);
+            if (sw < 20 || sh < 20 || sw > capPadded.Width || sh > capPadded.Height) continue;
+            using var scaled = new Mat();
+            Cv2.Resize(texSobel, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+            using var result = new Mat();
+            Cv2.MatchTemplate(capPadded, scaled, result, TemplateMatchModes.CCoeffNormed);
+            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+            ladder.Add((s, maxVal, maxLoc));
+        }
+
+        if (ladder.Count == 0)
+            return new SpikeResult(null, null, null, 0, "no valid scale (padded)");
+
+        int bestIdx = 0;
+        for (int i = 1; i < ladder.Count; i++)
+            if (ladder[i].Score > ladder[bestIdx].Score) bestIdx = i;
+        var coarse = ladder[bestIdx];
+
+        double refinedScale = coarse.Scale;
+        double refinedTx = coarse.Loc.X - pad;
+        double refinedTy = coarse.Loc.Y - pad;
+        double refinedScore = coarse.Score;
+        string refineNote = "discrete";
+
+        if (bestIdx > 0 && bestIdx < ladder.Count - 1)
+        {
+            double y1 = ladder[bestIdx - 1].Score;
+            double y2 = ladder[bestIdx].Score;
+            double y3 = ladder[bestIdx + 1].Score;
+            double denom = y1 - 2 * y2 + y3;
+            if (denom < -1e-9)
+            {
+                double subStep = 0.5 * (y1 - y3) / denom;
+                if (Math.Abs(subStep) <= 1.0)
+                {
+                    refinedScale = coarse.Scale + ScaleStep * subStep;
+                    int sw = (int)Math.Round(texSobel.Width * refinedScale);
+                    int sh = (int)Math.Round(texSobel.Height * refinedScale);
+                    if (sw >= 20 && sh >= 20 && sw <= capPadded.Width && sh <= capPadded.Height)
+                    {
+                        using var scaled = new Mat();
+                        Cv2.Resize(texSobel, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+                        using var result = new Mat();
+                        Cv2.MatchTemplate(capPadded, scaled, result, TemplateMatchModes.CCoeffNormed);
+                        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                        var (sdx, sdy) = RefineLocationSubPixel(result, maxLoc);
+                        refinedTx = (maxLoc.X + sdx) - pad;
+                        refinedTy = (maxLoc.Y + sdy) - pad;
+                        refinedScore = maxVal;
+                        refineNote = $"parabolic ds={subStep:+0.00;-0.00;0.00} subpx=({sdx:+0.00;-0.00;0.00},{sdy:+0.00;-0.00;0.00})";
+                    }
+                }
+            }
+        }
+
+        var overlay = RenderFitOverlay(cap, tex, refinedTx, refinedTy, refinedScale,
+            $"matchTemplate(sobel,pad)  ({refinedTx:0.0},{refinedTy:0.0},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
+        var mask = RenderTransparentEdgeMask(cap, tex, refinedTx, refinedTy, refinedScale);
+        return new SpikeResult(refinedTx, refinedTy, refinedScale, refinedScore,
+            $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  coarse={coarse.Scale:0.00}  {refineNote}",
+            Overlay: overlay, TransparentEdges: mask);
+    }
+
+    // ---- Sobel + extended scale range with inverted matchTemplate ----
+    //
+    // The standard matchTemplate scale ladder skips any scale where the
+    // resized texture exceeds the capture in either dimension — because
+    // matchTemplate requires template <= image. At high zoom (texture
+    // displayed larger than the panel), the *correct* answer lives in that
+    // skipped region, and the algorithm converges on a wrong local max
+    // within the constrained sub-range.
+    //
+    // Fix: when sw > capW or sh > capH, INVERT — make the capture the
+    // template and the upscaled texture the image. matchTemplate now finds
+    // where the capture sits inside the scaled texture; the texture's
+    // display origin in capture coords is the negation of that location.
+    //
+    // NCC values from inverted matches are normalized over the capture-sized
+    // template instead of the texture-sized one, but CCoeffNormed is bounded
+    // [-1, 1] in both directions so peak comparison across directions is
+    // empirically OK as a winner-picker (modulo small bias differences).
+
+    private static SpikeResult TemplateMatchSobelExtended(Mat cap, Mat tex)
+    {
+        using var capSobel = SobelMagnitude8U(cap);
+        using var texSobel = SobelMagnitude8U(tex);
+
+        const double extendedScaleMax = 3.0;
+
+        var ladder = new List<(double Scale, double Score, double Tx, double Ty, bool Inverted)>(160);
+        for (double s = ScaleMin; s <= extendedScaleMax + 1e-6; s += ScaleStep)
+        {
+            int sw = (int)Math.Round(texSobel.Width * s);
+            int sh = (int)Math.Round(texSobel.Height * s);
+            if (sw < 20 || sh < 20) continue;
+
+            using var scaled = new Mat();
+            Cv2.Resize(texSobel, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+
+            bool fitNormal = sw <= capSobel.Width && sh <= capSobel.Height;
+            bool fitInverted = capSobel.Width <= sw && capSobel.Height <= sh;
+
+            if (fitNormal)
+            {
+                using var result = new Mat();
+                Cv2.MatchTemplate(capSobel, scaled, result, TemplateMatchModes.CCoeffNormed);
+                Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                ladder.Add((s, maxVal, maxLoc.X, maxLoc.Y, false));
+            }
+            else if (fitInverted)
+            {
+                using var result = new Mat();
+                Cv2.MatchTemplate(scaled, capSobel, result, TemplateMatchModes.CCoeffNormed);
+                Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                // maxLoc = where capture's origin sits inside the scaled texture.
+                // Texture's display origin in capture coords = -maxLoc.
+                ladder.Add((s, maxVal, -maxLoc.X, -maxLoc.Y, true));
+            }
+            // else: neither fits cleanly (one axis bigger, one smaller) — skip.
+        }
+
+        if (ladder.Count == 0)
+            return new SpikeResult(null, null, null, 0, "no valid scale (extended range)");
+
+        int bestIdx = 0;
+        for (int i = 1; i < ladder.Count; i++)
+            if (ladder[i].Score > ladder[bestIdx].Score) bestIdx = i;
+        var coarse = ladder[bestIdx];
+
+        // Diagnostic: best inverted-direction match on its own terms.
+        int bestInvIdx = -1;
+        for (int i = 0; i < ladder.Count; i++)
+            if (ladder[i].Inverted && (bestInvIdx < 0 || ladder[i].Score > ladder[bestInvIdx].Score))
+                bestInvIdx = i;
+        string invNote = bestInvIdx < 0 ? "" : $"  bestInv: s={ladder[bestInvIdx].Scale:0.00} NCC={ladder[bestInvIdx].Score:0.000} tx={ladder[bestInvIdx].Tx:0.0} ty={ladder[bestInvIdx].Ty:0.0}";
+
+        // Parabolic scale refinement, restricted to same-direction neighbors.
+        double refinedScale = coarse.Scale;
+        double refinedTx = coarse.Tx;
+        double refinedTy = coarse.Ty;
+        double refinedScore = coarse.Score;
+        string refineNote = $"discrete  direction={(coarse.Inverted ? "inverted" : "normal")}";
+
+        if (bestIdx > 0 && bestIdx < ladder.Count - 1
+            && ladder[bestIdx - 1].Inverted == coarse.Inverted
+            && ladder[bestIdx + 1].Inverted == coarse.Inverted)
+        {
+            double y1 = ladder[bestIdx - 1].Score;
+            double y2 = ladder[bestIdx].Score;
+            double y3 = ladder[bestIdx + 1].Score;
+            double denom = y1 - 2 * y2 + y3;
+            if (denom < -1e-9)
+            {
+                double subStep = 0.5 * (y1 - y3) / denom;
+                if (Math.Abs(subStep) <= 1.0)
+                {
+                    refinedScale = coarse.Scale + ScaleStep * subStep;
+                    int sw = (int)Math.Round(texSobel.Width * refinedScale);
+                    int sh = (int)Math.Round(texSobel.Height * refinedScale);
+                    if (sw >= 20 && sh >= 20)
+                    {
+                        using var scaled = new Mat();
+                        Cv2.Resize(texSobel, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+                        if (!coarse.Inverted && sw <= capSobel.Width && sh <= capSobel.Height)
+                        {
+                            using var result = new Mat();
+                            Cv2.MatchTemplate(capSobel, scaled, result, TemplateMatchModes.CCoeffNormed);
+                            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                            var (sdx, sdy) = RefineLocationSubPixel(result, maxLoc);
+                            refinedTx = maxLoc.X + sdx;
+                            refinedTy = maxLoc.Y + sdy;
+                            refinedScore = maxVal;
+                            refineNote = $"normal parabolic ds={subStep:+0.00;-0.00;0.00} subpx=({sdx:+0.00;-0.00;0.00},{sdy:+0.00;-0.00;0.00})";
+                        }
+                        else if (coarse.Inverted && capSobel.Width <= sw && capSobel.Height <= sh)
+                        {
+                            using var result = new Mat();
+                            Cv2.MatchTemplate(scaled, capSobel, result, TemplateMatchModes.CCoeffNormed);
+                            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                            var (sdx, sdy) = RefineLocationSubPixel(result, maxLoc);
+                            refinedTx = -(maxLoc.X + sdx);
+                            refinedTy = -(maxLoc.Y + sdy);
+                            refinedScore = maxVal;
+                            refineNote = $"inverted parabolic ds={subStep:+0.00;-0.00;0.00} subpx=({sdx:+0.00;-0.00;0.00},{sdy:+0.00;-0.00;0.00})";
+                        }
+                    }
+                }
+            }
+        }
+
+        var overlay = RenderFitOverlay(cap, tex, refinedTx, refinedTy, refinedScale,
+            $"matchTemplate(sobel,ext)  ({refinedTx:0.0},{refinedTy:0.0},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
+        var mask = RenderTransparentEdgeMask(cap, tex, refinedTx, refinedTy, refinedScale);
+        return new SpikeResult(refinedTx, refinedTy, refinedScale, refinedScore,
+            $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  coarse={coarse.Scale:0.00}  {refineNote}",
+            Overlay: overlay, TransparentEdges: mask);
+    }
+
+    // ---- Sobel + anisotropic refinement (sx, sy independent) ----
+    //
+    // Starts with the isotropic Sobel best, then runs a narrow 2D search over
+    // (sx, sy) in a [s* - 3*step, s* + 3*step] box at half the regular step.
+    // Empirically PG's "anisotropy" on the bundles tested is < 5% per axis,
+    // so the small search box is enough. Parabolic refinement on each axis
+    // independently gives sub-step (sx, sy).
+    //
+    // If best NCC is within epsilon of the isotropic NCC, falls back to
+    // isotropic — anisotropy isn't load-bearing for that bundle.
+
+    private static SpikeResult TemplateMatchSobelAniso(Mat cap, Mat tex)
+    {
+        // Stage 1: isotropic best as the starting point.
+        var iso = TemplateMatchSobelMagnitude(cap, tex);
+        if (iso.Scale is not double s0) return iso;
+        double tx0 = iso.Tx ?? 0, ty0 = iso.Ty ?? 0, ncc0 = iso.Confidence;
+
+        // Dispose iso's overlay/mask — we'll regenerate at anisotropic params.
+        iso.Overlay?.Dispose();
+        iso.TransparentEdges?.Dispose();
+
+        using var capSobel = SobelMagnitude8U(cap);
+        using var texSobel = SobelMagnitude8U(tex);
+
+        // Stage 2: dense (sx, sy) grid in a [s0 - 3*step, s0 + 3*step] box at
+        // half the regular step.
+        const double anisoStep = 0.01;
+        const double anisoSpread = 0.06;  // ±0.06 in each axis around s0
+        double sxMin = Math.Max(0.10, s0 - anisoSpread);
+        double sxMax = Math.Min(2.00, s0 + anisoSpread);
+        double syMin = Math.Max(0.10, s0 - anisoSpread);
+        double syMax = Math.Min(2.00, s0 + anisoSpread);
+
+        double bestNcc = ncc0;
+        double bestSx = s0, bestSy = s0;
+        Point bestLoc = new Point((int)Math.Round(tx0), (int)Math.Round(ty0));
+        Mat? bestResponse = null;
+
+        try
+        {
+            for (double sx = sxMin; sx <= sxMax + 1e-9; sx += anisoStep)
+            {
+                int sw = (int)Math.Round(texSobel.Width * sx);
+                if (sw < 20 || sw > capSobel.Width) continue;
+                for (double sy = syMin; sy <= syMax + 1e-9; sy += anisoStep)
+                {
+                    int sh = (int)Math.Round(texSobel.Height * sy);
+                    if (sh < 20 || sh > capSobel.Height) continue;
+                    using var scaled = new Mat();
+                    Cv2.Resize(texSobel, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+                    var result = new Mat();
+                    Cv2.MatchTemplate(capSobel, scaled, result, TemplateMatchModes.CCoeffNormed);
+                    Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                    if (maxVal > bestNcc)
+                    {
+                        bestResponse?.Dispose();
+                        bestNcc = maxVal;
+                        bestSx = sx;
+                        bestSy = sy;
+                        bestLoc = maxLoc;
+                        bestResponse = result;
+                    }
+                    else
+                    {
+                        result.Dispose();
+                    }
+                }
+            }
+
+            // Stage 3: sub-pixel translation refinement on the winning response map.
+            double finalTx = bestLoc.X, finalTy = bestLoc.Y;
+            if (bestResponse is not null)
+            {
+                var (sdx, sdy) = RefineLocationSubPixel(bestResponse, bestLoc);
+                finalTx = bestLoc.X + sdx;
+                finalTy = bestLoc.Y + sdy;
+            }
+
+            // Aspect deviation: how far from isotropy the winner is.
+            double aspectDeviation = Math.Abs(bestSx - bestSy) / s0;
+            double nccGain = bestNcc - ncc0;
+            string note = aspectDeviation < 0.005 && nccGain < 0.01
+                ? $"~isotropic sx={bestSx:0.000} sy={bestSy:0.000} NCC={bestNcc:0.000} (gain {nccGain:+0.000;-0.000;0.000})"
+                : $"sx={bestSx:0.000} sy={bestSy:0.000} aspect-dev={aspectDeviation:0.0%}  NCC={bestNcc:0.000} (gain {nccGain:+0.000;-0.000;0.000})";
+
+            double scaleReport = Math.Sqrt(bestSx * bestSy);
+            var overlay = RenderAnisoFitOverlay(cap, tex, finalTx, finalTy, bestSx, bestSy,
+                $"matchTemplate(sobel,aniso)  ({finalTx:0.0},{finalTy:0.0})  sx={bestSx:0.000} sy={bestSy:0.000}  NCC={bestNcc:0.000}");
+            var mask = RenderAnisoEdgeMask(tex, bestSx, bestSy);
+            return new SpikeResult(finalTx, finalTy, scaleReport, bestNcc, note,
+                Overlay: overlay, TransparentEdges: mask);
+        }
+        finally
+        {
+            bestResponse?.Dispose();
+        }
+    }
+
+    // Anisotropic overlay variants — same as the isotropic versions but accept
+    // (sx, sy) instead of a single scale.
+    private static Mat RenderAnisoFitOverlay(Mat cap, Mat tex, double tx, double ty, double sx, double sy, string label)
+    {
+        var overlay = new Mat();
+        Cv2.CvtColor(cap, overlay, ColorConversionCodes.GRAY2BGR);
+        int sw = (int)Math.Round(tex.Width * sx);
+        int sh = (int)Math.Round(tex.Height * sy);
+        if (sw < 4 || sh < 4) return overlay;
+        using var texS = new Mat();
+        Cv2.Resize(tex, texS, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+        using var texE = new Mat();
+        Cv2.Canny(texS, texE, 50, 150);
+        int x0 = (int)Math.Round(tx), y0 = (int)Math.Round(ty);
+        var texEIdx = texE.GetGenericIndexer<byte>();
+        var overlayIdx = overlay.GetGenericIndexer<Vec3b>();
+        for (int y = 0; y < texE.Rows; y++)
+            for (int x = 0; x < texE.Cols; x++)
+            {
+                if (texEIdx[y, x] == 0) continue;
+                int cx = x0 + x, cy = y0 + y;
+                if (cx < 0 || cy < 0 || cx >= overlay.Cols || cy >= overlay.Rows) continue;
+                overlayIdx[cy, cx] = new Vec3b(0, 0, 255);
+            }
+        Cv2.Rectangle(overlay, new Rect(x0, y0, sw, sh), new Scalar(255, 255, 0), 2);
+        Cv2.PutText(overlay, label, new Point(8, 24), HersheyFonts.HersheySimplex, 0.55, new Scalar(0, 0, 0), 4);
+        Cv2.PutText(overlay, label, new Point(8, 24), HersheyFonts.HersheySimplex, 0.55, new Scalar(0, 255, 255), 1);
+        return overlay;
+    }
+
+    private static Mat RenderAnisoEdgeMask(Mat tex, double sx, double sy)
+    {
+        int sw = (int)Math.Round(tex.Width * sx);
+        int sh = (int)Math.Round(tex.Height * sy);
+        if (sw < 4 || sh < 4) return new Mat(1, 1, MatType.CV_8UC4, Scalar.All(0));
+        using var texS = new Mat();
+        Cv2.Resize(tex, texS, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+        using var texE = new Mat();
+        Cv2.Canny(texS, texE, 50, 150);
+        var mask = new Mat(sh, sw, MatType.CV_8UC4, Scalar.All(0));
+        var texEIdx = texE.GetGenericIndexer<byte>();
+        var maskIdx = mask.GetGenericIndexer<Vec4b>();
+        for (int y = 0; y < sh; y++)
+            for (int x = 0; x < sw; x++)
+                if (texEIdx[y, x] != 0) maskIdx[y, x] = new Vec4b(0, 0, 255, 255);
+        return mask;
+    }
+
+    // ---- matchTemplate(edge) with 3-level Gaussian pyramid (full / half / quarter) ----
+    //
+    // Three-stage coarse-to-fine: ladder at quarter resolution → narrow at half
+    // resolution → narrow at full resolution + parabolic + sub-pixel refinement.
+    // Compared to the 2-level pyramid: more setup cost (one extra PyrDown per
+    // side, one extra ladder stage) but the coarse-stage cost drops 4× because
+    // matchTemplate at quarter res is ~16× cheaper than half res.
+
+    private static SpikeResult TemplateMatchPyramid3Edge(Mat cap, Mat tex)
+    {
+        using var capE = new Mat(); Cv2.Canny(cap, capE, 50, 150);
+        using var texE = new Mat(); Cv2.Canny(tex, texE, 50, 150);
+        using var capL1 = new Mat(); Cv2.PyrDown(capE, capL1);   // half
+        using var texL1 = new Mat(); Cv2.PyrDown(texE, texL1);
+        using var capL2 = new Mat(); Cv2.PyrDown(capL1, capL2);  // quarter
+        using var texL2 = new Mat(); Cv2.PyrDown(texL1, texL2);
+
+        // Stage 1: full scale ladder at quarter resolution.
+        var ladderL2 = new List<(double S, double Score)>(64);
+        for (double s = ScaleMin; s <= ScaleMax + 1e-6; s += ScaleStep)
+        {
+            int sw = (int)Math.Round(texL2.Width * s);
+            int sh = (int)Math.Round(texL2.Height * s);
+            if (sw < 5 || sh < 5 || sw > capL2.Width || sh > capL2.Height) continue;
+            using var scaled = new Mat();
+            Cv2.Resize(texL2, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+            using var result = new Mat();
+            Cv2.MatchTemplate(capL2, scaled, result, TemplateMatchModes.CCoeffNormed);
+            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out _);
+            ladderL2.Add((s, maxVal));
+        }
+        if (ladderL2.Count == 0)
+            return new SpikeResult(null, null, null, 0, "no valid scale at quarter res");
+        int l2Idx = 0;
+        for (int i = 1; i < ladderL2.Count; i++)
+            if (ladderL2[i].Score > ladderL2[l2Idx].Score) l2Idx = i;
+        double l2Scale = ladderL2[l2Idx].S;
+
+        // Stage 2: narrow ladder at half resolution centered on quarter winner.
+        var ladderL1 = new List<(double S, double Score)>(8);
+        for (double s = l2Scale - 2 * ScaleStep; s <= l2Scale + 2 * ScaleStep + 1e-6; s += ScaleStep)
+        {
+            if (s <= 0) continue;
+            int sw = (int)Math.Round(texL1.Width * s);
+            int sh = (int)Math.Round(texL1.Height * s);
+            if (sw < 10 || sh < 10 || sw > capL1.Width || sh > capL1.Height) continue;
+            using var scaled = new Mat();
+            Cv2.Resize(texL1, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+            using var result = new Mat();
+            Cv2.MatchTemplate(capL1, scaled, result, TemplateMatchModes.CCoeffNormed);
+            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out _);
+            ladderL1.Add((s, maxVal));
+        }
+        if (ladderL1.Count == 0)
+            return new SpikeResult(null, null, null, 0, "no valid scale at half res");
+        int l1Idx = 0;
+        for (int i = 1; i < ladderL1.Count; i++)
+            if (ladderL1[i].Score > ladderL1[l1Idx].Score) l1Idx = i;
+        double l1Scale = ladderL1[l1Idx].S;
+
+        // Stage 3: narrow ladder at full resolution centered on half winner.
+        var ladderFine = new List<(double S, double Score, Point Loc)>(8);
+        for (double s = l1Scale - 2 * ScaleStep; s <= l1Scale + 2 * ScaleStep + 1e-6; s += ScaleStep)
+        {
+            if (s <= 0) continue;
+            int sw = (int)Math.Round(texE.Width * s);
+            int sh = (int)Math.Round(texE.Height * s);
+            if (sw < 20 || sh < 20 || sw > capE.Width || sh > capE.Height) continue;
+            using var scaled = new Mat();
+            Cv2.Resize(texE, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+            using var result = new Mat();
+            Cv2.MatchTemplate(capE, scaled, result, TemplateMatchModes.CCoeffNormed);
+            Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+            ladderFine.Add((s, maxVal, maxLoc));
+        }
+        if (ladderFine.Count == 0)
+            return new SpikeResult(null, null, null, 0, "no valid scale at full res");
+        int fineIdx = 0;
+        for (int i = 1; i < ladderFine.Count; i++)
+            if (ladderFine[i].Score > ladderFine[fineIdx].Score) fineIdx = i;
+        var fineWinner = ladderFine[fineIdx];
+
+        // Stage 4: parabolic scale refinement + sub-pixel translation refinement.
+        double refinedScale = fineWinner.S;
+        double refinedTx = fineWinner.Loc.X;
+        double refinedTy = fineWinner.Loc.Y;
+        double refinedScore = fineWinner.Score;
+        string refineNote = "discrete";
+
+        if (fineIdx > 0 && fineIdx < ladderFine.Count - 1)
+        {
+            double y1 = ladderFine[fineIdx - 1].Score;
+            double y2 = ladderFine[fineIdx].Score;
+            double y3 = ladderFine[fineIdx + 1].Score;
+            double denom = y1 - 2 * y2 + y3;
+            if (denom < -1e-9)
+            {
+                double subStep = 0.5 * (y1 - y3) / denom;
+                if (Math.Abs(subStep) <= 1.0)
+                {
+                    refinedScale = fineWinner.S + ScaleStep * subStep;
+                    int sw = (int)Math.Round(texE.Width * refinedScale);
+                    int sh = (int)Math.Round(texE.Height * refinedScale);
+                    if (sw >= 20 && sh >= 20 && sw <= capE.Width && sh <= capE.Height)
+                    {
+                        using var scaled = new Mat();
+                        Cv2.Resize(texE, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+                        using var result = new Mat();
+                        Cv2.MatchTemplate(capE, scaled, result, TemplateMatchModes.CCoeffNormed);
+                        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+                        var (sdx, sdy) = RefineLocationSubPixel(result, maxLoc);
+                        refinedTx = maxLoc.X + sdx;
+                        refinedTy = maxLoc.Y + sdy;
+                        refinedScore = maxVal;
+                        refineNote = $"parabolic ds={subStep:+0.00;-0.00;0.00} subpx=({sdx:+0.00;-0.00;0.00},{sdy:+0.00;-0.00;0.00})";
+                    }
+                }
+            }
+        }
+
+        var overlay = RenderFitOverlay(cap, tex, refinedTx, refinedTy, refinedScale,
+            $"matchTemplate(edge,pyr3)  ({refinedTx:0.0},{refinedTy:0.0},{refinedScale:0.000})  NCC={refinedScore:0.000}  {refineNote}");
+        var mask = RenderTransparentEdgeMask(cap, tex, refinedTx, refinedTy, refinedScale);
+        return new SpikeResult(refinedTx, refinedTy, refinedScale, refinedScore,
+            $"NCC {refinedScore:0.000} @ scale {refinedScale:0.000}  l2={l2Scale:0.00}  l1={l1Scale:0.00}  {refineNote}",
             Overlay: overlay, TransparentEdges: mask);
     }
 
