@@ -522,12 +522,28 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         var mapRect = refineResult.AcceptedRect;
         if (mapRect is null)
         {
-            attempt.Outcome = OutcomeVocabulary.RejectedMapNotLocated;
+            // mithril#1061: distinguish low-confidence fallback rejects (input
+            // pathology — try a different zoom / explore more) from ORB primary's
+            // "no fit at all" (framing problem — zoom out / re-draw the box).
+            // A low-confidence reject still has Metrics with Confidence populated;
+            // a no-fit reject from ORB has Metrics null or InlierCount-driven.
+            bool lowConfidenceFallback =
+                refineResult.Metrics is { Provenance: LocateProvenance.SobelPaddedPyramid, Confidence: not null };
+
             if (refineResult.Metrics is { } m)
             {
-                _logger?.LogInformation(
-                    "Auto-calibration {Area}: locate rejected — inliers={Inliers}/{Cand} ratio={Ratio:0.000}, scale={Scale:0.000}, rotation={Rot:0.000}°.",
-                    area, m.InlierCount, m.CandidateCount, m.InlierRatio, m.Scale, m.RotationDegrees);
+                if (m.Provenance == LocateProvenance.SobelPaddedPyramid)
+                {
+                    _logger?.LogInformation(
+                        "Auto-calibration {Area}: locate rejected — fallback NCC={Ncc:0.000} < floor, scale={Scale:0.000}, tx={Tx:0.0}, ty={Ty:0.0}.",
+                        area, m.Confidence ?? 0, m.Scale, m.Tx, m.Ty);
+                }
+                else
+                {
+                    _logger?.LogInformation(
+                        "Auto-calibration {Area}: locate rejected — inliers={Inliers}/{Cand} ratio={Ratio:0.000}, scale={Scale:0.000}, rotation={Rot:0.000}°.",
+                        area, m.InlierCount, m.CandidateCount, m.InlierRatio, m.Scale, m.RotationDegrees);
+                }
             }
             else if (refineResult.RawFitRect is { } best)
             {
@@ -535,6 +551,16 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                     "Auto-calibration {Area}: locate rejected — raw fit rect at origin = ({X}, {Y}), size = {W}x{H}.",
                     area, best.OriginX, best.OriginY, best.Width, best.Height);
             }
+
+            if (lowConfidenceFallback)
+            {
+                attempt.Outcome = OutcomeVocabulary.RejectedMapLowConfidence;
+                return Fail(area,
+                    "couldn't locate the map confidently — try a different zoom or explore more of the area first",
+                    OutcomeVocabulary.RejectedMapLowConfidence);
+            }
+
+            attempt.Outcome = OutcomeVocabulary.RejectedMapNotLocated;
             return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map", OutcomeVocabulary.RejectedMapNotLocated);
         }
         attempt.MapRect = mapRect;

@@ -33,6 +33,23 @@ public sealed class CalibrationStatusFormatterTests
             .Should().NotBeNullOrEmpty();
 
     [Fact]
+    public void RejectedMapLowConfidence_category_surfaces_input_pathology_message()
+    {
+        // mithril#1061: the fallback's low-confidence reject takes a structural
+        // route (not the substring path) because its actionable advice ("try a
+        // different zoom") differs from the framing-fix ORB primary delivers.
+        var outcome = new AutoCalibrationOutcome(
+            Persisted: false,
+            AreaKey: "Map_GoblinDungeon",
+            RejectReason: "couldn't locate the map confidently — try a different zoom or explore more of the area first",
+            OutcomeCategory: OutcomeVocabulary.RejectedMapLowConfidence);
+
+        CalibrationStatusFormatter.ForOutcome(outcome)
+            .Should().Contain("different zoom")
+            .And.NotContain("redraw the map bbox");
+    }
+
+    [Fact]
     public void A_rejected_outcome_routes_its_reason_through_ForReject()
     {
         const string reason = "no map bbox set — use the draw-map-bbox hotkey first";
