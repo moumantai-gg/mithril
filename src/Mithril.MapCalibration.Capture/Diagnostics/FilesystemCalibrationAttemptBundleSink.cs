@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration;
 using Mithril.MapCalibration.Detection;
 
 namespace Mithril.MapCalibration.Capture.Diagnostics;
@@ -248,8 +249,15 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
     {
         if (ctx.LocatorRawFit is not { } rect || ctx.LocatorMetrics is not { } metrics)
             return null;
+        // mithril#1061: schema v2 surfaces which algorithm produced this fit
+        // (orb-lowe primary vs sobel-padded-pyramid fallback) plus the fallback-only
+        // diagnostic fields (NCC peak + pad). PadPx mirrors the option default
+        // since the sink doesn't take MapCalibrationLocateOptions; if a future
+        // user customises FallbackPadPx, the locate options file is also in the
+        // diagnostic dump path so the actual pad is recoverable from there.
+        var isFallback = metrics.Provenance == LocateProvenance.SobelPaddedPyramid;
         return new LocatorBestJson(
-            SchemaVersion: 1,
+            SchemaVersion: 2,
             OriginX: rect.OriginX,
             OriginY: rect.OriginY,
             Width: rect.Width,
@@ -265,7 +273,10 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             Ty: metrics.Ty,
             ResidualPixels: metrics.ResidualPixels,
             GateAccepted: ctx.Outcome == OutcomeVocabulary.Accepted,
-            GateRejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo);
+            GateRejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo,
+            Algorithm: isFallback ? "sobel-padded-pyramid" : "orb-lowe",
+            FallbackNcc: isFallback ? metrics.Confidence : null,
+            PadPx: isFallback ? 100 : (int?)null);
     }
 
     private static string WritePng(string dir, string name, BitmapSource src)

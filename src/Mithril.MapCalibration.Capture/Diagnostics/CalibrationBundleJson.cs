@@ -20,10 +20,13 @@ public sealed record AttemptJson(
     LocatorBestJson? LocatorBest = null);
 
 /// <summary>
-/// Carries the locator's raw fit rect (gate-pass-or-not), the FM-style metrics
-/// (inlier counts/ratio, similarity transform, residual), and the gate verdict
-/// that drove the engine's outcome. Replaces the pre-PR-3 reuse of
-/// <see cref="MapRectJson"/> at the <see cref="AttemptJson.LocatorBest"/> arg site.
+/// Carries the locator's raw fit rect (gate-pass-or-not), the per-algorithm
+/// metrics, and the gate verdict that drove the engine's outcome.
+///
+/// <para><b>Schema v2 (mithril#1061):</b> adds <see cref="Algorithm"/>,
+/// <see cref="FallbackNcc"/>, <see cref="PadPx"/>. Readers should treat absence
+/// of these as v1 ORB-only (default <c>Algorithm = "orb-lowe"</c>, others
+/// null).</para>
 /// </summary>
 public sealed record LocatorBestJson(
     int SchemaVersion,
@@ -42,7 +45,10 @@ public sealed record LocatorBestJson(
     double Ty,
     double ResidualPixels,
     bool GateAccepted,
-    string? GateRejectReason);
+    string? GateRejectReason,
+    string Algorithm = "orb-lowe",
+    double? FallbackNcc = null,
+    int? PadPx = null);
 
 public sealed record AttemptFilesJson(
     string? RawScreenshot,
