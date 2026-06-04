@@ -76,6 +76,50 @@ public sealed class SobelPaddedPyramidRefinerTests
     }
 
     [Fact]
+    public void Recovers_HogansKeep_223119_truth_from_corpus_bundle()
+    {
+        // mithril#1061: corpus regression — locks the converged algorithm against
+        // drift on the canonical round-5 HogansKeep bundle. Truth per
+        // @arthur-conde's GIMP alignment: (originX=126, originY=35, scale=0.7227).
+        // The round-5 spike measured (127.5, 35.8, 0.720) at NCC 0.680, 134 ms.
+        //
+        // Capture + base texture both contain PG art (in-game UI screenshot +
+        // decoded asset bytes); cannot be checked in. The fixture loader pulls
+        // both from the developer's local %LocalAppData%/Mithril/{diagnostics,assets}/
+        // when available. On a clean checkout the corpus is absent and the test
+        // early-returns (xUnit v2 has no Assert.Skip without adding a package);
+        // the regression still locks-in for anyone with the bundle locally,
+        // notably the user when triaging fallback drift in this exact basement.
+        //
+        // See Fixtures/HogansKeep223119/README.md for how to populate the corpus
+        // on a developer machine.
+        if (!HogansKeepCorpusFixture.IsAvailable)
+        {
+            return;
+        }
+
+        var capture = HogansKeepCorpusFixture.LoadCapture();
+        var texture = HogansKeepCorpusFixture.LoadTexture();
+        texture.Should().NotBeNull("CachedBaseTextureProvider should resolve the locally-present texture");
+
+        var refiner = BuildRefiner();
+        var result = refiner.Refine(capture, texture!);
+
+        result.AcceptedRect.Should().NotBeNull(
+            "the converged sobel-padded-pyramid algorithm recovers this corpus bundle with NCC > 0.40");
+        result.Metrics!.Provenance.Should().Be(LocateProvenance.SobelPaddedPyramid);
+        result.Metrics.Confidence.Should().NotBeNull();
+        result.Metrics.Confidence!.Value.Should().BeGreaterThan(0.40);
+
+        // (originX, originY) recovered within ±2 px of GIMP truth.
+        result.AcceptedRect!.OriginX.Should().BeInRange(124, 128);
+        result.AcceptedRect.OriginY.Should().BeInRange(33, 37);
+
+        // Scale recovered within ±0.005 of truth 0.7227.
+        result.Metrics.Scale.Should().BeApproximately(0.7227, 0.005);
+    }
+
+    [Fact]
     public void Accepts_with_lowered_floor_when_only_a_weak_fit_exists()
     {
         // Same unrelated-noise scenario, but with the floor pushed to 0 — the refiner
