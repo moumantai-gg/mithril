@@ -135,7 +135,11 @@ public static partial class CaptureServiceCollectionExtensions
             new Diagnostics.FilesystemCalibrationAttemptBundleSink(
                 root: Diagnostics.CalibrationBundleDirectories.DefaultRoot,
                 logger: sp.GetService<ILoggerFactory>()?.CreateLogger("MapCalibration.Bundle"),
-                visualizer: sp.GetRequiredService<Diagnostics.IAttemptBundleVisualizer>()));
+                visualizer: sp.GetRequiredService<Diagnostics.IAttemptBundleVisualizer>(),
+                // mithril#1061: optional so unit test graphs without options still resolve;
+                // when present, the sink reads FallbackPadPx live so the bundle reflects
+                // the user's customised pad instead of the option default literal.
+                options: sp.GetService<MapCalibrationLocateOptions>()));
         services.AddSingleton(sp => new Diagnostics.CalibrationAttemptBundleSinkSelector(
             sp.GetRequiredService<CaptureDiagnosticsOptions>(),
             sp.GetRequiredService<Diagnostics.FilesystemCalibrationAttemptBundleSink>(),

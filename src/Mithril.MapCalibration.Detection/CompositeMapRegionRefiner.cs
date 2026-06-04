@@ -66,9 +66,15 @@ public sealed class CompositeMapRegionRefiner : IMapRegionRefiner, IAreaContextu
                 if (m.Confidence is double ncc) fallbackAct?.SetTag("ncc", ncc);
                 fallbackAct?.SetTag("scale", m.Scale);
             }
+            // Outcome classifier derives from contract, not from the option default:
+            // SobelPaddedPyramidRefiner only populates Confidence when it produced a
+            // fit, and the ONLY confidence-populating reject path is the
+            // FallbackNccFloor gate. So `AcceptedRect == null && Confidence != null`
+            // is precisely the floor-rejected case — no literal threshold needed,
+            // no drift when a user customises FallbackNccFloor.
             fallbackAct?.SetTag("outcome",
                 fallback.AcceptedRect is not null ? "accepted"
-                : fallback.Metrics?.Confidence is double c && c < 0.20 ? "rejected_low_confidence"
+                : fallback.Metrics?.Confidence is not null ? "rejected_low_confidence"
                 : fallback.RawFitRect is not null ? "rejected"
                 : "no_fit");
         }

@@ -196,6 +196,87 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         attempt.LocatorBest.GateAccepted.Should().BeFalse();
     }
 
+    /// <summary>
+    /// mithril#1061: when the Sobel-padded-pyramid fallback produced the fit, the
+    /// bundle's LocatorBest carries Algorithm = "sobel-padded-pyramid" + FallbackNcc +
+    /// PadPx. PadPx reads MapCalibrationLocateOptions.FallbackPadPx when the sink
+    /// was injected with the options, so a user who customises the pad sees that
+    /// value in the bundle (not the option default).
+    /// </summary>
+    [Fact]
+    public void Writes_sobel_padded_pyramid_fields_on_fallback_attempt_reading_options_padPx()
+    {
+        var customisedOptions = new MapCalibrationLocateOptions { FallbackPadPx = 150 };
+        var sink = new FilesystemCalibrationAttemptBundleSink(
+            _root, logger: null, visualizer: new AttemptBundleVisualizer(),
+            options: customisedOptions);
+
+        var ctx = new CalibrationAttemptContext("Map_HogansKeepBasement",
+            new DateTimeOffset(2026, 6, 3, 22, 31, 19, 130, TimeSpan.Zero));
+        ctx.RawCapture = new CapturedFrame(4, 4, new byte[4 * 4 * 4]);
+        ctx.GrayCapture = new GrayImage(4, 4, new byte[16]);
+        ctx.LocatorRawFit = new MapRect(127, 35, 591, 740, 819, 1024);
+        ctx.LocatorMetrics = new LocateMetrics(
+            InlierCount: 0,
+            CandidateCount: 0,
+            InlierRatio: 0,
+            Scale: 0.7227,
+            RotationDegrees: 0,
+            Mirror: false,
+            Tx: 127.5,
+            Ty: 35.8,
+            ResidualPixels: 0,
+            Provenance: LocateProvenance.SobelPaddedPyramid,
+            Confidence: 0.680);
+        ctx.MapRect = ctx.LocatorRawFit;
+        ctx.Outcome = OutcomeVocabulary.Accepted;
+
+        sink.Write(ctx);
+
+        var dir = Directory.GetDirectories(_root).Single();
+        using var fs = File.OpenRead(Path.Combine(dir, "01-attempt.json"));
+        var attempt = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
+        attempt.Should().NotBeNull();
+        attempt!.LocatorBest.Should().NotBeNull();
+        attempt.LocatorBest!.SchemaVersion.Should().Be(2);
+        attempt.LocatorBest.Algorithm.Should().Be("sobel-padded-pyramid");
+        attempt.LocatorBest.FallbackNcc.Should().BeApproximately(0.680, 1e-9);
+        attempt.LocatorBest.PadPx.Should().Be(150,
+            "the sink reads FallbackPadPx live from the injected options, not the option default");
+    }
+
+    /// <summary>
+    /// mithril#1061: the sink also constructs without injected options (test graphs
+    /// pre-PR). In that path PadPx falls back to the static default (100) so the
+    /// behaviour matches what shipped before the wiring landed.
+    /// </summary>
+    [Fact]
+    public void Writes_sobel_padded_pyramid_fields_with_default_padPx_when_options_not_injected()
+    {
+        var sink = NewSink();  // no options injected
+
+        var ctx = new CalibrationAttemptContext("Map_HogansKeepBasement",
+            new DateTimeOffset(2026, 6, 3, 22, 31, 19, 130, TimeSpan.Zero));
+        ctx.RawCapture = new CapturedFrame(4, 4, new byte[4 * 4 * 4]);
+        ctx.GrayCapture = new GrayImage(4, 4, new byte[16]);
+        ctx.LocatorRawFit = new MapRect(127, 35, 591, 740, 819, 1024);
+        ctx.LocatorMetrics = new LocateMetrics(
+            InlierCount: 0, CandidateCount: 0, InlierRatio: 0,
+            Scale: 0.7227, RotationDegrees: 0, Mirror: false,
+            Tx: 127.5, Ty: 35.8, ResidualPixels: 0,
+            Provenance: LocateProvenance.SobelPaddedPyramid,
+            Confidence: 0.680);
+        ctx.MapRect = ctx.LocatorRawFit;
+        ctx.Outcome = OutcomeVocabulary.Accepted;
+
+        sink.Write(ctx);
+
+        var dir = Directory.GetDirectories(_root).Single();
+        using var fs = File.OpenRead(Path.Combine(dir, "01-attempt.json"));
+        var attempt = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
+        attempt!.LocatorBest!.PadPx.Should().Be(100);
+    }
+
     [Theory]
     [InlineData("rejected-no-area")]
     [InlineData("rejected-pg-not-foreground")]
