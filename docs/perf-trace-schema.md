@@ -278,6 +278,7 @@ Per-tick world→pixel projection through the shared overlay (`Mithril.Overlay`)
 |---|---|
 | `area` | The Arda area key the projection ran for (e.g. `AreaEltibule`). Empty when the player is not in-world. |
 | `marker_count` | Number of markers in the area filtered from the current `IWorldOverlayMarkers` snapshot. |
+| `cal.path` | string | One of `direct_overlay` (overlay-frame record consumed directly), `composed_from_texture` (texture-frame record composed via `WorldToTextureCalibration.ProjectThroughOverlay(MapRect)` — dims looked up from `IMapTextureDimensions` by `cal.PixelSha256`; see #1081), `none` (no usable calibration this frame: uncalibrated scene, null-sha cal, catalogue miss, or overlay surface not laid out yet). |
 | `DurationMs` | Wall-clock for `MarkerSceneRenderer.Render` (the full per-tick draw dispatch). |
 
 Companion `Mithril.Overlay` meter instruments emitted in `meter_counter` records (below):

@@ -366,7 +366,6 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         // marker loop. Replaces the per-call calibration.WorldToOverlay path the
         // marker loop and IOverlaySceneContext.Project used to take individually.
         var (composedCal, calPath) = ResolveComposedOverlayCalibration(resolvedScene);
-        _ = calPath; // Task 12 will tag the project span with calPath
 
         // The scene the per-frame context binds to: if resolution failed, use
         // a synthesized composite with empty calibration key so Project()
@@ -420,6 +419,12 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             renderAct?.SetTag("area", areaKey);
             renderAct?.SetTag("scene.asset_key", resolvedScene!.Value.MapAssetKey);
             renderAct?.SetTag("marker_count", projected.Count);
+            renderAct?.SetTag("cal.path", calPath switch
+            {
+                CalPath.DirectOverlay => "direct_overlay",
+                CalPath.ComposedFromTexture => "composed_from_texture",
+                _ => "none",
+            });  // mithril#1081 — observable in perf-recorder JSONL
             _renderer.Render(projected, e.RenderTarget, e.Factory, _brushCache);
         }
         var elapsedMs = sw.GetElapsedMilliseconds();
