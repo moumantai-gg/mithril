@@ -13,7 +13,7 @@ namespace Mithril.MapCalibration.Detection;
 /// LO-RANSAC iterative refinement drops the worst-residual inlier when it is
 /// meaningfully worse than the median and re-solves.
 ///
-/// <para>Works in texture-pixel space (via <see cref="MapRect.ScreenshotToTexture"/>)
+/// <para>Works in texture-pixel space (via <see cref="MapRect.CroppedToTexture"/>)
 /// so the inlier predicate is independent of the screenshot's pan/zoom. The
 /// deterministic <c>Random(852)</c> seed makes runs reproducible. BCL-only.</para>
 /// </summary>
