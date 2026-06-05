@@ -306,7 +306,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// area's calibration and publish it (plus its age/source) onto the
     /// session. No tracker fix or no calibrated area ⇒ clear it (degrade
     /// silently — same "no marker" behaviour as before #476). The projection
-    /// is <see cref="AreaCalibration.WorldToWindow"/> — the exact transform the
+    /// is <see cref="WorldToOverlayCalibration.ToOverlay(WorldCoord)"/> — the exact transform the
     /// <c>ProcessMapFx</c> pins use, so the marker lands in the same frame as
     /// the pins (subject to the ±10% non-affine map ceiling — it is "near you",
     /// not pixel-exact, and that is expected).
@@ -1069,8 +1069,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     private readonly Dictionary<CalibrationMarker, MarkerHandle> _calibrationMarkers = new();
 
     /// <summary>Register or refresh one calibration marker. Pixel -> world
-    /// conversion uses <see cref="IMapCalibrationService.WindowToWorld"/>;
-    /// when the area has no baseline (<c>WindowToWorld</c> returns null), the
+    /// conversion uses <see cref="IMapCalibrationService.OverlayToWorld"/>;
+    /// when the area has no baseline (<c>OverlayToWorld</c> returns null), the
     /// marker stays unregistered and the legacy WPF <c>ItemsControl</c> in
     /// <c>MapOverlayView.xaml</c> continues to render it. Areas without a
     /// baseline are the only case where the walkthrough starts from scratch,

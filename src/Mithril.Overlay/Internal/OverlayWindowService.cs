@@ -59,7 +59,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     // The chip flips on any uncalibrated area. Wording updated in review
     // iteration-1 B2 — the previous "use Legolas wizard" was misleading
     // because the registry-only calibration walkthrough now requires a
-    // baseline calibration to anchor against (WindowToWorld returns null
+    // baseline calibration to anchor against (OverlayToWorld returns null
     // without one). The seed comes from a bundled / community baseline or
     // the Mithril MapCalibration workspace tool (#864).
     private const string UncalibratedMessage =
@@ -325,7 +325,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         var resolvedScene = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache);
 
         // Uncalibrated-scene handling. The marker-projection block (further
-        // down) depends on WorldToWindow/Project, which always returns null
+        // down) depends on WorldToOverlay/Project, which always returns null
         // without a calibration — so when uncalibrated we skip ONLY that
         // block, surface the "not calibrated" chip, and log once per scene.
         // The scene-drawer loop still runs: scene drawers self-gate
@@ -387,7 +387,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             }
         }
 
-        // Marker projection + render — calibrated areas only. WorldToWindow
+        // Marker projection + render — calibrated areas only. WorldToOverlay
         // returns null without a calibration, so there is nothing meaningful
         // to project here when uncalibrated (the scene drawers above already
         // ran, including the pixel-native calibration placement pins).
@@ -453,8 +453,8 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         for (var i = 0; i < markers.Count; i++)
         {
             var snap = markers[i];
-            // #1076: WorldToOverlay (frame-explicit) replaces the obsolete
-            // WorldToWindow so the projected pixel is OverlayPixel-typed
+            // #1076: WorldToOverlay (frame-explicit) is the projection
+            // call — its OverlayPixel? result flows frame-typed
             // end-to-end into MarkerSceneRenderer.
             var pixel = calibration.WorldToOverlay(scene, snap.World, currentZoom);
             if (pixel is null)
@@ -467,7 +467,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
                     if (onMiss._projectionMissAreasLogged.TryAdd(assetKey, 0))
                     {
                         onMiss._logger?.LogTrace(
-                            "OverlayWindowService: WorldToWindow returned null for a marker in calibrated scene {AssetKey} (style={StyleType}); marker silently skipped.",
+                            "OverlayWindowService: WorldToOverlay returned null for a marker in calibrated scene {AssetKey} (style={StyleType}); marker silently skipped.",
                             assetKey, snap.Style.GetType().Name);
                     }
                 }
@@ -705,9 +705,9 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             // (e.g. NaN inputs); the drawer treats that as "skip this pin"
             // — same shape as the marker renderer's null-skip branch.
             //
-            // #1076: switched from WorldToWindow (obsolete, returns
-            // PixelPoint?) to WorldToOverlay (returns OverlayPixel?) so the
-            // overlay frame stays frame-typed end-to-end.
+            // #1076: WorldToOverlay returns OverlayPixel?, so the overlay
+            // frame stays frame-typed end-to-end through the scene drawer
+            // surface.
             return _owner._calibration.WorldToOverlay(
                 _scene, new WorldCoord(worldX, 0, worldZ), _currentZoom);
         }

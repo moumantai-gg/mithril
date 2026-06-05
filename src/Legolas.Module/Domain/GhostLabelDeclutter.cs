@@ -18,8 +18,8 @@ namespace Legolas.Domain;
 /// already-placed label.</para>
 ///
 /// <para>Pure + WPF-free so it is unit-testable. The label box is estimated in
-/// the same pixel frame <see cref="AreaCalibration.WorldToWindow"/> produces
-/// (the WPF layer positions items by that pixel directly). Declutter is by
+/// the overlay-pixel frame <see cref="WorldToOverlayCalibration.ToOverlay(WorldCoord)"/>
+/// produces (the WPF layer positions items by that pixel directly). Declutter is by
 /// mutual label overlap only — the overlay's on-screen pixel bounds aren't
 /// known VM-side, so off-screen markers are still listed (harmless: the Canvas
 /// just positions them out of view).</para>

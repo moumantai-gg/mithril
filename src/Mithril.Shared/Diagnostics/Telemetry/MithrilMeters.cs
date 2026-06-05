@@ -87,7 +87,7 @@ public static class MithrilMeters
         public static readonly Counter<long> FrameMarkers =
             Meter.CreateCounter<long>("mithril.overlay.frame.markers");
 
-        /// <summary>Per-marker <c>WorldToWindow</c> returned null (calibration shape rejected the marker even though the area is calibrated). Tag: <c>area</c>. Surfaces as a counter so a flood is observable; first-time-per-area logged at Trace.</summary>
+        /// <summary>Per-marker <c>WorldToOverlay</c> returned null (calibration shape rejected the marker even though the area is calibrated). Tag: <c>area</c>. Surfaces as a counter so a flood is observable; first-time-per-area logged at Trace.</summary>
         public static readonly Counter<long> ProjectionMisses =
             Meter.CreateCounter<long>("mithril.overlay.projection.misses");
 

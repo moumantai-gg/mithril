@@ -7,9 +7,11 @@ namespace Mithril.MapCalibration.Internal;
 /// scale + mirror + zoom math; the only difference between the two wrappers
 /// is the return type tagging.
 ///
-/// Math is bit-identical to the legacy AreaCalibration.WorldToWindow /
-/// WindowToWorld (pre-#1076 refactor); see WorldToTextureCalibrationTests for
-/// the equivalence assertions.
+/// Math: similarity transform (translate + scale + rotate + optional
+/// MirrorNorth reflection) with multiplicative zoom-factor scaling. The
+/// closed-form inverse exists because the transform has no shear or
+/// perspective component — see the projection tests in
+/// WorldToTextureCalibrationTests for the round-trip contract.
 /// </summary>
 internal static class AreaProjectionCore
 {

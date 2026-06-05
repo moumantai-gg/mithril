@@ -14,7 +14,7 @@ namespace Mithril.MapCalibration.Internal;
 /// <para>Note: the in-game map pan/zoom that the user calibrated against
 /// <em>can</em> differ across characters (different UI preferences). The
 /// <see cref="AreaCalibration.CalibrationZoom"/> field captures the zoom; the
-/// no-pan assumption is documented in <see cref="AreaCalibration.WorldToWindow(WorldCoord, double)"/>.
+/// no-pan assumption is documented in <see cref="WorldToOverlayCalibration.ToOverlay(WorldCoord, double)"/>.
 /// If a different character runs the game with a different pan, the projection
 /// drifts and the user re-runs the walkthrough &#8212; an established Legolas UX
 /// concern, not a data-shape concern.</para>

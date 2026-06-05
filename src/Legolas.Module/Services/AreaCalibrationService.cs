@@ -29,8 +29,8 @@ public interface IAreaCalibrationService
     /// a texture-frame record is present and Legolas can't yet compose it onto
     /// the overlay — see spec §6 "AutoCal release blocker"). Consumers project
     /// world coords directly into <see cref="OverlayPixel"/> through this
-    /// struct, so the obsolete <see cref="AreaCalibration.WorldToWindow"/>
-    /// (frame-erased) entry point isn't reached.
+    /// struct rather than going through a frame-erased projection (the #1076
+    /// migration retired the untyped entry point).
     /// </summary>
     WorldToOverlayCalibration? CurrentOverlayCalibration { get; }
 

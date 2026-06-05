@@ -42,7 +42,7 @@ public static class CardinalDirectionExtensions
     /// from map-north — so a target due +North reads <see cref="CardinalDirection.N"/>
     /// and due +East reads <see cref="CardinalDirection.E"/>. World axes:
     /// East = ΔX, North = ΔZ (the same ground-plane frame
-    /// <see cref="AreaCalibration.WorldToWindow"/> consumes; the
+    /// <see cref="WorldToOverlayCalibration.ToOverlay(WorldCoord)"/> consumes; the
     /// <c>MirrorNorth</c> handedness is a rendering-only concern and is
     /// deliberately not applied here — relative phrasing is frame-internal and
     /// reflection-invariant for the player reading it on their own screen).

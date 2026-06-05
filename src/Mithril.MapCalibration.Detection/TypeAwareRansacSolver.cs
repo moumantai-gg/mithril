@@ -283,7 +283,7 @@ public static class TypeAwareRansacSolver
     // #1076 Phase 6.5: field-identity re-tag of an AreaCalibration to its
     // texture-frame view. RANSAC operates in texture-pixel space (see class
     // remarks), so projecting candidate refs through a frame-typed struct
-    // keeps the pixel comparison explicit — no untyped PixelPoint leaks.
+    // keeps the pixel comparison explicit — no frame-erased pixel leaks.
     private static WorldToTextureCalibration AsTexture(AreaCalibration cal) =>
         new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
             cal.MirrorNorth, cal.CalibrationZoom);

@@ -26,16 +26,16 @@ namespace Legolas.Rendering;
 /// walkthrough captures clicks in pixel space (the user clicks the in-game
 /// map's rendered pin); the marker registry holds world coords. The producer
 /// (<c>PinCalibrationCoordinator</c>) converts pixel → world via
-/// <c>IMapCalibrationService.WindowToWorld</c> using the current (baseline /
+/// <c>IMapCalibrationService.OverlayToWorld</c> using the current (baseline /
 /// pre-refinement) calibration at registration time. The render-time
-/// <c>WorldToWindow</c> then projects back through the same calibration —
+/// <c>WorldToOverlay</c> then projects back through the same calibration —
 /// round-trip is byte-identical iff the calibration didn't change between
 /// register and render. Once the user confirms a refinement, the calibration
 /// changes and the markers re-project — which is in fact MORE correct than
 /// today's pixel-frozen rendering (the markers track the new calibration).</para>
 ///
 /// <para><b>Brand-new-area fallback.</b> When an area has no baseline,
-/// <c>WindowToWorld</c> returns null and the marker can't register; in that
+/// <c>OverlayToWorld</c> returns null and the marker can't register; in that
 /// case the existing WPF <c>ItemsControl</c> in <c>MapOverlayView.xaml</c>
 /// stays the rendering path. Step 6's "delete dead code" PR will revisit
 /// the fallback once the no-baseline case has a strategy of its own.</para>

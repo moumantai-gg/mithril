@@ -4,7 +4,7 @@ namespace Legolas.Domain;
 /// One projected reference (landmark/NPC) for the "Validate calibration"
 /// overlay (#494/#495). <see cref="Pixel"/> is the area's persisted calibration
 /// applied to the reference's true world coordinate via
-/// <see cref="AreaCalibration.WorldToWindow"/> — rendered as a distinct hollow
+/// <see cref="WorldToOverlayCalibration.ToOverlay(WorldCoord)"/> — rendered as a distinct hollow
 /// magenta marker the user eyeballs against the real in-game map feature. A
 /// consistent offset across markers is the diagnostic (recalibrate; usually a
 /// map-zoom change). <see cref="Name"/> is drawn as a label beside the dot;

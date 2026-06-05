@@ -6,12 +6,14 @@ namespace Mithril.MapCalibration;
 /// at load time from <see cref="AreaCalibration.Source"/> per the table in
 /// <c>docs/planning/calibration-1076-pixel-frame-typing/spec.md</c> §7.2.
 ///
-/// <para>The split exists because <c>AreaCalibration.WorldToWindow</c> has
-/// historically returned two different things depending on the producer:
-/// AutoCalibration-RANSAC fits land in base-texture pixel coords, while the
-/// Legolas walkthrough wizard fits land in overlay-window pixel coords. The two
-/// frames are not interchangeable; the catalyst bug at #1076 was a drift check
-/// silently comparing one against the other.</para>
+/// <para>The split exists because, pre-#1076, the single projection method on
+/// <c>AreaCalibration</c> returned two different things depending on the
+/// producer: AutoCalibration-RANSAC fits landed in base-texture pixel coords,
+/// while the Legolas walkthrough wizard fits landed in overlay-window pixel
+/// coords. The two frames are not interchangeable; the catalyst bug at #1076
+/// was a drift check silently comparing one against the other. The
+/// <see cref="WorldToTextureCalibration"/> / <see cref="WorldToOverlayCalibration"/>
+/// pair replaces the single-method shape with frame-typed return values.</para>
 /// </summary>
 public enum CalibrationFrame
 {

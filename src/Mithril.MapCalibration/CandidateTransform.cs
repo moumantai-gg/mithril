@@ -2,11 +2,13 @@ namespace Mithril.MapCalibration;
 
 /// <summary>
 /// World-coord → aligned-pair-pixel transform — the input to <see cref="JEvaluator"/>.
-/// Mirrors <see cref="AreaCalibration.WorldToWindow(WorldCoord)"/> at <c>CalibrationZoom = 1.0</c>;
-/// intentionally a distinct record so we don't allocate a full
-/// <see cref="AreaCalibration"/> per candidate in the synthesis-J top-K loop.
-/// Keep <see cref="Apply"/> in sync with <see cref="AreaCalibration.WorldToWindow(WorldCoord)"/>;
-/// the equivalence test in <c>CandidateTransformConversionTests</c> is the trip-wire.
+/// Mirrors <see cref="WorldToTextureCalibration.ToTexture(WorldCoord)"/> at
+/// <c>CalibrationZoom = 1.0</c>; intentionally a distinct record so we don't
+/// allocate a full <see cref="AreaCalibration"/> per candidate in the
+/// synthesis-J top-K loop. Keep <see cref="Apply"/> in sync with
+/// <see cref="WorldToTextureCalibration.ToTexture(WorldCoord)"/>; the
+/// equivalence test in <c>CandidateTransformConversionTests</c> is the
+/// trip-wire.
 /// </summary>
 public readonly record struct CandidateTransform(double Scale, double RotRadians, bool Mirror, double Tx, double Ty)
 {
