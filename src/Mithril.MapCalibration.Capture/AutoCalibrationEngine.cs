@@ -704,9 +704,17 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 
         // Gate-accept: persist through the user store stamped AutoCapture, which
         // inherits user-store precedence by construction (Task 20).
+        //
+        // mithril#1078: explicit Frame=Texture. The auto-capture RANSAC solves over
+        // the aligned base texture (`alignedTexture` + `alignedRect = (0,0,…)`); the
+        // resulting OriginX/Scale/etc. are in texture-pixel units. AreaCalibration.Frame
+        // defaults to Texture so this stamp is documentation today, but making it
+        // explicit defends against the default flipping in a future cleanup and
+        // keeps the save sites symmetric with Legolas-wizard's Frame=Overlay stamp.
         var stamped = result.Calibration with
         {
             Source = CalibrationSource.AutoCapture,
+            Frame = CalibrationFrame.Texture,
         };
 
         attempt.Outcome = OutcomeVocabulary.Accepted;

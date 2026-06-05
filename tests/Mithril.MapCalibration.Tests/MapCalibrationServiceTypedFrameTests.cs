@@ -6,21 +6,38 @@ using Xunit;
 namespace Mithril.MapCalibration.Tests;
 
 /// <summary>
-/// #1076 Task 2.3 — assert that <see cref="MapCalibrationService"/>'s typed
-/// frame views route each stored <see cref="AreaCalibration"/> into the right
-/// frame list based on its <see cref="AreaCalibration.Source"/>. The frame
-/// inference rule (spec §7.2): AutoCapture / BundledBaseline / CommunitySync
-/// → texture; UserRefinement → overlay (Schema-1 default since AutoCal had
-/// never shipped at the cutover).
+/// #1076 Task 2.3 + mithril#1078 — assert that <see cref="MapCalibrationService"/>'s
+/// typed frame views route each stored <see cref="AreaCalibration"/> into the right
+/// frame list based on its <see cref="AreaCalibration.Frame"/> field.
+///
+/// <para>Pre-#1078 the picker re-inferred frame from <see cref="AreaCalibration.Source"/>;
+/// post-#1078 the loaders own the inference (Schema-1 → Schema-2 at load time) and the
+/// picker just reads <c>cal.Frame</c>. The <see cref="Cal"/> helper mirrors the
+/// loader's Source-based default so the existing tests keep working;
+/// <see cref="FrameDisagreesWithSource_PickerHonorsFrame"/> asserts the picker
+/// honors Frame even when it disagrees with the Source-inferred default.</para>
 /// </summary>
 public sealed class MapCalibrationServiceTypedFrameTests
 {
     private const string Key = "Map_AreaTest";
     private static readonly MapSceneRef Scene = new("AreaTest", null, Key);
 
-    private static AreaCalibration Cal(CalibrationSource source) =>
+    private static AreaCalibration Cal(CalibrationSource source, CalibrationFrame? frame = null) =>
         new(Scale: 1.0, RotationRadians: 0, OriginX: 100, OriginY: 200,
-            ReferenceCount: 6, ResidualPixels: 0.5) { Source = source };
+            ReferenceCount: 6, ResidualPixels: 0.5)
+        {
+            Source = source,
+            // Mirror what the loaders do at Schema-1 → Schema-2 inference time
+            // (spec §7.2). Lets callers override for the disagreement case.
+            Frame = frame ?? source switch
+            {
+                CalibrationSource.AutoCapture     => CalibrationFrame.Texture,
+                CalibrationSource.BundledBaseline => CalibrationFrame.Texture,
+                CalibrationSource.UserRefinement  => CalibrationFrame.Overlay,
+                CalibrationSource.CommunitySync   => CalibrationFrame.Overlay,
+                _                                 => CalibrationFrame.Overlay,
+            },
+        };
 
     private static MapCalibrationService NewSvc(
         IReadOnlyDictionary<string, AreaCalibration>? baseline = null,
@@ -77,6 +94,39 @@ public sealed class MapCalibrationServiceTypedFrameTests
         var svc = NewSvc();
         svc.GetTextureRecords(Scene).Should().BeEmpty();
         svc.GetOverlayRecords(Scene).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// mithril#1078 regression: the picker honors <see cref="AreaCalibration.Frame"/>
+    /// even when it disagrees with the Source-inferred default. Pre-#1078 the picker
+    /// re-inferred from Source; a Schema-2 record whose stored Frame disagreed with
+    /// its Source silently followed Source. After #1078 the loaders own the
+    /// inference and the picker is a pure Frame reader — a pathological record
+    /// (e.g. AutoCapture + Frame=Overlay, hand-edited or future writer that
+    /// decouples them) routes to the Frame-tagged list, not the Source-inferred one.
+    /// </summary>
+    [Theory]
+    [InlineData(CalibrationSource.UserRefinement, CalibrationFrame.Texture)]
+    [InlineData(CalibrationSource.AutoCapture, CalibrationFrame.Overlay)]
+    [InlineData(CalibrationSource.BundledBaseline, CalibrationFrame.Overlay)]
+    public void FrameDisagreesWithSource_PickerHonorsFrame(
+        CalibrationSource source, CalibrationFrame frame)
+    {
+        var svc = NewSvc(
+            userRefs: new Dictionary<string, AreaCalibration> { [Key] = Cal(source, frame) });
+
+        if (frame == CalibrationFrame.Texture)
+        {
+            svc.GetTextureRecords(Scene).Should().HaveCount(1,
+                "picker reads cal.Frame, not InferFromSource(cal.Source)");
+            svc.GetOverlayRecords(Scene).Should().BeEmpty();
+        }
+        else
+        {
+            svc.GetOverlayRecords(Scene).Should().HaveCount(1,
+                "picker reads cal.Frame, not InferFromSource(cal.Source)");
+            svc.GetTextureRecords(Scene).Should().BeEmpty();
+        }
     }
 
     [Fact]
