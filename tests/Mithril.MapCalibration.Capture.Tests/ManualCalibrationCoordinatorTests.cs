@@ -110,29 +110,97 @@ public sealed class ManualCalibrationCoordinatorTests
         coordinator.IsArmed.Should().BeFalse();
     }
 
-    // ── 2b. Stored overlay-frame record → engine refuses → chip is the actionable message ─
+    // ── 2b. mithril#1082 frame-aware routing ─────────────────────────────────
 
     /// <summary>
-    /// Regression for the gap noticed via live-log inspection 2026-06-05: the
-    /// engine's <see cref="DriftCheckOutcome.NoTextureFrameRecord"/> branch (Phase 3
-    /// Task 3.4b) shipped without a coordinator switch arm, so the coordinator
-    /// fell through to <c>default</c>, set "Drift check: internal error (see logs)"
-    /// as the chip, and emitted its own self-described "this is a bug" Error log.
-    /// The user-visible chip must be the actionable <c>DriftCheckNoTextureFrameRecord</c>
-    /// message — "No AutoCalibration record for this scene — press AutoCalibrate to land one."
+    /// Build a fake whose <see cref="IMapCalibrationService.GetTextureCalibration"/>
+    /// returns the supplied value while <see cref="IMapCalibrationService.GetCalibration"/>
+    /// is independently seeded — lets us exercise the coordinator's frame-aware
+    /// routing introduced by mithril#1082.
     /// </summary>
-    [Fact]
-    public async Task Hotkey_NoTextureFrameRecord_SurfacesActionableChip()
+    private static FakeCalibrationService FrameAwareService(
+        AreaCalibration? frameAgnosticPick,
+        WorldToTextureCalibration? texture)
     {
-        var runner = new FakeRunner { DriftReturn = new DriftCheckOutcome.NoTextureFrameRecord() };
-        var overlay = new FakeOverlayWindow();
-        var coordinator = NewCoordinator(runner, ServiceWith(Stored()), overlay: overlay);
+        var svc = new FakeCalibrationService();
+        if (frameAgnosticPick is not null) svc.Saved[Asset] = frameAgnosticPick;
+        if (texture is { } tex) svc.SeedTextureCalibration(Asset, tex);
+        return svc;
+    }
+
+    private static WorldToTextureCalibration TextureCal() =>
+        new(OriginX: 100, OriginY: 100, Scale: 1.0, RotationRadians: 0,
+            MirrorNorth: false, CalibrationZoom: 1.0);
+
+    private static AreaCalibration OverlayWizardRecord() =>
+        new(Scale: 1.0, RotationRadians: 0, OriginX: 100, OriginY: 100,
+            ReferenceCount: 6, ResidualPixels: 0.7)
+        { Source = CalibrationSource.UserRefinement, Frame = CalibrationFrame.Overlay };
+
+    [Fact]
+    public async Task Coordinator_SceneHasOnlyOverlayFrame_RunsSolve()
+    {
+        // mithril#1082: the picker returns a Legolas-wizard (overlay-frame) record but
+        // GetTextureCalibration is null. The coordinator must route to AutoCal solve,
+        // not drift-check.
+        var runner = new FakeRunner();
+        var svc = FrameAwareService(OverlayWizardRecord(), texture: null);
+        var coordinator = NewCoordinator(runner, svc);
+
+        await coordinator.HandleHotkeyAsync(CancellationToken.None);
+
+        runner.SolveCalls.Should().Be(1, "no texture-frame record → solve to land one");
+        runner.DriftCalls.Should().Be(0, "drift-check would refuse without a texture-frame record");
+    }
+
+    [Fact]
+    public async Task Coordinator_SceneHasOnlyTextureFrame_RunsDriftCheck()
+    {
+        var runner = new FakeRunner { DriftReturn = new DriftCheckOutcome.Ok(0.5, 6) };
+        var svc = FrameAwareService(Stored(), texture: TextureCal());
+        var coordinator = NewCoordinator(runner, svc);
 
         await coordinator.HandleHotkeyAsync(CancellationToken.None);
 
         runner.DriftCalls.Should().Be(1);
         runner.SolveCalls.Should().Be(0);
-        overlay.StatusMessage.Should().Be(CalibrationStatusFormatter.DriftCheckNoTextureFrameRecord());
+    }
+
+    [Fact]
+    public async Task Coordinator_SceneHasBothFrames_RunsDriftCheck()
+    {
+        // Both texture-frame and overlay-frame records present. Texture is what
+        // matters for drift routing.
+        var runner = new FakeRunner { DriftReturn = new DriftCheckOutcome.Ok(0.5, 6) };
+        var svc = FrameAwareService(OverlayWizardRecord(), texture: TextureCal());
+        var coordinator = NewCoordinator(runner, svc);
+
+        await coordinator.HandleHotkeyAsync(CancellationToken.None);
+
+        runner.DriftCalls.Should().Be(1);
+        runner.SolveCalls.Should().Be(0);
+    }
+
+    /// <summary>
+    /// mithril#1082 spec §7.1: <see cref="DriftCheckOutcome.NoTextureFrameRecord"/>
+    /// becomes a race-fallback that re-solves, matching the existing
+    /// <see cref="DriftCheckOutcome.NoStoredCalibration"/> shape. The coordinator
+    /// pre-checks with <see cref="IMapCalibrationService.GetTextureCalibration"/>
+    /// and sees non-null, but the engine re-reads and sees null — fall through to
+    /// AutoCal solve.
+    /// </summary>
+    [Fact]
+    public async Task Coordinator_NoTextureFrameRecordRace_FallsThroughToSolve()
+    {
+        var runner = new FakeRunner { DriftReturn = new DriftCheckOutcome.NoTextureFrameRecord() };
+        var overlay = new FakeOverlayWindow();
+        var svc = FrameAwareService(Stored(), texture: TextureCal());
+        var coordinator = NewCoordinator(runner, svc, overlay: overlay);
+
+        await coordinator.HandleHotkeyAsync(CancellationToken.None);
+
+        runner.DriftCalls.Should().Be(1, "pre-check saw texture so drift was attempted");
+        runner.SolveCalls.Should().Be(1, "engine reported NoTextureFrameRecord → race-fallback to solve");
         overlay.StatusMessage.Should().NotContain("internal error");
         coordinator.IsArmed.Should().BeFalse();
     }

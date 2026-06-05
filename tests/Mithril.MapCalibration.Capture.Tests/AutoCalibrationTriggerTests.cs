@@ -49,30 +49,6 @@ public sealed class AutoCalibrationTriggerTests
     }
 
     [Fact]
-    public async Task Attempts_when_only_a_bundled_baseline_exists()
-    {
-        var engine = new SpyAutoCalibrationEngine();
-        var svc = new FakeCalibrationService();
-        svc.Seed(AssetKey, new AreaCalibration(1, 0, 0, 0, 4, 3) { Source = CalibrationSource.BundledBaseline });
-        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
-        await trigger.OnSceneChangedAsync(Scene());
-        engine.Calls.Should().Be(1, "a bundled baseline is upgradeable by the auto path");
-    }
-
-    [Fact]
-    public async Task Does_not_overwrite_an_existing_user_refinement()
-    {
-        var engine = new SpyAutoCalibrationEngine();
-        var svc = new FakeCalibrationService();
-        var cal = new AreaCalibration(1, 0, 0, 0, 6, 0.5) { Source = CalibrationSource.UserRefinement };
-        svc.Seed(AssetKey, cal);
-        svc.SeedAllSources(AssetKey, new[] { cal });
-        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
-        await trigger.OnSceneChangedAsync(Scene());
-        engine.Calls.Should().Be(0, "the auto path never displaces a user refinement");
-    }
-
-    [Fact]
     public async Task Does_not_overwrite_an_existing_auto_capture()
     {
         var engine = new SpyAutoCalibrationEngine();
@@ -138,53 +114,83 @@ public sealed class AutoCalibrationTriggerTests
     // intentionally RED under the old GetCalibration-based rule.
     // -------------------------------------------------------------------------
 
-    private static AreaCalibration Cal(double residual, int refs, CalibrationSource source) =>
+    private static AreaCalibration Cal(double residual, int refs, CalibrationSource source,
+        CalibrationFrame frame = CalibrationFrame.Texture) =>
         new(Scale: 1.0, RotationRadians: 0, OriginX: 0, OriginY: 0,
-            ReferenceCount: refs, ResidualPixels: residual) { Source = source };
+            ReferenceCount: refs, ResidualPixels: residual)
+        { Source = source, Frame = frame };
 
+    // mithril#1082 §6: the trigger gates on Frame=Texture && Source in {AutoCapture,
+    // BundledBaseline}. An overlay-frame UserRefinement (Legolas-wizard) record must
+    // NOT block the auto path — that's the bug this issue closes.
     [Fact]
-    public async Task Trigger_StoreHasUserRefinement_Skips()
+    public async Task Trigger_StoreHasOverlayFrameUserRefinement_Fires()
     {
-        // Store returns a UserRefinement; trigger must skip and log it.
         var engine = new SpyAutoCalibrationEngine();
         var svc = new FakeCalibrationService();
-        svc.SeedAllSources(AssetKey, new[] { Cal(0.8, 6, CalibrationSource.UserRefinement) });
-        var logger = new CapturingLogger();
-        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
-            service: svc, logger: logger);
-        await trigger.OnSceneChangedAsync(Scene());
-        engine.Calls.Should().Be(0, "store has a UserRefinement; auto path must not displace it");
-        logger.Entries.Should().Contain(e => e.Message.Contains("store has UserRefinement record"),
-            "trigger must log why it skipped");
-    }
-
-    [Fact]
-    public async Task Trigger_StoreHasAutoCapture_Skips()
-    {
-        // Store returns an AutoCapture; trigger must skip and log it.
-        var engine = new SpyAutoCalibrationEngine();
-        var svc = new FakeCalibrationService();
-        svc.SeedAllSources(AssetKey, new[] { Cal(0.6, 5, CalibrationSource.AutoCapture) });
-        var logger = new CapturingLogger();
-        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
-            service: svc, logger: logger);
-        await trigger.OnSceneChangedAsync(Scene());
-        engine.Calls.Should().Be(0, "store has an AutoCapture; one-shot-per-install must be respected");
-        logger.Entries.Should().Contain(e => e.Message.Contains("store has AutoCapture record"),
-            "trigger must log why it skipped");
-    }
-
-    [Fact]
-    public async Task Trigger_StoreOnlyHasBundledBaseline_Fires()
-    {
-        // Store has only a BundledBaseline — upgradeable; engine must be invoked.
-        var engine = new SpyAutoCalibrationEngine();
-        var svc = new FakeCalibrationService();
-        svc.SeedAllSources(AssetKey, new[] { Cal(2.1, 6, CalibrationSource.BundledBaseline) });
-        svc.Seed(AssetKey, Cal(2.1, 6, CalibrationSource.BundledBaseline));
+        svc.SeedAllSources(AssetKey, new[]
+        {
+            Cal(0.8, 6, CalibrationSource.UserRefinement, CalibrationFrame.Overlay),
+        });
         var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
         await trigger.OnSceneChangedAsync(Scene());
-        engine.Calls.Should().Be(1, "a bundled baseline is upgradeable by the auto path");
+        engine.Calls.Should().Be(1,
+            "an overlay-frame UserRefinement does not satisfy the texture-frame gate (mithril#1082 regression)");
+    }
+
+    [Fact]
+    public async Task Trigger_StoreHasTextureFrameAutoCapture_Skips()
+    {
+        var engine = new SpyAutoCalibrationEngine();
+        var svc = new FakeCalibrationService();
+        svc.SeedAllSources(AssetKey, new[]
+        {
+            Cal(0.6, 5, CalibrationSource.AutoCapture, CalibrationFrame.Texture),
+        });
+        var logger = new CapturingLogger();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            service: svc, logger: logger);
+        await trigger.OnSceneChangedAsync(Scene());
+        engine.Calls.Should().Be(0, "store has a converged texture-frame AutoCapture record");
+        logger.Entries.Should().Contain(e => e.Message.Contains("converged texture-frame AutoCapture record"),
+            "trigger must log why it skipped");
+    }
+
+    [Fact]
+    public async Task Trigger_StoreHasTextureFrameBundledBaseline_Skips()
+    {
+        // Cold-boot retry-storm prevention (spec §6 / §10): a texture-frame BundledBaseline
+        // is "good enough for v1 release"; AutoCal does not retry over it on every cold boot.
+        var engine = new SpyAutoCalibrationEngine();
+        var svc = new FakeCalibrationService();
+        svc.SeedAllSources(AssetKey, new[]
+        {
+            Cal(2.1, 6, CalibrationSource.BundledBaseline, CalibrationFrame.Texture),
+        });
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
+        await trigger.OnSceneChangedAsync(Scene());
+        engine.Calls.Should().Be(0,
+            "texture-frame BundledBaseline is converged; one-shot-per-install respected");
+    }
+
+    [Fact]
+    public async Task Trigger_StoreHasBothFrames_TextureSatisfied_Skips()
+    {
+        // Overlay-frame UserRefinement + texture-frame BundledBaseline coexist on
+        // the same scene (the SceneRefinements shape mithril#1082 introduces). The
+        // texture-frame record satisfies the trigger gate; the overlay record is
+        // orthogonal.
+        var engine = new SpyAutoCalibrationEngine();
+        var svc = new FakeCalibrationService();
+        svc.SeedAllSources(AssetKey, new[]
+        {
+            Cal(0.8, 6, CalibrationSource.UserRefinement, CalibrationFrame.Overlay),
+            Cal(2.1, 6, CalibrationSource.BundledBaseline, CalibrationFrame.Texture),
+        });
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true, service: svc);
+        await trigger.OnSceneChangedAsync(Scene());
+        engine.Calls.Should().Be(0,
+            "the texture-frame baseline satisfies the gate even though an overlay-frame record also exists");
     }
 
     [Fact]

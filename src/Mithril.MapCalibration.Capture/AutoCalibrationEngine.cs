@@ -170,8 +170,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // spec §7.2) there is no texture-frame source to project through —
         // running the locate→detect→compare pipeline would silently produce
         // 0/N matches on whatever record happens to be stored. Refuse honestly
-        // before any capture / refine / detect work runs; the chip surfaces an
-        // actionable reason (CalibrationStatusFormatter.DriftCheckNoTextureFrameRecord).
+        // before any capture / refine / detect work runs. Post-#1082 the
+        // coordinator no longer reaches this branch on a record-less scene
+        // (it gates on GetTextureCalibration before calling CheckDriftAsync);
+        // the outcome remains as defense-in-depth and is handled as a
+        // race-fallback in ManualCalibrationCoordinator.
         if (_calibrationService.GetTextureCalibration(sceneRef) is null)
         {
             _logger?.LogInformation(
