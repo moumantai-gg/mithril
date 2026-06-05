@@ -280,28 +280,44 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // Each detection may claim at most one reference (greedy nearest-first
         // prevents a single detection from boosting the matched count artificially
         // when references are close together).
+        //
+        // mithril#1076 fix: compare predictions and detections in the SAME frame
+        // (CroppedFramePixel — the frame the detector emits anchors in). The
+        // pre-fix code projected predictions into TEXTURE space and then added
+        // (loc.Tx, loc.Ty) to land in CAPTURED-FRAME space — but the detector
+        // emits anchors in CROP-FRAME space (the screenshot it consumed is the
+        // cropped sub-rect). The mismatch was exactly (loc.Tx, loc.Ty); on the
+        // catalyst Map_KhyruleksCrypt 2026-06-04 attempt that was (320.1, 57.6),
+        // pushing every reference outside DriftMatchGatePx=20 → 0/N matched.
+        //
+        // Wrap the stored AreaCalibration (texture-frame, see InferFrameFromSource
+        // in MapCalibrationService) into the typed projection struct, project to
+        // TEXTURE space, then map texture→crop via alignedRect — landing in the
+        // same frame as `d.Anchor`. The type system now forbids the old shape:
+        // TexturePixel.DistanceTo(CroppedFramePixel) doesn't compile.
+        var storedTexCal = new WorldToTextureCalibration(
+            stored.OriginX, stored.OriginY, stored.Scale, stored.RotationRadians,
+            stored.MirrorNorth, stored.CalibrationZoom);
+
         var usedDetectionIndices = new HashSet<int>(detections.Count);
         var residuals = new List<double>(references.Count);
         foreach (var r in references)
         {
-            var predTex = stored.WorldToWindow(r.World, currentZoom: 1.0);
-            var predScreenX = predTex.X * loc.Scale + loc.Tx;
-            var predScreenY = predTex.Y * loc.Scale + loc.Ty;
+            // Predict in TEXTURE space (where the stored calibration solves):
+            TexturePixel predTex = storedTexCal.ToTexture(r.World, currentZoom: 1.0);
+
+            // Convert to CROP space — same frame as TypedDetection.Anchor.
+            CroppedFramePixel predCrop = alignedRect.TextureToCropped(predTex);
+
             double? best = null;
-            double bestDx = 0, bestDy = 0;
             int bestIdx = -1;
             for (int di = 0; di < detections.Count; di++)
             {
                 if (usedDetectionIndices.Contains(di)) continue;
-                var d = detections[di];
-                var dist = Math.Sqrt(
-                    (d.Anchor.X - predScreenX) * (d.Anchor.X - predScreenX) +
-                    (d.Anchor.Y - predScreenY) * (d.Anchor.Y - predScreenY));
+                var dist = predCrop.DistanceTo(detections[di].Anchor);  // type-safe, same frame
                 if (dist < (best ?? double.MaxValue))
                 {
                     best = dist;
-                    bestDx = d.Anchor.X;
-                    bestDy = d.Anchor.Y;
                     bestIdx = di;
                 }
             }
@@ -310,7 +326,10 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             residuals.Add(best.Value);
             _logger?.LogTrace(
                 "Drift check {MapAssetKey}: ref '{Name}' predicted=({Px:0.0},{Py:0.0}), nearest detection=({Dx:0.0},{Dy:0.0}) at {Dist:0.00}px.",
-                sceneRef.MapAssetKey, r.Name, predScreenX, predScreenY, bestDx, bestDy, best.Value);
+                sceneRef.MapAssetKey, r.Name,
+                predCrop.X, predCrop.Y,
+                detections[bestIdx].Anchor.X, detections[bestIdx].Anchor.Y,
+                best.Value);
         }
 
         span?.SetTag("refs.matched", residuals.Count);
