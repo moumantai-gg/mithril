@@ -122,26 +122,29 @@ internal sealed class MapCalibrationService : IMapCalibrationService
     /// </summary>
     private WorldToTextureCalibration? PickTexture(MapSceneRef scene)
     {
-        var legacy = PickByFrame(scene, CalibrationFrameKind.Texture);
+        var legacy = PickByFrame(scene, CalibrationFrame.Texture);
         return legacy is null ? null : ToTextureCalibration(legacy);
     }
 
     /// <summary>#1076 picker for the overlay-frame slice; see <see cref="PickTexture"/>.</summary>
     private WorldToOverlayCalibration? PickOverlay(MapSceneRef scene)
     {
-        var legacy = PickByFrame(scene, CalibrationFrameKind.Overlay);
+        var legacy = PickByFrame(scene, CalibrationFrame.Overlay);
         return legacy is null ? null : ToOverlayCalibration(legacy);
     }
 
-    private AreaCalibration? PickByFrame(MapSceneRef scene, CalibrationFrameKind frame)
+    private AreaCalibration? PickByFrame(MapSceneRef scene, CalibrationFrame frame)
     {
         if (string.IsNullOrWhiteSpace(scene.MapAssetKey)) return null;
 
+        // mithril#1078: read AreaCalibration.Frame directly (single source of truth).
+        // The Schema-1 → Schema-2 inference has already been done by UserRefinementStore
+        // and BundledBaselineLoader at load time; the picker must not re-infer from
+        // Source. Stamping Source AND Frame at save sites (AutoCalibrationEngine and
+        // AreaCalibrationService) keeps disk records self-describing.
         var candidates = new List<AreaCalibration>(capacity: 2);
-        if (_userStore.TryGet(scene.MapAssetKey, out var user)
-            && InferFrameFromSource(user.Source) == frame) candidates.Add(user);
-        if (_baseline.TryGetValue(scene.MapAssetKey, out var baseline)
-            && InferFrameFromSource(baseline.Source) == frame) candidates.Add(baseline);
+        if (_userStore.TryGet(scene.MapAssetKey, out var user) && user.Frame == frame) candidates.Add(user);
+        if (_baseline.TryGetValue(scene.MapAssetKey, out var baseline) && baseline.Frame == frame) candidates.Add(baseline);
 
         if (candidates.Count == 0) return null;
 
@@ -185,10 +188,15 @@ internal sealed class MapCalibrationService : IMapCalibrationService
 
     /// <summary>
     /// #1076 typed-frame view: every candidate AreaCalibration for the scene
-    /// that infers to TEXTURE frame (see <see cref="InferFrameFromSource"/>),
-    /// wrapped as <see cref="WorldToTextureCalibration"/>. Underlying storage
-    /// is unchanged — this is a derived projection of <see cref="GetAllSources"/>
+    /// whose <see cref="AreaCalibration.Frame"/> is <see cref="CalibrationFrame.Texture"/>,
+    /// wrapped as <see cref="WorldToTextureCalibration"/>. Underlying storage is
+    /// unchanged — this is a derived projection of <see cref="GetAllSources"/>
     /// for the texture-frame consumers (drift check, AutoCal).
+    ///
+    /// <para>mithril#1078: reads <c>cal.Frame</c> directly. The Schema-1 → Schema-2
+    /// inference is owned by <see cref="UserRefinementStore"/> and
+    /// <see cref="BundledBaselineLoader"/> at load time; this method is a pure
+    /// filter, no re-inference.</para>
     /// </summary>
     internal IReadOnlyList<WorldToTextureCalibration> GetTextureRecords(MapSceneRef scene)
     {
@@ -197,7 +205,7 @@ internal sealed class MapCalibrationService : IMapCalibrationService
         var result = new List<WorldToTextureCalibration>(all.Count);
         foreach (var cal in all)
         {
-            if (InferFrameFromSource(cal.Source) == CalibrationFrameKind.Texture)
+            if (cal.Frame == CalibrationFrame.Texture)
                 result.Add(ToTextureCalibration(cal));
         }
         return result;
@@ -205,8 +213,12 @@ internal sealed class MapCalibrationService : IMapCalibrationService
 
     /// <summary>
     /// #1076 typed-frame view: every candidate AreaCalibration for the scene
-    /// that infers to OVERLAY frame, wrapped as <see cref="WorldToOverlayCalibration"/>.
-    /// Used by Legolas overlay rendering.
+    /// whose <see cref="AreaCalibration.Frame"/> is <see cref="CalibrationFrame.Overlay"/>,
+    /// wrapped as <see cref="WorldToOverlayCalibration"/>. Used by Legolas overlay
+    /// rendering.
+    ///
+    /// <para>mithril#1078: reads <c>cal.Frame</c> directly; see
+    /// <see cref="GetTextureRecords"/>.</para>
     /// </summary>
     internal IReadOnlyList<WorldToOverlayCalibration> GetOverlayRecords(MapSceneRef scene)
     {
@@ -215,27 +227,11 @@ internal sealed class MapCalibrationService : IMapCalibrationService
         var result = new List<WorldToOverlayCalibration>(all.Count);
         foreach (var cal in all)
         {
-            if (InferFrameFromSource(cal.Source) == CalibrationFrameKind.Overlay)
+            if (cal.Frame == CalibrationFrame.Overlay)
                 result.Add(ToOverlayCalibration(cal));
         }
         return result;
     }
-
-    /// <summary>
-    /// #1076 source→frame inference. Spec §7.2 (revised after P.1/P.1b):
-    /// AutoCapture + BundledBaseline + CommunitySync → Texture frame;
-    /// UserRefinement → Overlay (the in-the-wild Schema-1 default since AutoCal
-    /// has never shipped to users — every persisted UserRefinement record is
-    /// Legolas-wizard-produced overlay-frame).
-    /// </summary>
-    private static CalibrationFrameKind InferFrameFromSource(CalibrationSource source) => source switch
-    {
-        CalibrationSource.AutoCapture     => CalibrationFrameKind.Texture,
-        CalibrationSource.BundledBaseline => CalibrationFrameKind.Texture,
-        CalibrationSource.CommunitySync   => CalibrationFrameKind.Texture,
-        CalibrationSource.UserRefinement  => CalibrationFrameKind.Overlay,
-        _ => CalibrationFrameKind.Overlay, // unknown → safest default; spec §13 P.1b
-    };
 
     private static WorldToTextureCalibration ToTextureCalibration(AreaCalibration legacy) =>
         new(legacy.OriginX, legacy.OriginY, legacy.Scale, legacy.RotationRadians,
@@ -244,8 +240,6 @@ internal sealed class MapCalibrationService : IMapCalibrationService
     private static WorldToOverlayCalibration ToOverlayCalibration(AreaCalibration legacy) =>
         new(legacy.OriginX, legacy.OriginY, legacy.Scale, legacy.RotationRadians,
             legacy.MirrorNorth, legacy.CalibrationZoom);
-
-    private enum CalibrationFrameKind { Texture, Overlay }
 
     public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration)
     {

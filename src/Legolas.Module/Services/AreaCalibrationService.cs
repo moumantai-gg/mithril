@@ -236,9 +236,16 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         // Stamp the zoom the user solved at (solver is zoom-agnostic — it just
         // fits the clicked pixels). > 0 guard so a bad value can't poison the
         // later currentZoom/CalibrationZoom division.
+        //
+        // mithril#1078: explicit Frame=Overlay. The wizard fits (WorldCoord, OverlayPixel)
+        // pairs the user clicks on the overlay window; the resulting OriginX/Scale/etc.
+        // are in overlay-pixel units. Without this stamp, AreaCalibration.Frame would
+        // take its default of Texture and the picker would mis-frame this record. The
+        // defensive Source stamp in UserRefinementStore.Save preserves Frame verbatim.
         var calibration = solved with
         {
             CalibrationZoom = calibrationZoom > 1e-6 ? calibrationZoom : 1.0,
+            Frame = CalibrationFrame.Overlay,
         };
 
         // mithril#1041: single write path — every solved calibration (manual
