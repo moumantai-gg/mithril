@@ -87,6 +87,18 @@ public interface IMapCalibrationService
     WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene);
 
     /// <summary>
+    /// #1076 raw-struct accessor for the active overlay-frame calibration.
+    /// Returns null when no overlay-frame source has fit this scene — the
+    /// symmetric counterpart to <see cref="GetTextureCalibration"/> for
+    /// overlay-bound callers (Legolas rendering / wizard ghosts). Use
+    /// <see cref="WorldToOverlay"/> for one-shot projection; this method is
+    /// for callers that need the existence answer ("does the scene have a
+    /// usable overlay-frame record?") and / or the struct itself for
+    /// downstream composition.
+    /// </summary>
+    WorldToOverlayCalibration? GetOverlayCalibration(MapSceneRef scene);
+
+    /// <summary>
     /// The active calibration record for a scene (or null if uncalibrated).
     /// Consumers needing the residual + reference count for an "approximate
     /// location" chip read it here.

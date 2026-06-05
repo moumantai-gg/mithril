@@ -289,6 +289,7 @@ public sealed class MarkerPipelineSnapshotTests
             => new WorldCoord(pixel.X, 0, pixel.Y);
 
         public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) => null;
+        public WorldToOverlayCalibration? GetOverlayCalibration(MapSceneRef scene) => null;
         public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
         public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations
             => new Dictionary<string, AreaCalibration>();

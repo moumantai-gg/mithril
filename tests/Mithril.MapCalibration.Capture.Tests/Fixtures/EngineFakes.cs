@@ -298,6 +298,7 @@ internal sealed class FakeCalibrationService : IMapCalibrationService
     public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom) => null;
     public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) =>
         _textureCals.TryGetValue(scene.MapAssetKey, out var c) ? c : null;
+    public WorldToOverlayCalibration? GetOverlayCalibration(MapSceneRef scene) => null;
     public AreaCalibration? GetCalibration(MapSceneRef scene) =>
         Saved.TryGetValue(scene.MapAssetKey, out var s)
             ? s
