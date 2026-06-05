@@ -10,7 +10,7 @@ namespace Mithril.MapCalibration;
 /// </summary>
 public readonly record struct CandidateTransform(double Scale, double RotRadians, bool Mirror, double Tx, double Ty)
 {
-    public PixelPoint Apply(WorldCoord world)
+    public TexturePixel Apply(WorldCoord world)
     {
         var east = world.X;
         var north = Mirror ? -world.Z : world.Z;
@@ -18,7 +18,7 @@ public readonly record struct CandidateTransform(double Scale, double RotRadians
         var sin = Math.Sin(RotRadians);
         var rotE = east * cos + north * sin;
         var rotN = -east * sin + north * cos;
-        return new PixelPoint(Tx + Scale * rotE, Ty - Scale * rotN);
+        return new TexturePixel(Tx + Scale * rotE, Ty - Scale * rotN);
     }
 
     /// <summary>
