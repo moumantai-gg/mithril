@@ -86,31 +86,6 @@ internal sealed class MapCalibrationService : IMapCalibrationService
         _ => 0,
     };
 
-    [Obsolete("Use WorldToTexture or WorldToOverlay; frame-explicit API since #1076.", error: false)]
-    public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom)
-    {
-        // #1076 shim: prefer texture (the more-common case in pre-refactor
-        // callers) then fall back to overlay so Legolas pre-migration callers
-        // still resolve. PR 7 deletes this once all consumers migrate.
-        if (WorldToTexture(scene, world, currentZoom) is { } tex)
-            return new PixelPoint(tex.X, tex.Y);
-        if (WorldToOverlay(scene, world, currentZoom) is { } ovr)
-            return new PixelPoint(ovr.X, ovr.Y);
-        return null;
-    }
-
-    [Obsolete("Use TextureToWorld or OverlayToWorld; frame-explicit API since #1076.", error: false)]
-    public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom)
-    {
-        // #1076 shim, symmetric to WorldToWindow. The pixel argument is frame-
-        // erased; route through whichever calibration the scene has.
-        if (TextureToWorld(scene, new TexturePixel(pixel.X, pixel.Y), currentZoom) is { } texW)
-            return texW;
-        if (OverlayToWorld(scene, new OverlayPixel(pixel.X, pixel.Y), currentZoom) is { } ovrW)
-            return ovrW;
-        return null;
-    }
-
     public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom)
     {
         var pick = PickTexture(scene);

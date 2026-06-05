@@ -367,8 +367,6 @@ public class AreaCalibrationServiceTests
         public event EventHandler<MapSceneRef>? Changed { add { } remove { } }
         public bool IsCalibrated(MapSceneRef scene) => false;
         public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
-        public Mithril.MapCalibration.PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
-        public WorldCoord? WindowToWorld(MapSceneRef scene, Mithril.MapCalibration.PixelPoint pixel, double currentZoom) => null;
         public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
         public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) => null;
         public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom) => null;

@@ -163,10 +163,6 @@ public sealed class LegolasCalibrationMarkerSnapshotTests
     private sealed class IdentityCalibrationService : IMapCalibrationService
     {
         public bool IsCalibrated(MapSceneRef scene) => true;
-        public Mithril.MapCalibration.PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom)
-            => new Mithril.MapCalibration.PixelPoint(world.X, world.Z);
-        public WorldCoord? WindowToWorld(MapSceneRef scene, Mithril.MapCalibration.PixelPoint pixel, double currentZoom)
-            => new WorldCoord(pixel.X, 0, pixel.Y);
         public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
         public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) => null;
         public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom)

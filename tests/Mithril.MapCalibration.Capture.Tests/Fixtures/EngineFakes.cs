@@ -288,8 +288,6 @@ internal sealed class FakeCalibrationService : IMapCalibrationService
 
     public bool IsCalibrated(MapSceneRef scene) =>
         Saved.ContainsKey(scene.MapAssetKey) || _prior.ContainsKey(scene.MapAssetKey);
-    public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
-    public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom) => null;
     public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) =>
         _textureCals.TryGetValue(scene.MapAssetKey, out var c) ? c.ToTexture(world, currentZoom) : null;
     public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) =>

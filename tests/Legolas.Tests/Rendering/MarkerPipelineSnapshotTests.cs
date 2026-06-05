@@ -19,7 +19,7 @@ namespace Legolas.Tests.Rendering;
 /// <see cref="IWorldOverlayMarkers.AddMarker"/>; the projection driver
 /// (<see cref="OverlayWindowService.ProjectMarkers"/>) reads
 /// <see cref="WorldOverlayMarkers.CurrentAreaMarkers"/>, projects via
-/// <see cref="IMapCalibrationService.WorldToWindow"/>, and hands the
+/// <see cref="IMapCalibrationService.WorldToOverlay"/>, and hands the
 /// pixel+style list to <see cref="MarkerSceneRenderer.Render"/>.
 ///
 /// <para><b>Why both this and <see cref="LegolasMarkerDrawerSnapshotTests"/>.</b>
@@ -269,17 +269,11 @@ public sealed class MarkerPipelineSnapshotTests
 
     /// <summary>Identity world→pixel mapping for snapshot tests:
     /// <c>(x, _, z)</c> → <c>(x, z)</c>. The Y-axis component is dropped
-    /// — same as <c>AreaCalibration.WorldToWindow</c>'s ground-plane
+    /// — same as <c>WorldToOverlayCalibration.ToOverlay</c>'s ground-plane
     /// projection.</summary>
     private sealed class IdentityCalibrationService : IMapCalibrationService
     {
         public bool IsCalibrated(MapSceneRef scene) => true;
-
-        public Mithril.MapCalibration.PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom)
-            => new Mithril.MapCalibration.PixelPoint(world.X, world.Z);
-
-        public WorldCoord? WindowToWorld(MapSceneRef scene, Mithril.MapCalibration.PixelPoint pixel, double currentZoom)
-            => new WorldCoord(pixel.X, 0, pixel.Y);
 
         public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
         public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) => null;

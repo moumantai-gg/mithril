@@ -36,22 +36,6 @@ public interface IMapCalibrationService
     bool IsCalibrated(MapSceneRef scene);
 
     /// <summary>
-    /// Project a world coord to a pixel in the scene's map space. Returns null
-    /// when the scene is uncalibrated (consumer chooses how to degrade &#8212;
-    /// chip, hide, fallback text).
-    /// </summary>
-    [Obsolete("Use WorldToTexture or WorldToOverlay; frame-explicit API since #1076.", error: false)]
-    PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom);
-
-    /// <summary>
-    /// Inverse projection &#8212; pixel &#8594; world coord. Returns null when
-    /// uncalibrated. Required by Gwaihir's "click the map to drop a pin" UX
-    /// (#830 §3a).
-    /// </summary>
-    [Obsolete("Use TextureToWorld or OverlayToWorld; frame-explicit API since #1076.", error: false)]
-    WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom);
-
-    /// <summary>
     /// #1076 frame-explicit projection: world → base-texture-pixel. Returns
     /// null when no texture-frame calibration exists for the scene. Used by
     /// AutoCalibration / drift-check where the comparison is bound to the base

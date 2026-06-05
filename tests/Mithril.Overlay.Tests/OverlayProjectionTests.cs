@@ -10,7 +10,7 @@ namespace Mithril.Overlay.Tests;
 /// Tests for the pure projection helper inside
 /// <see cref="OverlayWindowService"/>. Carved out as a static so it can be
 /// exercised without a D3D surface — the per-tick projection logic
-/// (call <see cref="IMapCalibrationService.WorldToWindow"/>, skip nulls,
+/// (call <see cref="IMapCalibrationService.WorldToOverlay"/>, skip nulls,
 /// keep style references) is unit-testable in isolation.
 /// </summary>
 public sealed class OverlayProjectionTests
@@ -21,11 +21,11 @@ public sealed class OverlayProjectionTests
         => new(new MarkerHandle(Guid.NewGuid()), new WorldCoord(x, 0, z), style);
 
     [Fact]
-    public void Projects_each_marker_through_WorldToWindow_when_area_is_calibrated()
+    public void Projects_each_marker_through_WorldToOverlay_when_area_is_calibrated()
     {
         var calibration = new FakeMapCalibrationService();
         calibration.CalibratedAreas.Add("A");
-        calibration.Projector = (_, world, _) => (PixelPoint?)new PixelPoint(world.X * 2, world.Z * 3);
+        calibration.Projector = (_, world, _) => (OverlayPixel?)new OverlayPixel(world.X * 2, world.Z * 3);
 
         var styleA = new TestStyle("a");
         var styleB = new TestStyle("b");
@@ -62,7 +62,7 @@ public sealed class OverlayProjectionTests
         var calibration = new FakeMapCalibrationService();
         calibration.CalibratedAreas.Add("A");
         calibration.Projector = (_, world, _) =>
-            world.X < 0 ? null : new PixelPoint(world.X, world.Z);
+            world.X < 0 ? null : new OverlayPixel(world.X, world.Z);
 
         var style = new TestStyle("s");
         var markers = new[]

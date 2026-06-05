@@ -161,7 +161,7 @@ public sealed class OverlaySceneHookTests
     }
 
     [Fact]
-    public void Project_plumbs_current_zoom_into_WorldToWindow()
+    public void Project_plumbs_current_zoom_into_WorldToOverlay()
     {
         var calibration = new FakeMapCalibrationService();
         calibration.CalibratedAreas.Add("A");
@@ -169,7 +169,7 @@ public sealed class OverlaySceneHookTests
         calibration.Projector = (_, world, zoom) =>
         {
             zoomsSeenByProjector.Add(zoom);
-            return new PixelPoint(world.X, world.Z);
+            return new OverlayPixel(world.X, world.Z);
         };
         var areaState = new StubAreaState { CurrentArea = "A" };
 
@@ -189,7 +189,7 @@ public sealed class OverlaySceneHookTests
 
         zoomsSeenByProjector.Should().Equal(new[] { 1.5, 1.5 },
             because: "the scene context must pass the per-tick snapshot of IOverlayZoomSource " +
-            "through to IMapCalibrationService.WorldToWindow on every Project() call — " +
+            "through to IMapCalibrationService.WorldToOverlay on every Project() call — " +
             "if this regresses to 1.0, the hardcoded zoom from PR #863 is back and " +
             "pins drift whenever the user has the in-game zoom slider off 1.0.");
 
@@ -231,7 +231,7 @@ public sealed class OverlaySceneHookTests
         ctx.Should().NotBeNull();
         var px = ctx!.Project(10, 20);
         px.Should().BeNull(
-            "Project must propagate WorldToWindow's null return — a fabricated pixel " +
+            "Project must propagate WorldToOverlay's null return — a fabricated pixel " +
             "would silently land the marker at (0,0) or similar nonsense.");
     }
 

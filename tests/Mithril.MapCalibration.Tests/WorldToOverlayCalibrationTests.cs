@@ -15,19 +15,6 @@ public class WorldToOverlayCalibrationTests
         MirrorNorth: false,
         CalibrationZoom: 1.0);
 
-    // Same parameters expressed as the legacy AreaCalibration shape.
-    private static readonly AreaCalibration LegacyEquivalent = new(
-        Scale: 4.0,
-        RotationRadians: Math.PI / 6,
-        OriginX: 100,
-        OriginY: 200,
-        ReferenceCount: 0,
-        ResidualPixels: 0)
-    {
-        MirrorNorth = false,
-        CalibrationZoom = 1.0,
-    };
-
     public static IEnumerable<object[]> Worlds() => new[]
     {
         new object[] { new WorldCoord(0, 0, 0) },
@@ -37,29 +24,19 @@ public class WorldToOverlayCalibrationTests
     };
 
     [Theory, MemberData(nameof(Worlds))]
-    public void ToOverlay_MatchesLegacyWorldToWindow_BitIdentical(WorldCoord world)
+    public void ToOverlay_RoundTripsThroughFromOverlay(WorldCoord world)
     {
-        var newResult = Canonical.ToOverlay(world, currentZoom: 1.0);
-        var oldResult = LegacyEquivalent.WorldToWindow(world, currentZoom: 1.0);
+        // Round-trip is the contract: project then unproject must recover
+        // the input world coord on the (X, Z) ground plane (Y elevation is
+        // always dropped to 0 by the projection model — pixels are 2D).
+        var pixel = Canonical.ToOverlay(world, currentZoom: 1.0);
+        var recovered = Canonical.FromOverlay(pixel, currentZoom: 1.0);
 
-        newResult.X.Should().Be(oldResult.X);
-        newResult.Y.Should().Be(oldResult.Y);
-        newResult.Z.Should().Be(0);
-    }
-
-    [Theory, MemberData(nameof(Worlds))]
-    public void FromOverlay_MatchesLegacyWindowToWorld_BitIdentical(WorldCoord world)
-    {
-        var pixel = Canonical.ToOverlay(world, 1.0);
-        var newRoundTrip = Canonical.FromOverlay(pixel, 1.0);
-
-        var oldPixel = LegacyEquivalent.WorldToWindow(world, 1.0);
-        var oldRoundTrip = LegacyEquivalent.WindowToWorld(oldPixel, 1.0);
-
-        newRoundTrip.Should().NotBeNull();
-        oldRoundTrip.Should().NotBeNull();
-        newRoundTrip!.Value.X.Should().Be(oldRoundTrip!.Value.X);
-        newRoundTrip.Value.Z.Should().Be(oldRoundTrip.Value.Z);
+        recovered.Should().NotBeNull();
+        recovered!.Value.X.Should().BeApproximately(world.X, 1e-9);
+        recovered.Value.Z.Should().BeApproximately(world.Z, 1e-9);
+        recovered.Value.Y.Should().Be(0);
+        pixel.Z.Should().Be(0);
     }
 
     [Fact]
