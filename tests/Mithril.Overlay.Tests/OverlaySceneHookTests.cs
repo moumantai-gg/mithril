@@ -51,7 +51,17 @@ public sealed class OverlaySceneHookTests
         var bus = new StubDomainEventSubscriber();
         return new OverlayWindowService(
             markers, renderer, calibration, areaState, mapState, sceneCache, bus,
-            position, zoom, loggerFactory);
+            position, zoom,
+            textureDimensions: new NullMapTextureDimensions(),  // mithril#1081
+            loggerFactory);
+    }
+
+    /// <summary>mithril#1081 — no-op dims stub; null dims → composed-from-texture
+    /// path returns null, matching the prior null-projection-on-uncalibrated
+    /// behaviour so existing tests are unaffected.</summary>
+    private sealed class NullMapTextureDimensions : IMapTextureDimensions
+    {
+        public (int Width, int Height)? TryGetSizeBySha(string? sha) => null;
     }
 
     [Fact]
