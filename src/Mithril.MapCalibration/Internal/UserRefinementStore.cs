@@ -180,6 +180,22 @@ internal sealed class UserRefinementStore
                         {
                             key = "Map_" + key;
                         }
+                        // Schema-1 → Schema-2 frame inference (mithril#1076 Phase 6.2):
+                        // when the on-disk entry has no "frame" property, infer the frame
+                        // from the entry's Source per spec §7.2. Done at the JsonElement
+                        // level (not the deserialised record) because the record default
+                        // for Frame is Texture, which we cannot distinguish from an
+                        // explicit "frame": "Texture" write — and the spec convention is
+                        // that fresh writes ALWAYS include "frame". The pre-restamp Source
+                        // is the discriminator (Phase 6.2 runs BEFORE the post-load
+                        // Source-stamp that rewrites bundled/community values to
+                        // UserRefinement) so a Schema-1 CommunitySync record can still be
+                        // detected and surfaced via warn-log even though the surviving
+                        // record's Source ends up as UserRefinement.
+                        if (!entry.Value.TryGetProperty("frame", out _))
+                        {
+                            cal = cal with { Frame = InferFrameFromSource(entry.Value, key, _logger) };
+                        }
                         // Stamp Source on surviving entries that don't carry an explicit
                         // user-store source. Older shapes may not carry it and the record
                         // default is UserRefinement, which matches; AutoCapture is
@@ -234,6 +250,57 @@ internal sealed class UserRefinementStore
             // we only reach here for structural corruption, not a single bad value.
             _logger?.LogWarning(ex, "Failed to load user refinement store at {Path} — starting empty.", _filePath);
             _refinements = new Dictionary<string, AreaCalibration>(StringComparer.Ordinal);
+        }
+    }
+
+    /// <summary>
+    /// Schema-1 &#8594; Schema-2 frame inference (mithril#1076 Phase 6.2 / spec §7.2).
+    /// Reads the pre-restamp <c>"source"</c> property out of the raw JsonElement
+    /// because the post-deserialise <see cref="AreaCalibration.Source"/> may have
+    /// already been rewritten to <see cref="CalibrationSource.UserRefinement"/> by
+    /// the defensive stamping above. Mapping:
+    /// <list type="bullet">
+    ///   <item><see cref="CalibrationSource.AutoCapture"/> &#8594; <see cref="CalibrationFrame.Texture"/> (RANSAC base-texture-pixel solve)</item>
+    ///   <item><see cref="CalibrationSource.BundledBaseline"/> &#8594; <see cref="CalibrationFrame.Texture"/> (hand-authored texture-pixel anchor)</item>
+    ///   <item><see cref="CalibrationSource.UserRefinement"/> &#8594; <see cref="CalibrationFrame.Overlay"/> (Legolas-wizard overlay-pixel fit; AutoCal hasn't shipped in a tagged release)</item>
+    ///   <item><see cref="CalibrationSource.CommunitySync"/> &#8594; <see cref="CalibrationFrame.Overlay"/> + warn-log (aspirational; no consumer yet)</item>
+    ///   <item>unknown / forward-compat enum name &#8594; <see cref="CalibrationFrame.Overlay"/> + warn-log</item>
+    /// </list>
+    /// Defaulting unknown / aspirational sources to Overlay is the safer fallback
+    /// &#8212; AutoCal's drift-check rejects non-Texture records, so an inferred
+    /// Overlay can&#8217;t silently feed a texture-frame consumer.
+    /// </summary>
+    private static CalibrationFrame InferFrameFromSource(System.Text.Json.JsonElement entry, string area, ILogger? logger)
+    {
+        string? rawSource = null;
+        if (entry.TryGetProperty("source", out var srcProp) && srcProp.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            rawSource = srcProp.GetString();
+        }
+
+        switch (rawSource)
+        {
+            case "AutoCapture":
+            case "BundledBaseline":
+                return CalibrationFrame.Texture;
+            case "UserRefinement":
+            case null:
+                // Absent source on a Schema-1 record means the bundled-baseline-style
+                // default (BundledBaseline = 0) for older readers; but a Schema-1
+                // record in the user store almost certainly was Legolas-wizard-produced,
+                // so bias to Overlay. The drift-check rejects non-Texture records, so
+                // this is fail-safe.
+                return CalibrationFrame.Overlay;
+            case "CommunitySync":
+                logger?.LogWarning(
+                    "User refinement entry {Area} has Source=CommunitySync but no consumer ships yet — defaulting Frame to Overlay (spec §7.2).",
+                    area);
+                return CalibrationFrame.Overlay;
+            default:
+                logger?.LogWarning(
+                    "User refinement entry {Area} has unknown Source={Source} — defaulting Frame to Overlay (spec §7.2 forward-compat).",
+                    area, rawSource);
+                return CalibrationFrame.Overlay;
         }
     }
 
