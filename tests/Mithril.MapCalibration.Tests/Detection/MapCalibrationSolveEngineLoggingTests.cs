@@ -22,7 +22,7 @@ public sealed class MapCalibrationSolveEngineLoggingTests
         // Detections keyed by a vocabulary the refs DON'T use → disjoint.
         var detector = new FixedDetector(new Dictionary<string, IReadOnlyList<TypedDetection>>(StringComparer.Ordinal)
         {
-            ["landmark_portal"] = new[] { new TypedDetection("landmark_portal", "icon", 10, 10, 0.9) },
+            ["landmark_portal"] = new[] { new TypedDetection("landmark_portal", "icon", new CroppedFramePixel(10, 10), 0.9) },
         });
         var refs = new List<LandmarkReference>
         {
@@ -44,7 +44,7 @@ public sealed class MapCalibrationSolveEngineLoggingTests
         // Detections + refs share the canonical "Portal" key → overlap, no warning.
         var detector = new FixedDetector(new Dictionary<string, IReadOnlyList<TypedDetection>>(StringComparer.Ordinal)
         {
-            ["Portal"] = new[] { new TypedDetection("Portal", "icon", 10, 10, 0.9) },
+            ["Portal"] = new[] { new TypedDetection("Portal", "icon", new CroppedFramePixel(10, 10), 0.9) },
         });
         var refs = new List<LandmarkReference>
         {

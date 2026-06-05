@@ -116,8 +116,8 @@ public static class TypeAwareRansacSolver
             if (typeRefs.Count == 0) continue;
             foreach (var det in kv.Value)
             {
-                var (tx, ty) = mapRect.ScreenshotToTexture(det.AnchorX, det.AnchorY);
-                pool.Add((det, tx, ty, typeRefs));
+                var tex = mapRect.CroppedToTexture(det.Anchor);
+                pool.Add((det, tex.X, tex.Y, typeRefs));
             }
         }
         if (pool.Count < 2) return [];

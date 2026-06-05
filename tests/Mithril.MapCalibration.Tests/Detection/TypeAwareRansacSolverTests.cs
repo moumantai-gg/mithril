@@ -44,7 +44,7 @@ public sealed class TypeAwareRansacSolverTests
             double sx = tex.X + Rect.OriginX;
             double sy = tex.Y + Rect.OriginY;
             var key = collapseTypes ? "All" : l.Type;
-            var det = new TypedDetection(key, l.Icon, sx, sy, Score: 0.9);
+            var det = new TypedDetection(key, l.Icon, new CroppedFramePixel(sx, sy), Score: 0.9);
             if (!byType.TryGetValue(key, out var list)) { list = new(); byType[key] = list; }
             list.Add(det);
         }

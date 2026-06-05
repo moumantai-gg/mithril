@@ -62,10 +62,10 @@ public sealed class AttemptBundleVisualizer : IAttemptBundleVisualizer
             double half = renderSizePx / 2.0;
             foreach (var det in detections)
             {
-                var rect = new System.Windows.Rect(det.AnchorX - half, det.AnchorY - half, renderSizePx, renderSizePx);
+                var rect = new System.Windows.Rect(det.Anchor.X - half, det.Anchor.Y - half, renderSizePx, renderSizePx);
                 dc.DrawRectangle(brush: null, cyan, rect);
-                dc.DrawLine(red, new System.Windows.Point(det.AnchorX - 4, det.AnchorY), new System.Windows.Point(det.AnchorX + 4, det.AnchorY));
-                dc.DrawLine(red, new System.Windows.Point(det.AnchorX, det.AnchorY - 4), new System.Windows.Point(det.AnchorX, det.AnchorY + 4));
+                dc.DrawLine(red, new System.Windows.Point(det.Anchor.X - 4, det.Anchor.Y), new System.Windows.Point(det.Anchor.X + 4, det.Anchor.Y));
+                dc.DrawLine(red, new System.Windows.Point(det.Anchor.X, det.Anchor.Y - 4), new System.Windows.Point(det.Anchor.X, det.Anchor.Y + 4));
 
                 var text = new FormattedText(
                     string.Format(System.Globalization.CultureInfo.InvariantCulture, "Score:{0:0.00}", det.Score),

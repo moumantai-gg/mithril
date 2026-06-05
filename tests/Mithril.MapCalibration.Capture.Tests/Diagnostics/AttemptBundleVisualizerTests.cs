@@ -34,8 +34,8 @@ public sealed class AttemptBundleVisualizerTests
         var gray = new GrayImage(32, 24, new byte[32 * 24]);
         var detections = new[]
         {
-            new TypedDetection("Portal", "landmark_portal", 10, 12, 0.91),
-            new TypedDetection("Npc", "landmark_npc", 20, 18, 0.85),
+            new TypedDetection("Portal", "landmark_portal", new CroppedFramePixel(10, 12), 0.91),
+            new TypedDetection("Npc", "landmark_npc", new CroppedFramePixel(20, 18), 0.85),
         };
 
         var visualizer = new AttemptBundleVisualizer();

@@ -45,7 +45,7 @@ internal static class TestDetections
         {
             var x = 100.0 + r.World.X + offsetPx;
             var y = 100.0 - r.World.Z + offsetPx;
-            list.Add(new TypedDetection(r.Type, r.Name, AnchorX: x, AnchorY: y, Score: 0.95));
+            list.Add(new TypedDetection(r.Type, r.Name, new CroppedFramePixel(x, y), Score: 0.95));
         }
         return list;
     }
@@ -62,7 +62,7 @@ internal static class TestDetections
         {
             var x = 100.0 + r.World.X + offsetPx;
             var y = 100.0 - r.World.Z + offsetPx;
-            list.Add(new TypedDetection(r.Type, r.Name, AnchorX: x, AnchorY: y, Score: 0.95));
+            list.Add(new TypedDetection(r.Type, r.Name, new CroppedFramePixel(x, y), Score: 0.95));
         }
         return list;
     }

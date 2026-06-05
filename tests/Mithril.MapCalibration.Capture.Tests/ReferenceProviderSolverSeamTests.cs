@@ -79,7 +79,7 @@ public sealed class ReferenceProviderSolverSeamTests
         foreach (var p in Points)
         {
             var tex = Truth.WorldToWindow(new WorldCoord(p.X, 0, p.Z));
-            var det = new TypedDetection(p.Type, p.Name, tex.X + Rect.OriginX, tex.Y + Rect.OriginY, Score: 0.9);
+            var det = new TypedDetection(p.Type, p.Name, new CroppedFramePixel(tex.X + Rect.OriginX, tex.Y + Rect.OriginY), Score: 0.9);
             if (!detections.TryGetValue(p.Type, out var list)) { list = new(); detections[p.Type] = list; }
             list.Add(det);
         }

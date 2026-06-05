@@ -88,7 +88,7 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
                 list = new List<TypedDetection>();
                 byType[bestIcon.LandmarkType] = list;
             }
-            list.Add(new TypedDetection(bestIcon.LandmarkType, bestIcon.Name, anchorX, anchorY, bestDet.Score));
+            list.Add(new TypedDetection(bestIcon.LandmarkType, bestIcon.Name, new CroppedFramePixel(anchorX, anchorY), bestDet.Score));
         }
 
         var result = new Dictionary<string, IReadOnlyList<TypedDetection>>(byType.Count, StringComparer.Ordinal);

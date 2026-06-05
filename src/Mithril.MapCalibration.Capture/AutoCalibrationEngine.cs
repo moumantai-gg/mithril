@@ -295,13 +295,13 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 if (usedDetectionIndices.Contains(di)) continue;
                 var d = detections[di];
                 var dist = Math.Sqrt(
-                    (d.AnchorX - predScreenX) * (d.AnchorX - predScreenX) +
-                    (d.AnchorY - predScreenY) * (d.AnchorY - predScreenY));
+                    (d.Anchor.X - predScreenX) * (d.Anchor.X - predScreenX) +
+                    (d.Anchor.Y - predScreenY) * (d.Anchor.Y - predScreenY));
                 if (dist < (best ?? double.MaxValue))
                 {
                     best = dist;
-                    bestDx = d.AnchorX;
-                    bestDy = d.AnchorY;
+                    bestDx = d.Anchor.X;
+                    bestDy = d.Anchor.Y;
                     bestIdx = di;
                 }
             }
