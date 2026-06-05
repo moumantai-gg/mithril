@@ -404,7 +404,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         if (!isCalibrated) return;
 
         var snapshot = _markers.CurrentAreaMarkers;
-        var projected = ProjectMarkers(snapshot, resolvedScene!.Value, _calibration, currentZoom,
+        var projected = ProjectMarkers(snapshot, composedCal, currentZoom,
             onMiss: this, snapshotCount: snapshot.Count);
         if (!_firstFrameLogged)
         {
@@ -439,51 +439,38 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         return double.IsFinite(z) && z > 0 ? z : 1.0;
     }
 
-    /// <summary>Pure projection helper &#8212; takes a snapshot + a calibration
-    /// service and returns the projected pixel list. Test-friendly overload.</summary>
+    /// <summary>Pure projection helper — takes a snapshot + a composed
+    /// overlay-frame calibration and returns the projected pixel list. The
+    /// composed cal is resolved once per frame by
+    /// <see cref="ResolveComposedOverlayCalibration"/>; this helper has no
+    /// dependency on <see cref="IMapCalibrationService"/>. Test-friendly
+    /// overload.</summary>
     internal static IReadOnlyList<(OverlayPixel Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
-        MapSceneRef scene,
-        IMapCalibrationService calibration,
+        WorldToOverlayCalibration? composedCal,
         double currentZoom)
-        => ProjectMarkers(markers, scene, calibration, currentZoom, onMiss: null, snapshotCount: markers.Count);
+        => ProjectMarkers(markers, composedCal, currentZoom, onMiss: null, snapshotCount: markers.Count);
 
     private static IReadOnlyList<(OverlayPixel Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
-        MapSceneRef scene,
-        IMapCalibrationService calibration,
+        WorldToOverlayCalibration? composedCal,
         double currentZoom,
         OverlayWindowService? onMiss,
         int snapshotCount)
     {
-        if (markers.Count == 0)
+        if (markers.Count == 0 || composedCal is null)
+        {
+            // mithril#1081: per-scene miss telemetry fires at the
+            // OnSurfaceRender level (cal.path = none), not per marker.
             return Array.Empty<(OverlayPixel, IMarkerStyle)>();
+        }
 
         var result = new List<(OverlayPixel, IMarkerStyle)>(markers.Count);
+        var cal = composedCal.Value;
         for (var i = 0; i < markers.Count; i++)
         {
             var snap = markers[i];
-            // #1076: WorldToOverlay (frame-explicit) is the projection
-            // call — its OverlayPixel? result flows frame-typed
-            // end-to-end into MarkerSceneRenderer.
-            var pixel = calibration.WorldToOverlay(scene, snap.World, currentZoom);
-            if (pixel is null)
-            {
-                if (onMiss is not null)
-                {
-                    var assetKey = scene.MapAssetKey;
-                    MithrilMeters.Overlay.ProjectionMisses.Add(1,
-                        new KeyValuePair<string, object?>("area", scene.ParentAreaKey));
-                    if (onMiss._projectionMissAreasLogged.TryAdd(assetKey, 0))
-                    {
-                        onMiss._logger?.LogTrace(
-                            "OverlayWindowService: WorldToOverlay returned null for a marker in calibrated scene {AssetKey} (style={StyleType}); marker silently skipped.",
-                            assetKey, snap.Style.GetType().Name);
-                    }
-                }
-                continue;
-            }
-            result.Add((pixel.Value, snap.Style));
+            result.Add((cal.ToOverlay(snap.World, currentZoom), snap.Style));
         }
         return result;
     }

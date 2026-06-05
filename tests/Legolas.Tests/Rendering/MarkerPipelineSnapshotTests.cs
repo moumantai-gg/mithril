@@ -227,9 +227,15 @@ public sealed class MarkerPipelineSnapshotTests
             "silently drops markers would still pass PR #853's drawer-level " +
             "tests, so this assertion is the catch-net.");
 
-        var calibration = new IdentityCalibrationService();
+        // mithril#1081: ProjectMarkers now takes a WorldToOverlayCalibration?
+        // directly. MirrorNorth=true reproduces the old IdentityCalibrationService
+        // mapping (world.X, world.Z) → OverlayPixel(world.X, world.Z) so
+        // byte-parity baselines are preserved.
+        var composed = new WorldToOverlayCalibration(
+            OriginX: 0, OriginY: 0, Scale: 1.0,
+            RotationRadians: 0, MirrorNorth: true, CalibrationZoom: 1.0);
         var projected = OverlayWindowService.ProjectMarkers(
-            snapshot, new MapSceneRef(AreaKey, null, "Map_" + AreaKey), calibration, currentZoom: 1.0);
+            snapshot, composed, currentZoom: 1.0);
         projected.Should().HaveCount(markers.Count,
             "the identity calibration must project every snapshot entry — " +
             "if it doesn't, the projection driver is dropping markers.");

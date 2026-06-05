@@ -98,8 +98,15 @@ public sealed class LegolasCalibrationMarkerSnapshotTests
         var snapshot = registry.CurrentAreaMarkers;
         snapshot.Should().HaveCount(1, "the registered marker must reach the snapshot.");
 
+        // mithril#1081: ProjectMarkers now takes a WorldToOverlayCalibration?
+        // directly. MirrorNorth=true reproduces the old IdentityCalibrationService
+        // mapping (world.X, world.Z) → OverlayPixel(world.X, world.Z) so
+        // byte-parity baselines are preserved.
+        var composed = new WorldToOverlayCalibration(
+            OriginX: 0, OriginY: 0, Scale: 1.0,
+            RotationRadians: 0, MirrorNorth: true, CalibrationZoom: 1.0);
         var projected = OverlayWindowService.ProjectMarkers(
-            snapshot, new MapSceneRef("AreaTest", null, "Map_AreaTest"), new IdentityCalibrationService(), currentZoom: 1.0);
+            snapshot, composed, currentZoom: 1.0);
         projected.Should().HaveCount(1, "the identity calibration projects the only marker.");
 
         var renderer = new MarkerSceneRenderer();
