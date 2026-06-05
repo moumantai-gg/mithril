@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -38,6 +39,34 @@ public sealed class AutoCalibrationEngineTests
         outcome.AreaKey.Should().Be(Area);
         svc.Saved.Should().ContainKey(AssetKey);
         svc.Saved[AssetKey].Source.Should().Be(CalibrationSource.AutoCapture);
+    }
+
+    [Fact]
+    public async Task PersistedCalibration_CarriesBaseTexturePixelSha256()
+    {
+        // mithril#1081 — AutoCal stamps the base texture's SHA-256 onto the
+        // persisted AreaCalibration so the Legolas overlay can look up dims
+        // via IMapTextureDimensions when composing through ProjectThroughOverlay.
+        // The sha matches the same digest the sidecar's MapTextureManifest
+        // carries (same gray pixels → same hash).
+        var pixels = new byte[64 * 64];
+        for (var i = 0; i < pixels.Length; i++) pixels[i] = (byte)(i % 251);
+        var baseTexture = new GrayImage(64, 64, pixels);
+        var expectedSha = Convert.ToHexStringLower(SHA256.HashData(pixels));
+
+        var svc = new FakeCalibrationService();
+        var h = new EngineHarness
+        {
+            BaseTexture = baseTexture,
+            Solve = Accepted(residual: 0.65, inliers: 5),
+            Service = svc,
+        };
+
+        var outcome = await h.Engine().TryCalibrateCurrentAreaAsync(default);
+
+        outcome.Persisted.Should().BeTrue();
+        svc.Saved.Should().ContainKey(AssetKey);
+        svc.Saved[AssetKey].PixelSha256.Should().Be(expectedSha);
     }
 
     [Fact]

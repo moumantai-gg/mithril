@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using Arda.World.Player;
@@ -714,10 +715,16 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // defaults to Texture so this stamp is documentation today, but making it
         // explicit defends against the default flipping in a future cleanup and
         // keeps the save sites symmetric with Legolas-wizard's Frame=Overlay stamp.
+        // mithril#1081: stamp the base texture's SHA-256 so the Legolas overlay
+        // can look up dims via IMapTextureDimensions when composing the record
+        // onto the overlay surface. Same digest the sidecar's MapTextureManifest
+        // carries; we re-hash from baseTexture.Pixels (~1 MB at 1024², sub-ms)
+        // rather than threading it through IBaseTextureProvider.
         var stamped = result.Calibration with
         {
             Source = CalibrationSource.AutoCapture,
             Frame = CalibrationFrame.Texture,
+            PixelSha256 = Convert.ToHexStringLower(SHA256.HashData(baseTexture.Pixels)),
         };
 
         attempt.Outcome = OutcomeVocabulary.Accepted;
