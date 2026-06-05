@@ -134,6 +134,14 @@ public sealed class ManualCalibrationCoordinator
                 var fallback = await _runner.TryCalibrateCurrentAreaAsync(ct).ConfigureAwait(false);
                 _overlay.SetStatusMessage(CalibrationStatusFormatter.ForOutcome(fallback));
                 break;
+            case DriftCheckOutcome.NoTextureFrameRecord:
+                // The stored record exists but is overlay-frame (Legolas-wizard origin). The
+                // drift-check arithmetic only makes sense over a texture-frame record, so the
+                // engine refused at the early-return branch. Surface the actionable chip —
+                // running AutoCalibrate would land a texture-frame record that drift-check can
+                // then compare against. See #1076 §2.4 / Phase 3 Task 3.4b.
+                _overlay.SetStatusMessage(CalibrationStatusFormatter.DriftCheckNoTextureFrameRecord());
+                break;
             default:
                 _logger?.LogError(
                     "Unhandled DriftCheckOutcome variant: {Type}. Coordinator setting generic chip; this is a bug.",
