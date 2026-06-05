@@ -20,10 +20,10 @@ public sealed class SyntheticEndToEndTests
 {
     private const int TexW = 800, TexH = 600;
 
-    private static readonly AreaCalibration Truth = new(
-        Scale: 1.2, RotationRadians: 0.35, OriginX: 400.0, OriginY: 300.0,
-        ReferenceCount: 0, ResidualPixels: 0.0)
-    { MirrorNorth = false, CalibrationZoom = 1.0 };
+    // #1076 Phase 6.5: ground truth in texture-pixel frame.
+    private static readonly WorldToTextureCalibration Truth = new(
+        OriginX: 400.0, OriginY: 300.0, Scale: 1.2, RotationRadians: 0.35,
+        MirrorNorth: false, CalibrationZoom: 1.0);
 
     private static readonly (string Type, string Icon, int W, int H, int Lum, double X, double Z)[] Landmarks =
     [
@@ -42,7 +42,7 @@ public sealed class SyntheticEndToEndTests
         var refs = new List<LandmarkReference>();
         foreach (var l in Landmarks)
         {
-            var tex = Truth.WorldToWindow(new WorldCoord(l.X, 0, l.Z));
+            var tex = Truth.ToTexture(new WorldCoord(l.X, 0, l.Z));
             SyntheticMap.BlitTeardrop(shotPixels, TexW, TexH, tex.X, tex.Y, l.W, l.H, l.Lum);
             refs.Add(new LandmarkReference(l.Type, l.Icon, new WorldCoord(l.X, 0, l.Z)));
         }

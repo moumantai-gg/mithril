@@ -138,11 +138,16 @@ public static class TypeAwareRansacSolver
             var r2 = e2.Candidates[rng.Next(e2.Candidates.Count)];
             if (r1.World.X == r2.World.X && r1.World.Z == r2.World.Z) continue;
 
-            var seed = LandmarkCalibrationSolver.Solve([
+            var seedLegacy = LandmarkCalibrationSolver.Solve([
                 new LandmarkCalibrationSolver.Reference(r1.World.X, r1.World.Z, e1.Tx, e1.Ty),
                 new LandmarkCalibrationSolver.Reference(r2.World.X, r2.World.Z, e2.Tx, e2.Ty),
             ]);
-            if (seed is null) continue;
+            if (seedLegacy is null) continue;
+            // #1076 Phase 6.5: RANSAC operates in texture-pixel space; project
+            // candidate refs back through a texture-frame view of the seed so the
+            // pixel comparison stays frame-explicit. AsTexture is a field-identity
+            // re-tag of the same similarity transform.
+            var seed = AsTexture(seedLegacy);
 
             // For each pool entry, project each of its candidate refs through the
             // seed; the closest projection wins. If within RansacInlierPx of the
@@ -160,7 +165,7 @@ public static class TypeAwareRansacSolver
                 double bestDist = double.PositiveInfinity;
                 foreach (var cand in e.Candidates)
                 {
-                    var pred = seed.WorldToWindow(cand.World);
+                    var pred = seed.ToTexture(cand.World);
                     var dx = pred.X - e.Tx;
                     var dy = pred.Y - e.Ty;
                     var d = Math.Sqrt(dx * dx + dy * dy);
@@ -233,9 +238,12 @@ public static class TypeAwareRansacSolver
         const int MinInliers = 3;
         for (int iter = 0; iter < 10 && current.Count > MinInliers; iter++)
         {
+            // #1076 Phase 6.5: project through a texture-frame view of the
+            // current best fit (RANSAC operates in texture-pixel space).
+            var bestCalTex = AsTexture(bestCal);
             var perInlier = current.Select(a =>
             {
-                var p = bestCal.WorldToWindow(new WorldCoord(a.WorldX, 0, a.WorldZ));
+                var p = bestCalTex.ToTexture(new WorldCoord(a.WorldX, 0, a.WorldZ));
                 var dx = p.X - a.PixelX;
                 var dy = p.Y - a.PixelY;
                 return (Ref: a, Dist: Math.Sqrt(dx * dx + dy * dy));
@@ -271,4 +279,12 @@ public static class TypeAwareRansacSolver
             .ToList();
         return LandmarkCalibrationSolver.Solve(input);
     }
+
+    // #1076 Phase 6.5: field-identity re-tag of an AreaCalibration to its
+    // texture-frame view. RANSAC operates in texture-pixel space (see class
+    // remarks), so projecting candidate refs through a frame-typed struct
+    // keeps the pixel comparison explicit — no untyped PixelPoint leaks.
+    private static WorldToTextureCalibration AsTexture(AreaCalibration cal) =>
+        new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
+            cal.MirrorNorth, cal.CalibrationZoom);
 }

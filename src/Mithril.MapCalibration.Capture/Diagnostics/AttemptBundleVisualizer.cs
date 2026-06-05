@@ -102,10 +102,16 @@ public sealed class AttemptBundleVisualizer : IAttemptBundleVisualizer
             var yellow = new Pen(Brushes.Yellow, 1); yellow.Freeze();
             var green = new Pen(Brushes.LimeGreen, 2); green.Freeze();
 
-            // Project every ref via WorldToWindow (texture coords) → TextureToScreenshot.
+            // #1076 Phase 6.5: project every ref through a texture-frame view
+            // of the calibration (this visualizer renders against the base
+            // texture); the resulting TexturePixel is then mapped to screenshot
+            // coords for drawing.
+            var calTex = new WorldToTextureCalibration(
+                calibration.OriginX, calibration.OriginY, calibration.Scale,
+                calibration.RotationRadians, calibration.MirrorNorth, calibration.CalibrationZoom);
             foreach (var r in references)
             {
-                var px = calibration.WorldToWindow(r.World, currentZoom: 1.0);
+                var px = calTex.ToTexture(r.World, currentZoom: 1.0);
                 var (sx, sy) = mapRect.TextureToScreenshot(px.X, px.Y);
                 dc.DrawLine(yellow, new System.Windows.Point(sx - 5, sy), new System.Windows.Point(sx + 5, sy));
                 dc.DrawLine(yellow, new System.Windows.Point(sx, sy - 5), new System.Windows.Point(sx, sy + 5));
