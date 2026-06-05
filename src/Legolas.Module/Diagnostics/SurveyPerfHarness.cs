@@ -1,6 +1,6 @@
-// #1076 Phase 5a: PixelPoint -> OverlayPixel rename landed here in 5a despite
-// this file's nominal Phase 5b ownership; mouse-event CanvasOverlayMapping
-// boundaries still deferred to 5b.
+// #1076 Phase 5a/5b: this perf harness constructs OverlayPixel positions
+// directly (synthetic load — no mouse-event input), so no CanvasOverlayMapping
+// boundary is needed here.
 using System.Windows;
 using Legolas.Domain;
 using Legolas.Flow;
