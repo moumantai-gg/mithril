@@ -60,6 +60,28 @@ public sealed record AreaCalibration(
     public int SchemaVersion { get; init; } = 1;
 
     /// <summary>
+    /// Which pixel frame the projection outputs into &#8212;
+    /// <see cref="CalibrationFrame.Texture"/> for AutoCalibration/RANSAC fits
+    /// (and bundled-baseline anchors), <see cref="CalibrationFrame.Overlay"/>
+    /// for Legolas-walkthrough fits. Persisted on Schema 2+ records
+    /// (mithril#1076); Schema-1 records infer this at load time from
+    /// <see cref="Source"/> per the table in
+    /// <c>docs/planning/calibration-1076-pixel-frame-typing/spec.md</c> §7.2.
+    /// Defaults to <see cref="CalibrationFrame.Texture"/> for new in-memory
+    /// constructions (the safer default for compute paths that hand records to
+    /// AutoCal's drift-check); fresh writes always set this explicitly.
+    ///
+    /// <para>Annotated <see cref="JsonIgnoreCondition.Never"/> so the context-wide
+    /// <see cref="JsonIgnoreCondition.WhenWritingDefault"/> rule does NOT drop
+    /// the value when it equals the type default (<see cref="CalibrationFrame.Texture"/>).
+    /// The spec §7.1 JSON shape requires <c>frame</c> on every Schema-2 write so
+    /// a load-time consumer can distinguish a Schema-2 default-Texture record
+    /// from a Schema-1 record that needs Source-based inference.</para>
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.Never)]
+    public CalibrationFrame Frame { get; init; } = CalibrationFrame.Texture;
+
+    /// <summary>
     /// Absolute world&#8594;overlay-pixel projection. Maps a raw area-local
     /// world coordinate to a pixel on the 1:1 map overlay using the full solved
     /// transform (origin + scale + rotation + the <see cref="MirrorNorth"/>
