@@ -36,8 +36,8 @@ public class CoordinateTransformTests
         {
             var texture = ctx.ScreenshotToTexture(sx, sy);
             var back = ctx.TextureToScreenshot(texture);
-            back.X.Should().BeApproximately(sx, 1e-9);
-            back.Y.Should().BeApproximately(sy, 1e-9);
+            back.Sx.Should().BeApproximately(sx, 1e-9);
+            back.Sy.Should().BeApproximately(sy, 1e-9);
         }
     }
 
@@ -48,10 +48,10 @@ public class CoordinateTransformTests
         // A click at the rect's far corner maps to the full texture extent.
         var ctx = Context(new MapRect(10, 20, 200, 100), 100, 50);
 
-        ctx.ScreenshotToTexture(10, 20).Should().Be(new PixelPoint(0, 0));
-        ctx.ScreenshotToTexture(210, 120).Should().Be(new PixelPoint(100, 50));
+        ctx.ScreenshotToTexture(10, 20).Should().Be(new TexturePixel(0, 0));
+        ctx.ScreenshotToTexture(210, 120).Should().Be(new TexturePixel(100, 50));
         // Midpoint of the rect → midpoint of the texture.
-        ctx.ScreenshotToTexture(110, 70).Should().Be(new PixelPoint(50, 25));
+        ctx.ScreenshotToTexture(110, 70).Should().Be(new TexturePixel(50, 25));
     }
 
     [Fact]
@@ -61,7 +61,7 @@ public class CoordinateTransformTests
 
         ctx.Invoking(c => c.ScreenshotToTexture(1, 2))
             .Should().Throw<InvalidOperationException>().WithMessage("*none was set*");
-        ctx.Invoking(c => c.TextureToScreenshot(new PixelPoint(1, 2)))
+        ctx.Invoking(c => c.TextureToScreenshot(new TexturePixel(1, 2)))
             .Should().Throw<InvalidOperationException>().WithMessage("*none was set*");
     }
 
@@ -78,7 +78,7 @@ public class CoordinateTransformTests
 
         ctx.Invoking(c => c.ScreenshotToTexture(1, 2))
             .Should().Throw<InvalidOperationException>().WithMessage("*non-positive dimension*");
-        ctx.Invoking(c => c.TextureToScreenshot(new PixelPoint(1, 2)))
+        ctx.Invoking(c => c.TextureToScreenshot(new TexturePixel(1, 2)))
             .Should().Throw<InvalidOperationException>().WithMessage("*non-positive dimension*");
     }
 }

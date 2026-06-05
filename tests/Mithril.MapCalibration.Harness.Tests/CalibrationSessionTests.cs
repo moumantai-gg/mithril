@@ -12,15 +12,15 @@ public class CalibrationSessionTests
     // North = +Z, pixel-Y grows downward.
     private const double Scale = 1.7;
     private static readonly double Rot = Math.PI / 5;
-    private static readonly PixelPoint Origin = new(640, 360);
+    private static readonly TexturePixel Origin = new(640, 360);
 
-    private static PixelPoint Project(double x, double z)
+    private static TexturePixel Project(double x, double z)
     {
         var cos = Math.Cos(Rot);
         var sin = Math.Sin(Rot);
         var rotE = x * cos + z * sin;
         var rotN = -x * sin + z * cos;
-        return new PixelPoint(Origin.X + Scale * rotE, Origin.Y - Scale * rotN);
+        return new TexturePixel(Origin.X + Scale * rotE, Origin.Y - Scale * rotN);
     }
 
     // Signed world coords (negative X/Z are real PG positions).
@@ -40,7 +40,7 @@ public class CalibrationSessionTests
         return new CalibrationContext("TestArea", landmarks, null, null, (1280, 720), null);
     }
 
-    private static CalibrationRef RefFor(double x, double z, PixelPoint texture, bool enabled = true) => new()
+    private static CalibrationRef RefFor(double x, double z, TexturePixel texture, bool enabled = true) => new()
     {
         Name = "L",
         Kind = "Npc",
@@ -54,7 +54,7 @@ public class CalibrationSessionTests
     // Accept a ref through the candidate path so it's subscribed for
     // auto-re-solve (mutating Enabled/World/TexturePixel re-solves without an
     // explicit ReSolve() call). Returns the materialised ref.
-    private static CalibrationRef AcceptRef(CalibrationSession session, double x, double z, PixelPoint texture)
+    private static CalibrationRef AcceptRef(CalibrationSession session, double x, double z, TexturePixel texture)
     {
         session.Accept(new CandidateRef(
             texture, new WorldCoord(x, 0, z),
@@ -150,7 +150,7 @@ public class CalibrationSessionTests
         AcceptRef(session, World[0].X, World[0].Z, Project(World[0].X, World[0].Z));
         AcceptRef(session, World[1].X, World[1].Z, Project(World[1].X, World[1].Z));
         var off = Project(World[2].X, World[2].Z);
-        AcceptRef(session, World[2].X, World[2].Z, new PixelPoint(off.X + 40, off.Y - 30));
+        AcceptRef(session, World[2].X, World[2].Z, new TexturePixel(off.X + 40, off.Y - 30));
         session.Calibration!.Scale.Should().NotBeApproximately(Scale, 1e-6); // perturbed
 
         // Disable the bad ref directly — auto-re-solve returns to the clean fit.
@@ -172,7 +172,7 @@ public class CalibrationSessionTests
         // Deliberately misplace the last ref well off true (direct mutation
         // auto-re-solves — no explicit ReSolve()).
         var bad = Project(World[3].X, World[3].Z);
-        session.Refs[3].TexturePixel = new PixelPoint(bad.X + 80, bad.Y + 80);
+        session.Refs[3].TexturePixel = new TexturePixel(bad.X + 80, bad.Y + 80);
 
         session.Calibration!.ResidualPixels.Should().BeGreaterThan(5);
 
@@ -240,7 +240,7 @@ public class CalibrationSessionTests
         var session = new CalibrationSession(ContextWithLandmarks(World));
 
         session.Accept(new CandidateRef(
-            new PixelPoint(10, 20), World: null,
+            new TexturePixel(10, 20), World: null,
             LandmarkId: null, SuggestedName: null, Kind: "Unknown",
             Source: CalibrationRefSource.GreenPixel, Confidence: 0.8));
 
@@ -305,7 +305,7 @@ public class CalibrationSessionTests
 
         // Mutating the now-detached ref's solve inputs must be inert.
         detached.Enabled = false;
-        detached.TexturePixel = new PixelPoint(9999, 9999);
+        detached.TexturePixel = new TexturePixel(9999, 9999);
 
         session.Calibration.Should().BeSameAs(afterRemove);
     }

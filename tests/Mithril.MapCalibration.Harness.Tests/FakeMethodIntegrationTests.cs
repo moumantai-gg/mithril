@@ -10,15 +10,15 @@ public class FakeMethodIntegrationTests
 {
     private const double Scale = 2.0;
     private static readonly double Rot = 0.4;
-    private static readonly PixelPoint Origin = new(100, 200);
+    private static readonly TexturePixel Origin = new(100, 200);
 
-    private static PixelPoint Project(double x, double z)
+    private static TexturePixel Project(double x, double z)
     {
         var cos = Math.Cos(Rot);
         var sin = Math.Sin(Rot);
         var rotE = x * cos + z * sin;
         var rotN = -x * sin + z * cos;
-        return new PixelPoint(Origin.X + Scale * rotE, Origin.Y - Scale * rotN);
+        return new TexturePixel(Origin.X + Scale * rotE, Origin.Y - Scale * rotN);
     }
 
     private static readonly (double X, double Z)[] World =
