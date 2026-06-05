@@ -92,4 +92,35 @@ public class WorldToTextureCalibrationTests
         var mOffsetY = m.Y - Canonical.OriginY;
         mOffsetY.Should().BeApproximately(-uOffsetY, 1e-9);
     }
+
+    [Fact]
+    public void ProjectThroughOverlay_ComposesTextureFrameOntoOverlayRect()
+    {
+        // A texture-frame calibration with known parameters.
+        var texCal = new WorldToTextureCalibration(
+            OriginX: 100, OriginY: 200, Scale: 4.0,
+            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0);
+
+        // The texture renders onto the overlay at a known placement:
+        // the overlay shows the 1000×500 texture at half-size starting at overlay (30, 40).
+        var overlayRect = new MapRect(
+            OriginX: 30, OriginY: 40,
+            Width: 500, Height: 250,
+            TextureWidth: 1000, TextureHeight: 500);
+
+        var overlayCal = texCal.ProjectThroughOverlay(overlayRect);
+
+        // A world point projected through texCal then composed onto the overlay
+        // should equal projecting through the resulting overlayCal directly.
+        var world = new WorldCoord(7, 0, 3);
+        var viaCompose = texCal.ToTexture(world);
+        var expectedOverlay = new OverlayPixel(
+            overlayRect.OriginX + (viaCompose.X * overlayRect.Width / overlayRect.TextureWidth),
+            overlayRect.OriginY + (viaCompose.Y * overlayRect.Height / overlayRect.TextureHeight));
+
+        var viaBridge = overlayCal.ToOverlay(world);
+
+        viaBridge.X.Should().BeApproximately(expectedOverlay.X, 1e-9);
+        viaBridge.Y.Should().BeApproximately(expectedOverlay.Y, 1e-9);
+    }
 }

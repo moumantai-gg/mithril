@@ -38,4 +38,28 @@ public readonly record struct WorldToTextureCalibration(
             CalibrationZoom, pixel.X, pixel.Y, currentZoom);
 
     public WorldCoord? FromTexture(TexturePixel pixel) => FromTexture(pixel, CalibrationZoom);
+
+    /// <summary>
+    /// Compose this texture-frame calibration with a base-texture placement on
+    /// the overlay window, yielding the equivalent overlay-frame calibration.
+    /// This is the ONE named place where texture-frame and overlay-frame
+    /// calibrations talk to each other (spec §6.2); rendering an
+    /// AutoCalibration-derived calibration onto the overlay goes through here.
+    /// </summary>
+    public WorldToOverlayCalibration ProjectThroughOverlay(MapRect overlayRect)
+    {
+        var sx = overlayRect.Width / (double)overlayRect.TextureWidth;
+        // The composed scale uses sx — overlay-frame X and Y scale identically in
+        // the canonical case. If sx != sy ever becomes a real consumer need, the
+        // texture↔overlay placement is anisotropic and this composition is wrong;
+        // fail loudly there instead of silently picking one axis.
+        var sy = overlayRect.Height / (double)overlayRect.TextureHeight;
+        return new WorldToOverlayCalibration(
+            OriginX: overlayRect.OriginX + OriginX * sx,
+            OriginY: overlayRect.OriginY + OriginY * sy,
+            Scale: Scale * sx,
+            RotationRadians: RotationRadians,
+            MirrorNorth: MirrorNorth,
+            CalibrationZoom: CalibrationZoom);
+    }
 }
