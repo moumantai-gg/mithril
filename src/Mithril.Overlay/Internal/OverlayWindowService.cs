@@ -612,7 +612,13 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
         var drawers = _sceneDrawers;
         if (drawers.Length == 0) return;
-        _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, scene, currentZoom, composedCal: null);
+        // mithril#1081 (Task 11): resolve the composed cal so tests that exercise
+        // the bound-cal zoom path (Project_plumbs_current_zoom_into_bound_composed_cal)
+        // and the texture-frame composition path see the same code as production.
+        // Previously passed composedCal: null, which meant _composedCal was always
+        // null in the scene context and Project() always returned null.
+        var (composedCal, _) = ResolveComposedOverlayCalibration(scene);
+        _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, scene, currentZoom, composedCal);
         for (var i = 0; i < drawers.Length; i++)
         {
             InvokeSceneDrawerIsolated(drawers[i], i);

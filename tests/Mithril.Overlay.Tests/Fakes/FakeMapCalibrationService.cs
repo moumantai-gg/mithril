@@ -25,6 +25,21 @@ internal sealed class FakeMapCalibrationService : IMapCalibrationService
     /// branch in <c>OverlayWindowService.ProjectMarkers</c>).</summary>
     public Func<MapSceneRef, WorldCoord, double, OverlayPixel?>? Projector { get; set; }
 
+    /// <summary>
+    /// mithril#1081: hookable per-scene overlay-cal provider. When set, overrides the
+    /// default <see cref="CalibratedAreas"/>-based stub that returns a default
+    /// <see cref="WorldToOverlayCalibration"/>. Use this to inject custom cals
+    /// (specific Scale/Zoom combos, or null to simulate uncalibrated).
+    /// </summary>
+    public Func<MapSceneRef, WorldToOverlayCalibration?>? OverlayCalForScene { get; set; }
+
+    /// <summary>
+    /// mithril#1081: hookable per-scene texture-cal provider. When set, the
+    /// <see cref="GetTextureCalibration"/> call returns the hook's result instead
+    /// of null. Use this to simulate a texture-frame-only calibration record.
+    /// </summary>
+    public Func<MapSceneRef, WorldToTextureCalibration?>? TextureCalForScene { get; set; }
+
     public bool IsCalibrated(MapSceneRef scene) => CalibratedAreas.Contains(scene.MapAssetKey);
 
     public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
@@ -35,8 +50,17 @@ internal sealed class FakeMapCalibrationService : IMapCalibrationService
         return Projector is { } p ? p(scene, world, currentZoom) : new OverlayPixel(world.X, world.Z);
     }
     public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom) => null;
-    public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) => null;
-    public WorldToOverlayCalibration? GetOverlayCalibration(MapSceneRef scene) => null;
+    public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene)
+        => TextureCalForScene?.Invoke(scene);
+    public WorldToOverlayCalibration? GetOverlayCalibration(MapSceneRef scene)
+    {
+        if (OverlayCalForScene is { } hook) return hook(scene);
+        return CalibratedAreas.Contains(scene.MapAssetKey)
+            ? new WorldToOverlayCalibration(
+                OriginX: 0, OriginY: 0, Scale: 1.0,
+                RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0)
+            : null;
+    }
     public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
     public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations { get; } = new Dictionary<string, AreaCalibration>();
     public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
