@@ -274,6 +274,18 @@ internal sealed class MapCalibrationService : IMapCalibrationService
         }
     }
 
+    public void DeleteUserRefinement(MapSceneRef scene, CalibrationFrame frame)
+    {
+        if (string.IsNullOrWhiteSpace(scene.MapAssetKey)) return;
+        if (_userStore.Remove(scene.MapAssetKey, frame))
+        {
+            _logger?.LogInformation(
+                "Deleted user refinement for {MapAssetKey} frame {Frame}.",
+                scene.MapAssetKey, frame);
+            RaiseChanged(scene);
+        }
+    }
+
     private void RaiseChanged(MapSceneRef scene)
     {
         EventHandler<MapSceneRef>? handler;

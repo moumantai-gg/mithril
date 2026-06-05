@@ -121,6 +121,22 @@ public interface IMapCalibrationService
     void ClearUserRefinement(MapSceneRef scene);
 
     /// <summary>
+    /// Drop a per-user refinement for a single frame on a scene (mithril#1082).
+    /// Symmetric with the per-frame storage shape introduced in PR for #1082:
+    /// SceneRefinements holds one slot per frame, and this method removes just
+    /// the named slot. If the scene's remaining slots are empty after the
+    /// removal, the scene entry is removed from the store entirely (compaction).
+    ///
+    /// <para><b>Idempotent.</b> If the named slot was already empty, no-op
+    /// (no <see cref="Changed"/> raised, no Persist).</para>
+    ///
+    /// <para>Contrast with <see cref="ClearUserRefinement(MapSceneRef)"/>, which
+    /// removes ALL frames for the scene at once — the "I'm starting over for
+    /// this scene" semantics used by the Legolas wizard's reset button.</para>
+    /// </summary>
+    void DeleteUserRefinement(MapSceneRef scene, CalibrationFrame frame);
+
+    /// <summary>
     /// Raised when the active transform changes for any scene. Payload = the
     /// changed scene (composite, not just the asset key — the writer has the
     /// full identity in hand at the raise site).

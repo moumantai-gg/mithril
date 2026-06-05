@@ -313,5 +313,7 @@ internal sealed class FakeCalibrationService : IMapCalibrationService
         Changed?.Invoke(this, scene);
     }
     public void ClearUserRefinement(MapSceneRef scene) => Saved.Remove(scene.MapAssetKey);
+    public void DeleteUserRefinement(MapSceneRef scene, CalibrationFrame frame) =>
+        throw new NotSupportedException("Test fake does not implement DeleteUserRefinement.");
     public event EventHandler<MapSceneRef>? Changed;
 }

@@ -250,6 +250,68 @@ public sealed class MapCalibrationServiceTests : IDisposable
         all.Should().ContainKey("Map_AreaEltibule");
     }
 
+    [Fact]
+    public void DeleteUserRefinement_RemovesOneFrame_LeavesOther()
+    {
+        // mithril#1082: per-frame delete clears only the named slot; the other
+        // slot stays intact. Save a Texture record AND an Overlay record for
+        // the same scene, delete the Texture slot, and assert the Overlay
+        // slot survives.
+        var svc = new MapCalibrationService(
+            new Dictionary<string, AreaCalibration>(),
+            new UserRefinementStore(_tempDir));
+        var scene = Scene("Map_AreaEltibule");
+
+        svc.SaveUserRefinement(scene, MakeCal(residual: 3.0, scale: 1.0) with { Frame = CalibrationFrame.Texture });
+        svc.SaveUserRefinement(scene, MakeCal(residual: 3.0, scale: 2.0) with { Frame = CalibrationFrame.Overlay });
+
+        svc.DeleteUserRefinement(scene, CalibrationFrame.Texture);
+
+        svc.GetTextureCalibration(scene).Should().BeNull();
+        svc.GetOverlayCalibration(scene).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void DeleteUserRefinement_IdempotentOnMissingFrame()
+    {
+        // mithril#1082: deleting a frame whose slot is already empty is a no-op:
+        // no Changed event raised, no Persist, the other slot is untouched.
+        var svc = new MapCalibrationService(
+            new Dictionary<string, AreaCalibration>(),
+            new UserRefinementStore(_tempDir));
+        var scene = Scene("Map_AreaEltibule");
+
+        svc.SaveUserRefinement(scene, MakeCal(residual: 3.0, scale: 2.0) with { Frame = CalibrationFrame.Overlay });
+
+        var notifications = new List<MapSceneRef>();
+        svc.Changed += (_, s) => notifications.Add(s);
+
+        svc.DeleteUserRefinement(scene, CalibrationFrame.Texture);
+
+        notifications.Should().BeEmpty();
+        svc.GetOverlayCalibration(scene).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void DeleteUserRefinement_RaisesChangedOnRemoval()
+    {
+        // mithril#1082: a real removal fires Changed exactly once.
+        var svc = new MapCalibrationService(
+            new Dictionary<string, AreaCalibration>(),
+            new UserRefinementStore(_tempDir));
+        var scene = Scene("Map_AreaEltibule");
+
+        svc.SaveUserRefinement(scene, MakeCal(residual: 3.0, scale: 1.0) with { Frame = CalibrationFrame.Texture });
+
+        var notifications = new List<MapSceneRef>();
+        svc.Changed += (_, s) => notifications.Add(s);
+
+        svc.DeleteUserRefinement(scene, CalibrationFrame.Texture);
+
+        notifications.Should().HaveCount(1);
+        notifications[0].MapAssetKey.Should().Be("Map_AreaEltibule");
+    }
+
     private static AreaCalibration MakeCal(double residual, double scale) =>
         new(
             Scale: scale,
