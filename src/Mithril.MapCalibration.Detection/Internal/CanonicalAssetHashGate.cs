@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration;
 
 namespace Mithril.MapCalibration.Detection.Internal;
 
