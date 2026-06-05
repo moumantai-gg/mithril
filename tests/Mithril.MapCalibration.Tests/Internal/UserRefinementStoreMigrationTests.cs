@@ -175,8 +175,13 @@ public sealed class UserRefinementStoreMigrationTests : IDisposable
         File.WriteAllText(Path_, weird);
 
         var store = new UserRefinementStore(_dir);
-        store.TryGetAny("Map_AreaSerbule", out _).Should().BeTrue();
+        store.TryGetAny("Map_AreaSerbule", out var slots).Should().BeTrue();
         store.TryGetAny("Map_Map_AreaSerbule", out _).Should().BeFalse();
+
+        // The v1 record has Source=UserRefinement → Frame inferred to Overlay →
+        // record lands in the Overlay slot (not Texture).
+        slots.Overlay.Should().NotBeNull("v1 UserRefinement record infers to Overlay frame");
+        slots.Texture.Should().BeNull("the v1 record was UserRefinement → not texture-frame");
     }
 
     [Fact]

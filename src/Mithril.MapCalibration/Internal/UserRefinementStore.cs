@@ -194,7 +194,6 @@ internal sealed class UserRefinementStore
             if (prior.Get(frame) is null) return false;
 
             var updated = prior.Without(frame);
-            var hadPrior = true; // by construction here
             if (updated.IsEmpty)
             {
                 _refinements.Remove(areaKey);
@@ -206,7 +205,7 @@ internal sealed class UserRefinementStore
             try { Persist(); }
             catch
             {
-                if (hadPrior) _refinements[areaKey] = prior;
+                _refinements[areaKey] = prior;
                 throw;
             }
             return true;
@@ -328,13 +327,8 @@ internal sealed class UserRefinementStore
             {
                 var slots = entry.Value.Deserialize(MapCalibrationJsonContext.Default.SceneRefinements);
                 if (slots is null || slots.IsEmpty) continue;
-                // Defensive Source restamp on each populated slot — matches the
-                // v1/v2 path (UserRefinement / AutoCapture verbatim; anything else
-                // rewritten to UserRefinement so a stray bundled/community record
-                // can't masquerade through the user store).
-                slots = new SceneRefinements(
-                    Texture: RestampSource(slots.Texture),
-                    Overlay: RestampSource(slots.Overlay));
+                // v3 records are only produced by Save, which already restamps
+                // Source; the contract is the defense, no restamp needed here.
                 loaded[entry.Name] = slots;
             }
             catch (JsonException ex)
@@ -421,14 +415,6 @@ internal sealed class UserRefinementStore
                     entry.Name, _filePath, ex.Message);
             }
         }
-    }
-
-    private static AreaCalibration? RestampSource(AreaCalibration? cal)
-    {
-        if (cal is null) return null;
-        return cal.Source is CalibrationSource.UserRefinement or CalibrationSource.AutoCapture
-            ? cal
-            : cal with { Source = CalibrationSource.UserRefinement };
     }
 
     /// <summary>
