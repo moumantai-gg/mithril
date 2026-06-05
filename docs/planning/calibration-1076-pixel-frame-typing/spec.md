@@ -50,14 +50,23 @@ The mismatch is `(loc.Tx, loc.Ty)`. On Map_KhyruleksCrypt 2026-06-04 20:28:01 th
 
 `AreaCalibration` ([src/Mithril.MapCalibration/AreaCalibration.cs](../../../src/Mithril.MapCalibration/AreaCalibration.cs)) is constructed in two unrelated places with two unrelated meanings:
 
-| Where | Solver | `OriginX/OriginY/Scale/Rotation` mean | `WorldToWindow` returns |
-|---|---|---|---|
-| `Mithril.MapCalibration.Capture` (AutoCalibration RANSAC solve) | RANSAC over the base texture | texture-pixel parameters | texture pixels |
-| `Legolas.Module/Services/AreaCalibrationService` (wizard / manual placement) | Two- or N-point fit over the overlay window | overlay-pixel parameters | overlay pixels |
+| Where | Solver | `OriginX/OriginY/Scale/Rotation` mean | `WorldToWindow` returns | `Source` tag |
+|---|---|---|---|---|
+| `Mithril.MapCalibration.Capture` (AutoCalibration RANSAC solve) | RANSAC over the base texture | texture-pixel parameters | texture pixels | `AutoCapture` |
+| `Legolas.Module/Services/AreaCalibrationService` (wizard / manual placement) | Two- or N-point fit over the overlay window | overlay-pixel parameters | overlay pixels | `UserRefinement` |
+| `BundledBaselineLoader` (bundled JSON at `BundledData/map-calibration-baseline.json`) | (none — AutoCal-shaped records committed at dev-time) | texture-pixel parameters | texture pixels | `BundledBaseline` |
 
-Persistence (`UserRefinementStore`, community-calibration JSON, the in-process `IMapCalibrationService`) carries the same struct across both meanings with no discriminator. A texture-frame calibration written by AutoCalibration and an overlay-frame calibration written by the Legolas wizard are indistinguishable on disk and in memory.
+The `Source` tag *does* identify the producer's frame today — but only since PR [#1064](https://github.com/moumantai-gg/mithril/pull/1064) shipped (2026-05-16), which included a pre-existing-bug fix (`52c8355f`) that stopped `UserRefinementStore.Save/Load` from overwriting `Source = AutoCapture` with `UserRefinement`. Pre-#1064 records are unreliably tagged: AutoCal-produced records were silently restamped as `UserRefinement` on save. Since AutoCalibration has never shipped in a tagged release, the only affected population is developer environments (verified against the spec author's own `%LocalAppData%/Mithril/MapCalibration/refinements.json` on 2026-06-05).
+
+Persistence (`UserRefinementStore`, the in-process `IMapCalibrationService`) carries the same struct across both meanings in the same JSON file, distinguished only by `Source`. No consumer of `AreaCalibration` today branches on `Source` to interpret the frame; `WorldToWindow` returns the same `PixelPoint` shape regardless. So when an AutoCal-produced (texture) record is rendered by the Legolas overlay (which reads as overlay), or a Legolas-wizard-produced (overlay) record is fed to AutoCal's drift-check (which reads as texture), the result is silent nonsense. This is the deeper bug that the catalyst #1076 partially surfaces — see §2.4.
 
 Pixel-frame structs alone do not close this hole. If `WorldToWindow` returns `PixelPoint` today and `TexturePixel` tomorrow, the same `AreaCalibration` instance still returns the wrong frame for callers expecting overlay pixels (or vice versa). The struct itself must carry its output-frame identity.
+
+### 2.4 The catalyst record is itself overlay-frame
+
+The 2026-06-04 Map_KhyruleksCrypt catalyst record (`source: UserRefinement`, residual 0.53, refs 4) was confirmed by the spec author as Legolas-wizard-produced — **overlay-frame**. This means the original #1076 analysis (crop-vs-full-frame comparison bug in `AutoCalibrationEngine.CheckDriftCoreAsync`) is correct *as a bug*, but is not the proximate cause of the 0/7-refs-matched symptom on this specific scene. The proximate cause is that AutoCal's drift-check reads the overlay-frame record as if it were texture-frame; the crop arithmetic is downstream of that and produces nonsense regardless.
+
+Consequence: post-refactor, the drift check on Map_KhyruleksCrypt will return "no texture-frame record for this scene" rather than the silent 0/N nonsense. That's the honest answer; it stays that way until AutoCalibration ships and the user lands a texture-frame record on the scene.
 
 ### 2.3 Why CI is green
 
@@ -311,16 +320,18 @@ internal sealed class MapCalibrationService : IMapCalibrationService
 
 ### 7.2 Load-time provenance fallback (Schema 1 → 2)
 
-Schema-1 records do not carry `frame`. Inferred at load by `source`:
+Schema-1 records do not carry `frame`. Inferred at load by `source` (corrected after P.1 / P.1b verification — see §13):
 
-| `Source` | Inferred frame |
-|---|---|
-| `UserRefinement` | Texture *if* the record was written by `AutoCalibrationEngine`'s refinement path; Overlay *if* written by `Legolas.Module/Services/AreaCalibrationService`. The two paths historically write to **separate JSON files**: AutoCalibration → `UserRefinementStore` under `MapCalibration/`, Legolas → `LegolasSettings.AreaCalibrations`. Inference is by file-of-origin, not by `Source` value. — **Verification owed: confirm Legolas writes never landed in `UserRefinementStore`.** |
-| `AutoCapture` | Texture |
-| `CommunitySync` | Texture (community-calibration repo `mithril-calibration/main/aggregated/*.json` ships only AutoCalibration-emitted records). — **Verification owed: spot-check 3+ aggregated files for `Source: AutoCapture` exclusively.** |
-| `BundledBaseline` | Texture |
+| `Source` | Inferred frame | Notes |
+|---|---|---|
+| `UserRefinement` | **Overlay** | Legolas-wizard-produced post-#1064. Every in-the-wild record is Legolas (AutoCal hasn't shipped); developer environments may have ambiguous pre-#1064 records — see §11 risk. |
+| `AutoCapture` | **Texture** | AutoCalibration-RANSAC-produced. Post-#1064 only (pre-#1064 records were silently restamped as `UserRefinement` by the `52c8355f` bug). |
+| `BundledBaseline` | **Texture** | Verified against `BundledData/map-calibration-baseline.json` 2026-06-05 — sub-pixel residuals, scale parameters consistent with texture-frame RANSAC fits committed at dev-time. |
+| `CommunitySync` | **TBD** | Aspirational source enum value; no consumer / aggregator exists yet (P.2 verified the community-calibration repo ships rate dictionaries, not `AreaCalibration` records). Deferred to a follow-up issue. The Schema-1 fallback returns null + warn-log if encountered. |
 
-Fresh writes (Schema 2) always include `"frame"` explicitly. An unknown `"source"` (forward-compat) defaults to Texture with a one-time warn-log; the caller's frame demand catches a mismatch at API surface.
+**Default for Schema-1 records:** Overlay. Justified because AutoCal has never shipped in a tagged release, so 100 % of in-the-wild Schema-1 records were produced by the Legolas wizard. Developer environments may have a mix; the dev's own `refinements.json` can be re-calibrated or wiped without affecting any other user.
+
+Fresh writes (Schema 2) always include `"frame"` explicitly. An unknown `"source"` (forward-compat) defaults to Overlay with a one-time warn-log; the caller's frame demand catches a mismatch at API surface.
 
 ### 7.3 Forward compatibility
 
@@ -362,7 +373,7 @@ Adopted because the project's collaboration rules require branch + PR (no direct
 |---|---|---|---|
 | **1. New types alongside** | 6 pixel structs, `IPixelPoint`, `WorldToTextureCalibration`, `WorldToOverlayCalibration`, `AreaProjectionCore`, `MapRect` typed conversion methods (`TextureToCropped` / `CroppedToTexture`), `LocatedMapRect` (§5.1), `MapCaptureRect.GameWindowToCaptured`, `CanvasOverlayMapping`. Tests for new types only. Old `PixelPoint` / `AreaCalibration` / `IMapCalibrationService` untouched. | ~13 src, ~7 tests | — |
 | **2. Migrate `Mithril.MapCalibration` core** | `LandmarkCalibrationSolver.Reference`, `CandidateTransform`, internal `MapCalibrationService` switch to new types. `IMapCalibrationService` grows new methods; old `WorldToWindow` / `WindowToWorld` get `[Obsolete]` shims that delegate. | ~12 src, ~15 tests | — |
-| **3. Migrate Detection + Capture** | `TypedDetection.Anchor`, `TypeAwareRansacSolver`, refiners (`SobelPaddedPyramidRefiner`, `FeatureMatchingRefiner`, `CompositeMapRegionRefiner`), `AutoCalibrationEngine`, diagnostics. Drift-check comparison naturally compiles correct after this — the old crop/full-frame mix-up cannot recur. | ~15 src, ~20 tests | **[#1076](https://github.com/moumantai-gg/mithril/issues/1076)** |
+| **3. Migrate Detection + Capture, frame-aware drift-check** | `TypedDetection.Anchor`, `TypeAwareRansacSolver`, refiners (`SobelPaddedPyramidRefiner`, `FeatureMatchingRefiner`, `CompositeMapRegionRefiner`), `AutoCalibrationEngine`, diagnostics. Drift-check comparison naturally compiles correct after this — the old crop/full-frame mix-up cannot recur. **Additionally:** drift-check gracefully refuses when no texture-frame record exists for the scene (the deeper bug found in P.1b that the catalyst Map_KhyruleksCrypt record exposes); chip surfaces "no AutoCalibration record — press AutoCalibrate to land one" (final wording in `CalibrationStatusFormatter` TBD; honest "no usable record" message). | ~17 src, ~22 tests | **[#1076](https://github.com/moumantai-gg/mithril/issues/1076)** |
 | **4. Migrate `Mithril.Overlay`** | `IOverlaySceneContext.Project`, `IWorldOverlayMarkers`, `MarkerSceneRenderer`, `OverlayWindowService` move to `OverlayPixel`. | ~6 src, ~3 tests | — |
 | **5. Migrate `Legolas.Module`** | Views, view models, services (`CoordinateProjector`, `AdaptiveRouteOptimizer`, `AreaCalibrationService`, `MotherlodeMeasurementCoordinator`, `PinCalibrationCoordinator`, `MultilaterationSolver`), rendering drawers, hotkeys, domain types. Splits into 5a/5b along view-model boundary if review fatigue. | ~30 src, ~35 tests | — |
 | **6. Persistence-schema migration** | `AreaCalibration` JSON SchemaVersion 1 → 2, add `frame` field with provenance fallback (§7.2). Round-trip tests cover old-format loads from all four `Source` values + fresh writes. Foldable into PR 1 if storage code is touched there too. | ~3 src, ~4 tests | — |
@@ -395,6 +406,8 @@ Adopted because the project's collaboration rules require branch + PR (no direct
 
 **Persistence forward-compat.** A Schema-2 record loaded by a pre-refactor Mithril build silently ignores `"frame"` (additive). A Schema-1 record loaded by a post-refactor build runs the §7.2 inference. Downgrades aren't anticipated; the additivity is free safety.
 
+**Pre-#1064 source-stamping bug in developer refinements.json.** Before PR [#1064](https://github.com/moumantai-gg/mithril/pull/1064) shipped (2026-05-16), `UserRefinementStore.Save/Load` silently restamped `Source = AutoCapture` records as `UserRefinement`. Records written before that date are unreliably tagged: a `UserRefinement` record may be a Legolas-wizard overlay-frame fit *or* a misstamped AutoCal texture-frame fit. **No end users are affected** (AutoCal has never shipped in a tagged release); only developer environments. Mitigation: developers wipe `%LocalAppData%/Mithril/MapCalibration/refinements.json` and re-calibrate, or accept that any pre-2026-05-16 record may render incorrectly post-refactor (with a "wrong-frame" residual visible in diagnostics).
+
 **`AreaCalibration` math port.** Two structs share one private `AreaProjectionCore` static. The PR 2 bit-identical equivalence tests are the safety net for the port; if those fail, the math diverged.
 
 **`AreaCalibrationService` in Legolas writes its own records today.** After PR 6 it writes `frame: "Overlay"` explicitly; the inference-from-source-and-file logic only matters for records that landed pre-refactor. Verify by hand on a real LocalLow profile during PR 5 / 6.
@@ -403,21 +416,25 @@ Adopted because the project's collaboration rules require branch + PR (no direct
 
 ## 12 — Out of scope / follow-ups
 
+- **AutoCalibration release blocker — Legolas overlay cross-frame composition.** When AutoCal eventually ships in a tagged release, end users will accumulate texture-frame records that the Legolas overlay needs to render. The overlay renderer currently does direct `WorldToWindow → D2D draw` with no texture↔overlay composition. Required: Legolas overlay learns to call `WorldToTextureCalibration.ProjectThroughOverlay(MapRect)` to derive an overlay-frame transform when only a texture-frame record exists for a scene, and the overlay holds an active `MapRect` describing where the base texture renders on the overlay window. Track as a separate issue gated on AutoCal's release readiness. **Not a blocker for this refactor** because no production user has an AutoCal record today.
+- **`Source: CommunitySync` frame inference.** Deferred — the consumer code doesn't exist (P.2 verified the community-calibration repo holds only per-module rate dictionaries, not `AreaCalibration` records). When the community-aggregator consumer lands, decide the frame at the same time. Track as a follow-up issue.
 - **`PixelOffset<TFrame>` type** if within-frame vector math (pin-to-pin offsets, drag deltas, route segments) becomes a real consumer need. Today the rendering code does manual `dx = a.X - b.X` and it's confined enough not to warrant a new type yet.
 - **Real 3D pixel-Z consumers.** Z is carried-but-zero today. `DistanceTo3D` ships only when a 3D HUD / perspective overlay needs it.
 - **Frame-tagged telemetry.** Spans on `MithrilActivitySources.MapCalibration` could carry the frame as a tag. Easy add post-refactor; not part of this landing.
-- **DPI-aware `CanvasOverlayMapping`.** When per-monitor DPI support arrives, this is the one place that changes.
+- **DPI-aware `CanvasOverlayMapping`.** When per-monitor DPI support arrives, this is the one place that changes. **P.3 observation:** today's Legolas `Mouse.GetPosition(Viewport)` returns overlay-frame coords directly (Viewport == overlay surface), so `CanvasOverlayMapping` is an identity passthrough in current Legolas. Phase 5b still wraps mouse-events through it for forward safety, but Phase 5's diff size on that axis is essentially zero.
 - **`#931` HashGate `pgVersion` plumbing** ([#1075](https://github.com/moumantai-gg/mithril/issues/1075)) — independent issue, unchanged by this work.
 
 ## 13 — Verification owed
 
 Tracked here so they don't get lost as the spec turns into PRs.
 
-- [ ] **§7.2 file-of-origin disambiguation for `Source: UserRefinement`** — confirm that Legolas-wizard-emitted overlay-frame records never landed in `UserRefinementStore`'s JSON path (only in `LegolasSettings.AreaCalibrations`). If they did, §7.2 needs a richer disambiguator than file-of-origin.
-- [ ] **§7.2 community-calibration repo content** — spot-check 3+ files under `mithril-calibration/main/aggregated/` to confirm they ship `Source: AutoCapture` records only, and that the frame inference (texture) is correct.
-- [ ] **§11 Legolas test fixture audit** — spot-check 5+ Legolas test files using hard-coded `PixelPoint` numeric values to confirm the implicit frame is recoverable from surrounding context. Surface any that aren't before PR 5 starts.
-- [ ] **PR 3 in-game smoke** — re-run the original Map_KhyruleksCrypt scenario (manual calibrate hotkey, `loc.Tx/Ty ≈ (320, 58)`) and confirm the drift check returns either `Ok` or `Drift`-and-arm, but **not** `Inconclusive — too few visible landmarks`. Closes #1076's "verification owed" entry inherited from PR #1064.
-- [ ] **`MapRect` construction-site bucketing** (§5.1) — audit each current `MapRect` construction site and classify into "bare `MapRect`" (screenshot = crop, origin always `(0, 0)`) or "needs `LocatedMapRect`" (origin in captured-frame coords). Five sites observed in the audit; the classification is load-bearing for §5.1's type restriction. If any site genuinely needs both meanings, that's the signal to split `MapRect` further.
+- [x] **§7.2 file-of-origin disambiguation for `Source: UserRefinement`** — pre-flight P.1 (2026-06-05): **FAIL.** AutoCalibration and Legolas's `AreaCalibrationService` both route through `IMapCalibrationService.SaveUserRefinement → UserRefinementStore → refinements.json`. File-of-origin disambiguation cannot work. §7.2 revised to use `Source` as the discriminator (already a load-bearing distinction since PR [#1064](https://github.com/moumantai-gg/mithril/pull/1064)).
+- [x] **§2.2 / §7.2 actual producer frames verified** — pre-flight P.1b (2026-06-05): **MISMATCHED-LATENT-BUG.** Legolas wizard produces overlay-frame; AutoCal produces texture-frame; consumers each read their own producer's frame; cross-source consumption is silently broken today. Hidden in production because (a) AutoCal hasn't shipped, (b) a given scene typically has only one source. Spec §2.2 and §2.4 updated to reflect this. The drift check on the catalyst Map_KhyruleksCrypt scene (overlay-frame Legolas-wizard record) post-refactor returns "no texture-frame record" rather than nonsense — the deeper frame fix supersedes the catalyst crop fix on that specific scene.
+- [x] **§7.2 community-calibration repo content** — pre-flight P.2 (2026-06-05): **NEEDS-INVESTIGATION.** `mithril-calibration` repo ships per-module rate dictionaries (Samwise/Arwen/Smaug/Gandalf), not `AreaCalibration` records. `CommunitySync` source is aspirational. §7.2 marks it TBD; tracked as a follow-up issue.
+- [x] **§11 Legolas test fixture audit** — pre-flight P.3 (2026-06-05): **PASS.** All 27 PixelPoint-using files in `tests/Legolas.Tests/` resolve unambiguously to OverlayPixel. Production code's `Mouse.GetPosition(Viewport)` IS overlay-frame; today's CanvasPixel == OverlayPixel in Legolas; the type split is forward-safety for per-monitor DPI but a near-zero diff in current code.
+- [x] **`MapRect` construction-site bucketing** (§5.1) — pre-flight P.4 (2026-06-05): **PASS.** 6 production construction sites; 3 bucket as "bare MapRect" (alignedRect cases, origin (0,0)) and 3 as "needs LocatedMapRect" (refiner outputs + screenshot-calibrator override carrying captured-frame origin). Zero ambiguous sites.
+- [x] **Catalyst Map_KhyruleksCrypt record frame** — dev manually confirmed Legolas-wizard origin on 2026-06-05. Overlay-frame. Spec §2.4 documents the consequence.
+- [ ] **PR 3 in-game smoke** — re-run the Map_KhyruleksCrypt manual-calibrate scenario. **Expected outcome post-refactor:** chip surfaces "no AutoCalibration record for this scene — press AutoCalibrate to land one" (or equivalent — see Phase 3 drift-check-degrade work item below). NOT "inconclusive — 0/N refs matched" (the pre-refactor silent-nonsense outcome). Until AutoCal ships, the scene remains in this honest "no texture-frame record" state.
 
 ---
 

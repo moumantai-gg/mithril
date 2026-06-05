@@ -10,6 +10,18 @@
 
 **Spec:** [`spec.md`](spec.md) in this folder. Sections referenced as **§N** throughout.
 
+## Plan revision note (2026-06-05)
+
+All four pre-flight verifications completed; results forced spec revisions captured in this plan's diffs:
+
+- **P.1 FAIL → §7.2 rewritten.** AutoCal and Legolas wizard share `UserRefinementStore`; file-of-origin disambiguation cannot work. Now uses `Source` as the discriminator (already reliable since [#1064](https://github.com/moumantai-gg/mithril/pull/1064)).
+- **P.1b MISMATCHED-LATENT-BUG → Phase 3 grows a drift-check-degrade sub-task.** Legolas wizard produces overlay-frame; AutoCal produces texture-frame; the catalyst Map_KhyruleksCrypt record is overlay-frame. The proposed crop-fix alone doesn't unblock that scene. Drift-check must gracefully refuse when no texture-frame record exists; chip surfaces "no AutoCalibration record" honestly.
+- **P.2 NEEDS-INVESTIGATION → `CommunitySync` row dropped from §7.2.** Deferred to a follow-up issue.
+- **P.3 PASS → Phase 5 confidence is high.** All Legolas tests are unambiguously OverlayPixel.
+- **P.4 PASS → §5.1 holds as-designed.** 6 sites; 3 bare, 3 LocatedMapRect.
+
+The Pre-flight section below is preserved as historical record; the four `- [ ]` checklists have all returned their verdicts. Phase 1 is now unblocked.
+
 ---
 
 ## Pre-flight — verify spec assumptions before PR 1
@@ -1670,6 +1682,84 @@ public class AutoCalibrationEngineDriftCheck1076RegressionTests
   git commit -m "test(map-calibration): regression marker for #1076 drift-check crop/full-frame mix-up"
   ```
 
+### Task 3.4b: Drift-check graceful refusal when no texture-frame record exists
+
+**Files:**
+- Modify: `src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs` — early-return branch in `CheckDriftCoreAsync` before any of the locate/crop/detect work runs.
+- Modify: `src/Mithril.MapCalibration.Capture/CalibrationStatusFormatter.cs` — new chip message + accompanying `DriftCheckOutcome` variant if the existing `Inconclusive` doesn't fit cleanly.
+- Modify: `tests/Mithril.MapCalibration.Capture.Tests/AutoCalibrationEngineDriftCheck*Tests.cs` — new test exercising the "no texture-frame record" path.
+
+Background (from spec §2.4 / §13 P.1b): the catalyst Map_KhyruleksCrypt record is overlay-frame (Legolas-wizard-produced). With the new frame-typed `IMapCalibrationService.WorldToTexture` returning null when no texture-frame record exists, the drift check would otherwise blow up at the `stored.ToTexture(...)` call. Graceful refusal surfaces an honest chip.
+
+- [ ] **Step 1: Write the failing test**
+
+```csharp
+[Fact]
+public async Task DriftCheck_ReturnsNoTextureFrameRecord_WhenSceneHasOnlyOverlayCalibration()
+{
+    // Synthesise: scene has a stored WorldToOverlayCalibration but no WorldToTextureCalibration.
+    var fixture = EngineHarness.BuildSceneWithOverlayOnlyCalibration();
+
+    var outcome = await fixture.Engine.CheckDriftAsync(fixture.SceneRef, CancellationToken.None);
+
+    outcome.Should().BeOfType<DriftCheckOutcome.NoTextureFrameRecord>();
+    // Chip message asserts in CalibrationStatusFormatterTests.
+}
+```
+
+- [ ] **Step 2: Run** — FAIL (variant doesn't exist yet).
+
+- [ ] **Step 3: Add the new `DriftCheckOutcome.NoTextureFrameRecord` variant** in the existing `DriftCheckOutcome` sealed-hierarchy file (find via `rg -n "DriftCheckOutcome"`):
+
+```csharp
+public sealed record NoTextureFrameRecord() : DriftCheckOutcome;
+```
+
+- [ ] **Step 4: Add the chip-formatter case** in `CalibrationStatusFormatter`:
+
+```csharp
+public static string DriftCheckNoTextureFrameRecord() =>
+    "No AutoCalibration record for this scene — press AutoCalibrate to land one.";
+```
+
+(The wording is the placeholder from spec §9 PR 3 row. Adjust per project chip conventions if reviewer feedback requests.)
+
+- [ ] **Step 5: Add the early-return branch in `CheckDriftCoreAsync`**
+
+Insert this BEFORE the `_refiner.Refine(...)` call (around line 226 today):
+
+```csharp
+// Frame-aware refusal: if no texture-frame calibration exists for the scene,
+// the comparison this method does is unsound on whatever's stored. Return an
+// honest verdict instead of running the locate → detect → compare arithmetic
+// on an overlay-frame record (which would silently produce 0/N matches).
+// Spec §2.4 / §13 P.1b: the catalyst Map_KhyruleksCrypt scene exposed this
+// via a Legolas-wizard-produced overlay-frame UserRefinement record.
+var stored = _calibrationService.GetTextureCalibration(sceneRef);
+if (stored is null)
+{
+    _logger?.LogInformation(
+        "Drift check {MapAssetKey}: no texture-frame calibration record — refusing to run; chip shows actionable reason.",
+        sceneRef.MapAssetKey);
+    span?.SetTag("outcome", "NoTextureFrameRecord");
+    return new DriftCheckOutcome.NoTextureFrameRecord();
+}
+```
+
+The `_calibrationService.GetTextureCalibration` accessor is what PR 2 Task 2.4's `WorldToTexture` lookup wraps; expose it as a non-`WorldCoord`-projection variant if the existing surface doesn't already give back the raw struct.
+
+- [ ] **Step 6: Run test to verify pass.**
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs \
+        src/Mithril.MapCalibration.Capture/CalibrationStatusFormatter.cs \
+        src/Mithril.MapCalibration.Capture/DriftCheckOutcome.cs \
+        tests/Mithril.MapCalibration.Capture.Tests/AutoCalibrationEngineDriftCheckFrameAwareTests.cs
+git commit -m "feat(map-calibration): drift check refuses no-texture-frame scenes (#1076)"
+```
+
 ### Task 3.5: Sweep remaining Capture / Detection consumers
 
 For every file in `src/Mithril.MapCalibration.Capture/` and `src/Mithril.MapCalibration.Detection/` that still references `PixelPoint`:
@@ -1823,37 +1913,48 @@ public void Schema2_RoundTripsFrameField()
 
 - [ ] **Step 3: Commit.**
 
-### Task 6.2: Schema-1 load-time provenance fallback
+### Task 6.2: Schema-1 load-time Source-based frame inference
 
 **Files:**
-- Modify: the loaders that read `AreaCalibration` JSON (`UserRefinementStore`, community-calibration loader, baseline loader, `LegolasSettings` loader).
+- Modify: the loaders that read `AreaCalibration` JSON (`UserRefinementStore`, `BundledBaselineLoader`).
 
-- [ ] **Step 1: Write the failing test (per `Source` value × per file-of-origin)**
+Per spec §7.2 (revised after P.1 / P.1b): `Source` is the discriminator. No file-of-origin logic needed — both AutoCal and Legolas wizard land in the same `refinements.json` and distinguish by `Source` (reliable since #1064). The Schema-1 default for `Source: UserRefinement` is **Overlay** because AutoCal has never shipped (every in-the-wild Schema-1 `UserRefinement` record is Legolas-wizard-produced).
+
+- [ ] **Step 1: Write the failing test**
 
 ```csharp
 [Theory]
-[InlineData(CalibrationSource.AutoCapture, /*from*/ "UserRefinementStore", CalibrationFrame.Texture)]
-[InlineData(CalibrationSource.UserRefinement, "UserRefinementStore", CalibrationFrame.Texture)]
-[InlineData(CalibrationSource.UserRefinement, "LegolasSettings.AreaCalibrations", CalibrationFrame.Overlay)]
-[InlineData(CalibrationSource.CommunitySync, "UserRefinementStore", CalibrationFrame.Texture)]
-[InlineData(CalibrationSource.BundledBaseline, "UserRefinementStore", CalibrationFrame.Texture)]
-public void Schema1_Load_InfersFrame_FromSourceAndFileOfOrigin(
-    CalibrationSource source, string fileOfOrigin, CalibrationFrame expectedFrame)
+[InlineData(CalibrationSource.AutoCapture, CalibrationFrame.Texture)]
+[InlineData(CalibrationSource.UserRefinement, CalibrationFrame.Overlay)]
+[InlineData(CalibrationSource.BundledBaseline, CalibrationFrame.Texture)]
+public void Schema1_Load_InfersFrame_FromSource(CalibrationSource source, CalibrationFrame expectedFrame)
 {
-    var record = LoadSchema1Record(source, fileOfOrigin);
+    var record = LoadSchema1Record(source);
     record.Frame.Should().Be(expectedFrame);
 }
 
 [Fact]
-public void Schema1_UnknownSource_DefaultsToTexture_WithWarnLog()
+public void Schema1_CommunitySyncSource_DefaultsToOverlayWithWarnLog()
 {
-    var record = LoadSchema1Record(/* source: */ "FutureSource_DoesNotExist", "UserRefinementStore");
-    record.Frame.Should().Be(CalibrationFrame.Texture);
+    // CommunitySync is aspirational (spec §7.2 / P.2); no consumer ships today.
+    // Until the consumer + aggregator land, default to Overlay (the safer
+    // assumption — won't be silently fed to AutoCal's texture-frame drift-check)
+    // and emit a one-time warn-log so the developer notices.
+    var record = LoadSchema1Record(CalibrationSource.CommunitySync);
+    record.Frame.Should().Be(CalibrationFrame.Overlay);
+    // ... assert the warn log fired
+}
+
+[Fact]
+public void Schema1_UnknownSource_DefaultsToOverlayWithWarnLog()
+{
+    var record = LoadSchema1Record(/* source: */ "FutureSource_DoesNotExist");
+    record.Frame.Should().Be(CalibrationFrame.Overlay);
     // ... assert the warn log fired
 }
 ```
 
-- [ ] **Step 2: Implement the load-time inference** in each loader.
+- [ ] **Step 2: Implement the load-time inference** in `UserRefinementStore` and `BundledBaselineLoader`.
 
 - [ ] **Step 3: Run** — green. **Commit.**
 
