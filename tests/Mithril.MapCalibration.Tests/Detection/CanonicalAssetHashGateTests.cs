@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using FluentAssertions;
+using Mithril.MapCalibration;
 using Mithril.MapCalibration.Detection.Internal;
 using Xunit;
 
@@ -14,12 +15,12 @@ public sealed class CanonicalAssetHashGateTests
 {
     private static CanonicalAssetHashGate Gate()
     {
-        var catalogue = new CanonicalAssetHashes(1, new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal)
+        var catalogue = new CanonicalAssetHashes(2, new Dictionary<string, Dictionary<string, CanonicalAssetHashEntry>>(StringComparer.Ordinal)
         {
             ["1.2.3"] = new(StringComparer.Ordinal)
             {
-                ["icons"] = "aaaa",
-                ["AreaSerbule"] = "bbbb",
+                ["icons"] = new CanonicalAssetHashEntry("aaaa", 1024, 1024),
+                ["AreaSerbule"] = new CanonicalAssetHashEntry("bbbb", 1024, 1024),
             },
         });
         return CanonicalAssetHashGate.FromCatalogue(catalogue);

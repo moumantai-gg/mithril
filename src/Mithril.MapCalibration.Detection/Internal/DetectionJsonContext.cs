@@ -18,5 +18,6 @@ namespace Mithril.MapCalibration.Detection.Internal;
 [JsonSerializable(typeof(IconTemplateManifest))]
 [JsonSerializable(typeof(MapTextureManifest))]
 [JsonSerializable(typeof(CanonicalAssetHashes))]
+[JsonSerializable(typeof(CanonicalAssetHashEntry))]
 [JsonSerializable(typeof(SidecarResult))]
 internal partial class DetectionJsonContext : JsonSerializerContext;

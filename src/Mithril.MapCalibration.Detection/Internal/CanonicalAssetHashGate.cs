@@ -50,7 +50,8 @@ internal sealed class CanonicalAssetHashGate
     /// </summary>
     public static CanonicalAssetHashGate Load(ILogger? logger)
     {
-        var catalogue = ReadCatalogue(logger) ?? new CanonicalAssetHashes(1, new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal));
+        var catalogue = ReadCatalogue(logger)
+            ?? new CanonicalAssetHashes(2, new Dictionary<string, Dictionary<string, CanonicalAssetHashEntry>>(StringComparer.Ordinal));
         return new CanonicalAssetHashGate(catalogue, logger);
     }
 
@@ -80,7 +81,7 @@ internal sealed class CanonicalAssetHashGate
             return new HashVerdict(true, true, $"PG version {pgVersion} not catalogued");
         }
 
-        if (!byArtifact.TryGetValue(artifactKey, out var expected) || string.IsNullOrEmpty(expected))
+        if (!byArtifact.TryGetValue(artifactKey, out var entry) || string.IsNullOrEmpty(entry?.Sha))
         {
             _logger?.LogWarning(
                 "Canonical-hash gate: no canonical hash for {Artifact} under PG {PgVersion} — accept-with-warn.",
@@ -88,15 +89,15 @@ internal sealed class CanonicalAssetHashGate
             return new HashVerdict(true, true, $"no canonical hash for {artifactKey} under {pgVersion}");
         }
 
-        if (string.Equals(expected, actualSha256, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(entry.Sha, actualSha256, StringComparison.OrdinalIgnoreCase))
         {
             return new HashVerdict(true, false, "match");
         }
 
         _logger?.LogWarning(
             "Canonical-hash gate: hash mismatch for {Artifact} under PG {PgVersion} (canonical {Expected}, actual {Actual}) — rejected (decode-tool drift / corruption).",
-            artifactKey, pgVersion, expected, actualSha256);
-        return new HashVerdict(false, false, $"hash mismatch (canonical {expected}, actual {actualSha256})");
+            artifactKey, pgVersion, entry.Sha, actualSha256);
+        return new HashVerdict(false, false, $"hash mismatch (canonical {entry.Sha}, actual {actualSha256})");
     }
 
     private static CanonicalAssetHashes? ReadCatalogue(ILogger? logger)
