@@ -110,6 +110,33 @@ public sealed class ManualCalibrationCoordinatorTests
         coordinator.IsArmed.Should().BeFalse();
     }
 
+    // ── 2b. Stored overlay-frame record → engine refuses → chip is the actionable message ─
+
+    /// <summary>
+    /// Regression for the gap noticed via live-log inspection 2026-06-05: the
+    /// engine's <see cref="DriftCheckOutcome.NoTextureFrameRecord"/> branch (Phase 3
+    /// Task 3.4b) shipped without a coordinator switch arm, so the coordinator
+    /// fell through to <c>default</c>, set "Drift check: internal error (see logs)"
+    /// as the chip, and emitted its own self-described "this is a bug" Error log.
+    /// The user-visible chip must be the actionable <c>DriftCheckNoTextureFrameRecord</c>
+    /// message — "No AutoCalibration record for this scene — press AutoCalibrate to land one."
+    /// </summary>
+    [Fact]
+    public async Task Hotkey_NoTextureFrameRecord_SurfacesActionableChip()
+    {
+        var runner = new FakeRunner { DriftReturn = new DriftCheckOutcome.NoTextureFrameRecord() };
+        var overlay = new FakeOverlayWindow();
+        var coordinator = NewCoordinator(runner, ServiceWith(Stored()), overlay: overlay);
+
+        await coordinator.HandleHotkeyAsync(CancellationToken.None);
+
+        runner.DriftCalls.Should().Be(1);
+        runner.SolveCalls.Should().Be(0);
+        overlay.StatusMessage.Should().Be(CalibrationStatusFormatter.DriftCheckNoTextureFrameRecord());
+        overlay.StatusMessage.Should().NotContain("internal error");
+        coordinator.IsArmed.Should().BeFalse();
+    }
+
     // ── 3. Stored calibration + drift detected → arm ─────────────────────────
 
     [Fact]
