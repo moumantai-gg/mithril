@@ -55,8 +55,12 @@ public class MapOverlayCalibrationValidationTests
         session.IsMapVisible.Should().BeTrue("the overlay must be up for the ghosts to be visible");
         map.CalibrationGhosts.Should().HaveCount(2);
         map.CalibrationGhosts[0].Name.Should().Be("Statue");
-        map.CalibrationGhosts[0].Pixel.Should().Be(calibration.WorldToWindow(new WorldCoord(10, 0, 5)).AsOverlay());
-        map.CalibrationGhosts[1].Pixel.Should().Be(calibration.WorldToWindow(new WorldCoord(-4, 0, 12)).AsOverlay());
+        // #1076 Phase 6.5: assertions use the frame-typed overlay projection.
+        var overlayCal = new WorldToOverlayCalibration(
+            calibration.OriginX, calibration.OriginY, calibration.Scale,
+            calibration.RotationRadians, calibration.MirrorNorth, calibration.CalibrationZoom);
+        map.CalibrationGhosts[0].Pixel.Should().Be(overlayCal.ToOverlay(new WorldCoord(10, 0, 5)));
+        map.CalibrationGhosts[1].Pixel.Should().Be(overlayCal.ToOverlay(new WorldCoord(-4, 0, 12)));
         map.CalibrationValidationStatus.Should().Contain("2 known").And.Contain("not accuracy");
     }
 
@@ -153,7 +157,11 @@ public class MapOverlayCalibrationValidationTests
 
         map.CalibrationGhosts.Should().HaveCount(1);
         map.CalibrationGhosts[0].Pixel.Should().NotBe(before);
-        map.CalibrationGhosts[0].Pixel.Should().Be(Cal(4.0).WorldToWindow(new WorldCoord(10, 0, 5)).AsOverlay());
+        // #1076 Phase 6.5: assertion uses the frame-typed overlay projection.
+        var c4 = Cal(4.0);
+        var overlay4 = new WorldToOverlayCalibration(
+            c4.OriginX, c4.OriginY, c4.Scale, c4.RotationRadians, c4.MirrorNorth, c4.CalibrationZoom);
+        map.CalibrationGhosts[0].Pixel.Should().Be(overlay4.ToOverlay(new WorldCoord(10, 0, 5)));
     }
 
     [Fact]

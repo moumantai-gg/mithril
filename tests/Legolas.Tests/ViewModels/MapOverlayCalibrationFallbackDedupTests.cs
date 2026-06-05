@@ -93,6 +93,7 @@ public class MapOverlayCalibrationFallbackDedupTests
         public string? CurrentAreaFriendlyName => "Test";
         public bool IsCurrentAreaCalibrated => false;
         public AreaCalibration? CurrentCalibration => null;
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
         public AreaCalibration? CalibrateCurrentArea(

@@ -28,6 +28,7 @@ public class LegolasWizardViewModelTests
         public MapSceneRef? CurrentScene { get; set; } = new MapSceneRef("AreaTest", null, "Map_AreaTest");
         public string? CurrentAreaFriendlyName => "Test";
         public AreaCalibration? CurrentCalibration => null;
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<Mithril.Shared.Reference.AreaEntry> AllAreas => Array.Empty<Mithril.Shared.Reference.AreaEntry>();
         public event EventHandler? Changed;

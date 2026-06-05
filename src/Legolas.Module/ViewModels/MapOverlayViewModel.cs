@@ -13,6 +13,7 @@ using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Rendering;
 using Legolas.Services;
+using Mithril.MapCalibration;
 using Mithril.Overlay;
 
 namespace Legolas.ViewModels;
@@ -327,7 +328,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         var res = ResolveSurveyAnchor(
             _latestTrackerFix,
             _characterPin?.Current,
-            _areaCalibration?.CurrentCalibration,
+            _areaCalibration?.CurrentOverlayCalibration,
             fromTrackerFix,
             _session.SurveyPlayerIsManual,
             _session.SurveyPlayerIsPinned,
@@ -363,7 +364,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     public static SurveyAnchorResolution? ResolveSurveyAnchor(
         TrackerFix? tracker,
         CharacterPinFix? pin,
-        AreaCalibration? cal,
+        WorldToOverlayCalibration? cal,
         bool fromTrackerFix,
         bool currentIsManual,
         bool currentIsPinned,
@@ -375,11 +376,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 fromTrackerFix && tracker is { } ft && ft.MeasuredAt > p.ObservedAt;
             if (!supersededByFresherAuto)
             {
-                // #1076 5a: WorldToWindow still returns PixelPoint; re-tag to
-                // overlay-frame at the boundary (value is overlay-frame per P.3).
-                var pwt = pinCal.WorldToWindow(p.World, EffectiveZoom(currentMapZoom, pinCal));
+                // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
+                var pwt = pinCal.ToOverlay(p.World, EffectiveZoom(currentMapZoom, pinCal));
                 return new SurveyAnchorResolution(
-                    new OverlayPixel(pwt.X, pwt.Y),
+                    pwt,
                     p.ObservedAt,
                     Source: null, IsManual: true, IsPinned: true);
             }
@@ -393,17 +393,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         if (tracker is not { } fix || cal is not { } c)
             return SurveyAnchorResolution.Cleared;
 
-        // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame
-        // (value is overlay-frame per P.3 audit; Phase 6 typifies the core).
-        var fxp = c.WorldToWindow(new WorldCoord(fix.X, fix.Y, fix.Z), EffectiveZoom(currentMapZoom, c));
+        // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
+        var fxp = c.ToOverlay(new WorldCoord(fix.X, fix.Y, fix.Z), EffectiveZoom(currentMapZoom, c));
         return new SurveyAnchorResolution(
-            new OverlayPixel(fxp.X, fxp.Y),
+            fxp,
             fix.MeasuredAt, fix.Source, IsManual: false, IsPinned: false);
     }
 
     // #524: a caller that doesn't know the live zoom (older tests, legacy
     // paths) gets the byte-identical no-op (factor 1.0). Live VM paths pass
     // SessionState.CurrentMapZoom.
+    private static double EffectiveZoom(double currentMapZoom, WorldToOverlayCalibration cal) =>
+        currentMapZoom > 1e-6 ? currentMapZoom : cal.CalibrationZoom;
     private static double EffectiveZoom(double currentMapZoom, AreaCalibration cal) =>
         currentMapZoom > 1e-6 ? currentMapZoom : cal.CalibrationZoom;
 
@@ -645,7 +646,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     private void RebuildCalibrationGhosts()
     {
         CalibrationGhosts.Clear();
-        if (_areaCalibration?.CurrentCalibration is not { } cal) return;
+        if (_areaCalibration?.CurrentOverlayCalibration is not { } cal) return;
         // #524: pass the live in-game zoom so dragging the bound slider live-
         // reprojects the ghosts (the validate loop is precisely the diagnostic
         // for surfacing zoom drift after a change).
@@ -1112,19 +1113,19 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             LogCalibrationFallback(areaKey, "No IAreaCalibrationService injected — marker cannot anchor.");
             return;
         }
-        var cal = _areaCalibration.CurrentCalibration;
+        var cal = _areaCalibration.CurrentOverlayCalibration;
         if (cal is null)
         {
             LogCalibrationFallback(areaKey,
                 "No baseline calibration for area — calibration walkthrough requires a seed (review iter-1 B2).");
             return;
         }
-        // #1076 5a: WindowToWorld takes PixelPoint; marker.Pixel is OverlayPixel
-        // (overlay frame). Re-tag at the boundary; Phase 6 will type-thread it.
-        if (cal.WindowToWorld(new Mithril.MapCalibration.PixelPoint(marker.Pixel.X, marker.Pixel.Y), EffectiveZoom(_session.CurrentMapZoom, cal)) is not { } world)
+        // #1076 Phase 6.5: frame-typed inverse — marker.Pixel is already
+        // OverlayPixel, FromOverlay returns WorldCoord directly.
+        if (cal.Value.FromOverlay(marker.Pixel, EffectiveZoom(_session.CurrentMapZoom, cal.Value)) is not { } world)
         {
             LogCalibrationFallback(areaKey,
-                "WindowToWorld returned null for marker pixel — calibration shape rejected the point.");
+                "FromOverlay returned null for marker pixel — calibration shape rejected the point.");
             return;
         }
 
@@ -1314,7 +1315,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         {
             if (_session.Mode != SessionMode.Motherlode
                 || _motherlode is null
-                || _areaCalibration?.CurrentCalibration is not { } cal)
+                || _areaCalibration?.CurrentOverlayCalibration is not { } cal)
                 return Array.Empty<OverlayPixel>();
 
             List<OverlayPixel>? list = null;
@@ -1322,9 +1323,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             foreach (var s in _motherlode.Snapshot().Surveys)
                 if (!s.Collected && s.SolvedWorld is { } w)
                 {
-                    // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame.
-                    var px = cal.WorldToWindow(w, zoom);
-                    (list ??= new()).Add(new OverlayPixel(px.X, px.Y));
+                    // #1076 Phase 6.5: frame-typed projection — OverlayPixel out.
+                    (list ??= new()).Add(cal.ToOverlay(w, zoom));
                 }
             return list ?? (IReadOnlyList<OverlayPixel>)Array.Empty<OverlayPixel>();
         }
@@ -1340,16 +1340,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         {
             if (_session.Mode != SessionMode.Motherlode
                 || _motherlode is null
-                || _areaCalibration?.CurrentCalibration is not { } cal)
+                || _areaCalibration?.CurrentOverlayCalibration is not { } cal)
                 return null;
 
             var next = _motherlode.Snapshot().NextSpot;
             if (next is null) return null;
 
             var zoom = _session.CurrentMapZoom;
-            // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame.
-            var centerPx = cal.WorldToWindow(next.SuggestedWorld, zoom);
-            var center = new OverlayPixel(centerPx.X, centerPx.Y);
+            // #1076 Phase 6.5: frame-typed projection — OverlayPixel out.
+            var center = cal.ToOverlay(next.SuggestedWorld, zoom);
             var zoomFactor = zoom > 1e-6 && cal.CalibrationZoom > 1e-6
                 ? zoom / cal.CalibrationZoom
                 : 1.0;

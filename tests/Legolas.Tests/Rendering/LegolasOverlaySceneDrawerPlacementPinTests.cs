@@ -131,6 +131,7 @@ public sealed class LegolasOverlaySceneDrawerPlacementPinTests
         public string? CurrentAreaFriendlyName => "Test";
         public bool IsCurrentAreaCalibrated => false;
         public AreaCalibration? CurrentCalibration => null;
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => System.Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => System.Array.Empty<AreaEntry>();
         public event EventHandler? Changed { add { } remove { } }

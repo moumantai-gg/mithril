@@ -752,6 +752,9 @@ public class CalibrationSessionViewModelTests
         public string? CurrentAreaFriendlyName { get; set; }
         public bool IsCurrentAreaCalibrated => CurrentCalibration is not null;
         public AreaCalibration? CurrentCalibration { get; set; }
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => CurrentCalibration is { } c
+            ? new WorldToOverlayCalibration(c.OriginX, c.OriginY, c.Scale, c.RotationRadians, c.MirrorNorth, c.CalibrationZoom)
+            : null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Refs;
         public IReadOnlyList<AreaEntry> AllAreas => Areas;
         public event EventHandler? Changed;

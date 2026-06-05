@@ -188,7 +188,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
             return;
         }
 
-        if (_areaCalibration.CurrentCalibration is not { } cal)
+        if (_areaCalibration.CurrentOverlayCalibration is not { } cal)
         {
             _session.LastLogEvent =
                 $"Map target: {CleanName(shortName)} @ ({world.X:0},{world.Z:0}) → area not calibrated; run pin calibration";
@@ -196,10 +196,8 @@ public sealed class PlayerLogIngestionService : BackgroundService
         }
 
         var name = CleanName(shortName);
-        // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame
-        // (the value is overlay-frame by the P.3 audit; Phase 6 typifies core).
-        var pxRaw = cal.WorldToWindow(world, _session.CurrentMapZoom);
-        var pixel = new OverlayPixel(pxRaw.X, pxRaw.Y);
+        // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
+        var pixel = cal.ToOverlay(world, _session.CurrentMapZoom);
 
         if (FindDuplicateAbsolute(world, _settings.MapTargetDedupRadiusMetres) is { } dup)
         {

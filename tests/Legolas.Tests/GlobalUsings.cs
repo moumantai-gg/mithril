@@ -7,3 +7,4 @@ global using CalibrationSource = Mithril.MapCalibration.CalibrationSource;
 global using LandmarkCalibrationSolver = Mithril.MapCalibration.LandmarkCalibrationSolver;
 global using OverlayPixel = Mithril.MapCalibration.OverlayPixel;
 global using WorldCoord = Mithril.MapCalibration.WorldCoord;
+global using WorldToOverlayCalibration = Mithril.MapCalibration.WorldToOverlayCalibration;

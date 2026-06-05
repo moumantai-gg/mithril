@@ -1,6 +1,5 @@
 using FluentAssertions;
 using Legolas.Domain;
-using Legolas.Tests.TestSupport;
 
 namespace Legolas.Tests.Domain;
 
@@ -12,8 +11,11 @@ namespace Legolas.Tests.Domain;
 /// </summary>
 public class GhostLabelDeclutterTests
 {
-    // Scale 1, no rotation/origin, +Z convention: ProjectWorld(x,0,z) = (x, -z).
-    private static readonly AreaCalibration Cal = new(1, 0, 0, 0, 3, 0);
+    // #1076 Phase 6.5: overlay-frame typed cal. Scale 1, no rotation/origin,
+    // +Z convention: ToOverlay(x,0,z) = (x, -z).
+    private static readonly WorldToOverlayCalibration Cal = new(
+        OriginX: 0, OriginY: 0, Scale: 1, RotationRadians: 0,
+        MirrorNorth: false, CalibrationZoom: 1.0);
 
     private static CalibrationReference Ref(string name, double x, double z) =>
         new(name, "Landmark", new WorldCoord(x, 0, z));
@@ -66,6 +68,6 @@ public class GhostLabelDeclutterTests
         var markers = GhostLabelDeclutter.Build(refs, Cal);
 
         markers.Should().OnlyContain(m => m.ShowLabel);
-        markers[0].Pixel.Should().Be(Cal.WorldToWindow(new WorldCoord(0, 0, 0)).AsOverlay());
+        markers[0].Pixel.Should().Be(Cal.ToOverlay(new WorldCoord(0, 0, 0)));
     }
 }

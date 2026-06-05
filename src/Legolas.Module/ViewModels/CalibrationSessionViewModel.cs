@@ -533,7 +533,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     private void ProjectLandmarks()
     {
         GhostPins.Clear();
-        if (_service.CurrentCalibration is not { } c)
+        if (_service.CurrentOverlayCalibration is not { } c)
         {
             ClickWarning = "Solve a calibration first — nothing to project.";
             RaiseDebug();
@@ -544,11 +544,8 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
             if (Placements.Any(p => ReferenceEquals(p.Reference, r))) continue;
             // Canonical absolute world→pixel — shared with the #454
             // ProcessMapFx placement path so the two can't drift.
-            // #1076 5a: WorldToWindow still returns PixelPoint (frame-typed core
-            // lands in Phase 6); re-tag to overlay-frame at this boundary —
-            // the value is overlay-frame by the P.3 audit.
-            var gp = c.WorldToWindow(r.World);
-            GhostPins.Add(new GhostPin(r.Name, new OverlayPixel(gp.X, gp.Y)));
+            // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
+            GhostPins.Add(new GhostPin(r.Name, c.ToOverlay(r.World)));
         }
         ClickWarning = null;
         RaiseDebug();

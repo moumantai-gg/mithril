@@ -35,6 +35,9 @@ public sealed class FakeAreaCalibrationService : IAreaCalibrationService
     }
 
     public AreaCalibration? CurrentCalibration => _calibration;
+    public WorldToOverlayCalibration? CurrentOverlayCalibration => _calibration is { } c
+        ? new WorldToOverlayCalibration(c.OriginX, c.OriginY, c.Scale, c.RotationRadians, c.MirrorNorth, c.CalibrationZoom)
+        : null;
     public bool IsCurrentAreaCalibrated => _calibration is not null;
     public MapSceneRef? CurrentScene => _calibration is null ? null : new MapSceneRef("AreaTest", null, "Map_AreaTest");
     public string? CurrentAreaFriendlyName => _calibration is null ? null : "Test Area";

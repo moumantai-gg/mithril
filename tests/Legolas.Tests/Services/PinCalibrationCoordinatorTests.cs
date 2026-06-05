@@ -413,6 +413,7 @@ public class PinCalibrationCoordinatorTests
         // tests opt-in by flipping this to false.
         public bool IsCurrentAreaCalibrated { get; set; } = true;
         public AreaCalibration? CurrentCalibration => null;
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
         public event EventHandler? Changed;

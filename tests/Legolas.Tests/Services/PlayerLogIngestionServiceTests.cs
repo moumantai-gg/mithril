@@ -344,6 +344,9 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         }
 
         public AreaCalibration? CurrentCalibration => _cal;
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => _cal is { } c
+            ? new WorldToOverlayCalibration(c.OriginX, c.OriginY, c.Scale, c.RotationRadians, c.MirrorNorth, c.CalibrationZoom)
+            : null;
         public bool IsCurrentAreaCalibrated => _cal is not null;
 
         public MapSceneRef? CurrentScene => null;

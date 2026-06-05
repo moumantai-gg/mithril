@@ -27,19 +27,16 @@ public class SurveyPlayerGpsTests
         }
     }
 
-    // Scale 1, no rotation, origin (0,0): ProjectWorld(x,_,z) → (x, -z).
+    // Scale 1, no rotation, origin (0,0): ToOverlay(x,_,z) → (x, -z).
     private static readonly AreaCalibration Calib = new(
         Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
         ReferenceCount: 3, ResidualPixels: 0.5);
 
-    // #1076 5a: AreaCalibration.WorldToWindow still returns PixelPoint
-    // (the Mithril.MapCalibration core type), unchanged in 5a. Re-tag at the
-    // boundary for test assertions; Phase 6 typifies the core method.
-    private static OverlayPixel CalibToOverlay(WorldCoord w)
-    {
-        var p = Calib.WorldToWindow(w);
-        return new OverlayPixel(p.X, p.Y);
-    }
+    // #1076 Phase 6.5: frame-typed overlay view of Calib for assertions.
+    private static readonly WorldToOverlayCalibration CalibOverlay = new(
+        OriginX: 0.0, OriginY: 0.0, Scale: 1.0, RotationRadians: 0.0,
+        MirrorNorth: false, CalibrationZoom: 1.0);
+    private static OverlayPixel CalibToOverlay(WorldCoord w) => CalibOverlay.ToOverlay(w);
 
     private static (SessionState session, MapOverlayViewModel map,
         FakePositionState posState, TestDomainEventBus bus, FakeAreaCalibrationService areaCal, CapturingOptimizer opt)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Mithril.MapCalibration;
 
 namespace Legolas.Domain;
 
@@ -37,11 +38,10 @@ public static class GhostLabelDeclutter
 
     public static IReadOnlyList<GhostMarker> Build(
         IEnumerable<CalibrationReference> references,
-        AreaCalibration calibration,
+        WorldToOverlayCalibration calibration,
         double currentMapZoom = 0.0)
     {
         ArgumentNullException.ThrowIfNull(references);
-        ArgumentNullException.ThrowIfNull(calibration);
 
         // #524: thread the in-game map zoom through the projection so the
         // validate-calibration ghosts re-scale live as the user drags PG's
@@ -55,10 +55,8 @@ public static class GhostLabelDeclutter
 
         foreach (var r in references)
         {
-            // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame
-            // (the value is overlay-frame by the P.3 audit; Phase 6 typifies core).
-            var pRaw = calibration.WorldToWindow(r.World, effectiveZoom);
-            var p = new OverlayPixel(pRaw.X, pRaw.Y);
+            // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
+            var p = calibration.ToOverlay(r.World, effectiveZoom);
             var name = r.Name ?? string.Empty;
             var box = new Rect(
                 p.X + LabelAnchorDx,

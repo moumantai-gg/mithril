@@ -23,6 +23,11 @@ public class MapOverlayPinnedAnchorTests
         Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
         ReferenceCount: 3, ResidualPixels: 0.5);
 
+    // #1076 Phase 6.5: frame-typed overlay view of Calib for projection assertions.
+    private static readonly WorldToOverlayCalibration CalibOverlay = new(
+        OriginX: 0.0, OriginY: 0.0, Scale: 1.0, RotationRadians: 0.0,
+        MirrorNorth: false, CalibrationZoom: 1.0);
+
     private static readonly LogLineMetadata Meta = new(
         Timestamp: new DateTimeOffset(2026, 5, 22, 14, 0, 0, TimeSpan.Zero),
         ReadOn: DateTimeOffset.UtcNow,
@@ -67,7 +72,7 @@ public class MapOverlayPinnedAnchorTests
 
         session.SurveyPlayerIsPinned.Should().BeTrue();
         session.SurveyPlayerIsManual.Should().BeTrue();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(40, 0, -25)).AsOverlay());
+        session.SurveyPlayerPixel.Should().Be(CalibOverlay.ToOverlay(new WorldCoord(40, 0, -25)));
         map.PlayerAnchorStatus.Should().StartWith("You — pinned");
     }
 
@@ -80,7 +85,7 @@ public class MapOverlayPinnedAnchorTests
         pinState.Add(new MapPinEntry(10, 10, "@me", 0, 0));
 
         session.SurveyPlayerIsPinned.Should().BeTrue();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(10, 0, 10)).AsOverlay());
+        session.SurveyPlayerPixel.Should().Be(CalibOverlay.ToOverlay(new WorldCoord(10, 0, 10)));
     }
 
     [Fact]
@@ -94,7 +99,7 @@ public class MapOverlayPinnedAnchorTests
         pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
 
         session.SurveyPlayerIsPinned.Should().BeTrue();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(40, 0, -25)).AsOverlay());
+        session.SurveyPlayerPixel.Should().Be(CalibOverlay.ToOverlay(new WorldCoord(40, 0, -25)));
     }
 
     [Fact]
@@ -110,7 +115,7 @@ public class MapOverlayPinnedAnchorTests
 
         session.SurveyPlayerIsPinned.Should().BeFalse();
         session.SurveyPlayerIsManual.Should().BeFalse();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(7, 0, 8)).AsOverlay());
+        session.SurveyPlayerPixel.Should().Be(CalibOverlay.ToOverlay(new WorldCoord(7, 0, 8)));
     }
 
     [Fact]
@@ -128,7 +133,7 @@ public class MapOverlayPinnedAnchorTests
 
         session.SurveyPlayerIsPinned.Should().BeFalse();
         session.SurveyPlayerIsManual.Should().BeFalse();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(7, 0, 8)).AsOverlay());
+        session.SurveyPlayerPixel.Should().Be(CalibOverlay.ToOverlay(new WorldCoord(7, 0, 8)));
     }
 
     [Fact]
