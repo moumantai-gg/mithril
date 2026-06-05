@@ -80,4 +80,18 @@ public sealed record AreaCalibration(
     /// </summary>
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.Never)]
     public CalibrationFrame Frame { get; init; } = CalibrationFrame.Texture;
+
+    /// <summary>
+    /// SHA-256 (lowercase hex) of the base texture this calibration was solved
+    /// against — same digest the sidecar's MapTextureManifest carries and the
+    /// CanonicalAssetHashGate checks. Stamped at AutoCal-solve time
+    /// (mithril#1081) and on bundled-baseline rows at commit time. Identifies
+    /// WHICH texture the math is bound to; the overlay derives the texture's
+    /// pixel dimensions by looking this up via
+    /// <see cref="IMapTextureDimensions"/>. Null on records persisted before
+    /// #1081 → unrenderable on the overlay (drift-check unaffected — it doesn't
+    /// need dims). Overlay-frame records leave this null; they don't compose
+    /// against a texture.
+    /// </summary>
+    public string? PixelSha256 { get; init; }
 }

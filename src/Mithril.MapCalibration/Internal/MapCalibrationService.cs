@@ -246,7 +246,10 @@ internal sealed class MapCalibrationService : IMapCalibrationService
 
     private static WorldToTextureCalibration ToTextureCalibration(AreaCalibration legacy) =>
         new(legacy.OriginX, legacy.OriginY, legacy.Scale, legacy.RotationRadians,
-            legacy.MirrorNorth, legacy.CalibrationZoom);
+            legacy.MirrorNorth, legacy.CalibrationZoom)
+        {
+            PixelSha256 = legacy.PixelSha256,
+        };
 
     private static WorldToOverlayCalibration ToOverlayCalibration(AreaCalibration legacy) =>
         new(legacy.OriginX, legacy.OriginY, legacy.Scale, legacy.RotationRadians,
