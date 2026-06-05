@@ -178,7 +178,7 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
                 if (picked is not null && picked.Source != convergedTexture.Source)
                 {
                     _logger.LogInformation(
-                        "Auto-trigger skipped for {MapAssetKey}: store has converged solve (source={StoredSource}) but picker returned {PickedSource}. Picker chose better-quality record; trigger respects texture-frame store record.",
+                        "Auto-trigger skipped for {MapAssetKey}: store has converged texture-frame solve (source={StoredSource}) but picker returned {PickedSource}. Picker may have crossed frames or chose a different-quality record; trigger respects texture-frame store record.",
                         key, convergedTexture.Source, picked.Source);
                 }
                 return;

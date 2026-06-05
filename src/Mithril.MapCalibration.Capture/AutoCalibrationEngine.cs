@@ -178,7 +178,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (_calibrationService.GetTextureCalibration(sceneRef) is null)
         {
             _logger?.LogInformation(
-                "Drift check {MapAssetKey}: no texture-frame calibration record — refusing to run; chip shows actionable reason.",
+                "Drift check {MapAssetKey}: no texture-frame calibration record — refusing to run; coordinator treats this as race-fallback (mithril#1082).",
                 sceneRef.MapAssetKey);
             span?.SetTag("outcome", "NoTextureFrameRecord");
             return new DriftCheckOutcome.NoTextureFrameRecord();
