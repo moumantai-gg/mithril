@@ -65,14 +65,14 @@ public sealed class ManualCalibrationCoordinator
         var scene = SceneResolution.ResolveCurrentScene(_mapState, _sceneCache);
         var (armed, expiredArmed) = ConsumeArmingState();
 
-        var stored = scene is { } s ? _calibrationService.GetCalibration(s) : null;
+        var storedAny = scene is { } s ? _calibrationService.GetCalibration(s) : null;
         _logger?.LogInformation(
             "Manual calibrate hotkey: scene={MapAssetKey}, armed={IsArmed}, storedSource={Source}, storedResidualPx={Residual:0.00}, storedRefs={Refs}.",
             scene?.MapAssetKey ?? "<none>",
             armed,
-            stored?.Source.ToString() ?? "<none>",
-            stored?.ResidualPixels ?? double.NaN,
-            stored?.ReferenceCount ?? 0);
+            storedAny?.Source.ToString() ?? "<none>",
+            storedAny?.ResidualPixels ?? double.NaN,
+            storedAny?.ReferenceCount ?? 0);
 
         if (expiredArmed)
         {
@@ -93,15 +93,20 @@ public sealed class ManualCalibrationCoordinator
             return;
         }
 
-        if (scene is null)
+        if (scene is not { } sceneValue)
         {
             var outcome = await _runner.TryCalibrateCurrentAreaAsync(ct).ConfigureAwait(false);
             _overlay.SetStatusMessage(CalibrationStatusFormatter.ForOutcome(outcome));
             return;
         }
 
-        if (stored is null)
+        var textureCal = _calibrationService.GetTextureCalibration(sceneValue);
+        if (textureCal is null)
         {
+            // No texture-frame record exists — run AutoCal solve to land one, even if
+            // an overlay-frame record (Legolas-wizard) is already stored. The
+            // SceneRefinements slots let both coexist after the solve persists
+            // (mithril#1082).
             var outcome = await _runner.TryCalibrateCurrentAreaAsync(ct).ConfigureAwait(false);
             _overlay.SetStatusMessage(CalibrationStatusFormatter.ForOutcome(outcome));
             return;
@@ -130,18 +135,21 @@ public sealed class ManualCalibrationCoordinator
                 _overlay.SetStatusMessage(CalibrationStatusFormatter.DriftCheckInconclusive("no icons detected in captured frame"));
                 break;
             case DriftCheckOutcome.NoStoredCalibration:
+            {
                 // Race: stored existed at our pre-check but engine saw null. Fall through to solve.
                 var fallback = await _runner.TryCalibrateCurrentAreaAsync(ct).ConfigureAwait(false);
                 _overlay.SetStatusMessage(CalibrationStatusFormatter.ForOutcome(fallback));
                 break;
+            }
             case DriftCheckOutcome.NoTextureFrameRecord:
-                // The stored record exists but is overlay-frame (Legolas-wizard origin). The
-                // drift-check arithmetic only makes sense over a texture-frame record, so the
-                // engine refused at the early-return branch. Surface the actionable chip —
-                // running AutoCalibrate would land a texture-frame record that drift-check can
-                // then compare against. See #1076 §2.4 / Phase 3 Task 3.4b.
-                _overlay.SetStatusMessage(CalibrationStatusFormatter.DriftCheckNoTextureFrameRecord());
+            {
+                // Race: GetTextureCalibration returned non-null pre-check but the engine
+                // re-read and saw null. Fall through to solve, matching NoStoredCalibration
+                // (mithril#1082 spec §7.1).
+                var fallback = await _runner.TryCalibrateCurrentAreaAsync(ct).ConfigureAwait(false);
+                _overlay.SetStatusMessage(CalibrationStatusFormatter.ForOutcome(fallback));
                 break;
+            }
             default:
                 _logger?.LogError(
                     "Unhandled DriftCheckOutcome variant: {Type}. Coordinator setting generic chip; this is a bug.",

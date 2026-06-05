@@ -386,6 +386,8 @@ public class AreaCalibrationServiceTests
             ClearsAttempted++;
             throw new System.IO.IOException("simulated disk failure");
         }
+        public void DeleteUserRefinement(MapSceneRef scene, CalibrationFrame frame) =>
+            throw new NotSupportedException("Test fake does not implement DeleteUserRefinement.");
     }
 
     private sealed class FakeProjector : ICoordinateProjector

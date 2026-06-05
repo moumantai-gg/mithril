@@ -98,16 +98,6 @@ public static class CalibrationStatusFormatter
     public static string DriftCheckCaptureFailed(string reason) =>
         $"Drift check: {reason}.";
 
-    /// <summary>
-    /// Chip shown when CheckDriftAsync returns <see cref="DriftCheckOutcome.NoTextureFrameRecord"/>:
-    /// the scene IS calibrated, but only with an overlay-frame Legolas wizard
-    /// fit. Drift-check is bound to texture frame so it can't measure against
-    /// the stored record. Tell the user how to land a texture-frame record
-    /// (mithril#1076 spec §2.4).
-    /// </summary>
-    public static string DriftCheckNoTextureFrameRecord() =>
-        "No AutoCalibration record for this scene — press AutoCalibrate to land one.";
-
     /// <summary>Chip shown when an armed re-press successfully ran the full solve and persisted.</summary>
     public static string RecalibratedSuccessfully() =>
         "Recalibrated successfully.";

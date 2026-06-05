@@ -177,6 +177,8 @@ public sealed class LegolasCalibrationMarkerSnapshotTests
         public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
         public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration) { }
         public void ClearUserRefinement(MapSceneRef scene) { }
+        public void DeleteUserRefinement(MapSceneRef scene, CalibrationFrame frame) =>
+            throw new NotSupportedException("Test fake does not implement DeleteUserRefinement.");
         public event EventHandler<MapSceneRef>? Changed { add { } remove { } }
     }
 }

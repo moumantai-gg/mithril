@@ -153,18 +153,20 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
             if (_region.Current is null) return;                 // no bbox → can't capture
             if (_windowLocator.Locate() is null) return;         // PG not foreground
 
-            // Skip if the store has any UserRefinement or AutoCapture record for this
-            // scene. Decoupled from GetCalibration's picker: the picker may return a
-            // BundledBaseline when its residual+ref-count beats a stored AutoCapture,
-            // but the trigger's promise is "one cold solve per scene per install"
-            // (mithril#1046 §7).
+            // Skip if the store has a converged texture-frame record (AutoCapture or
+            // BundledBaseline) for this scene. Overlay-frame records (Legolas-wizard) do
+            // not satisfy the trigger's goal of landing a texture-frame AutoCal record —
+            // the trigger and the wizard write into different SceneRefinements slots,
+            // and both can coexist on the same scene (mithril#1082).
             var sources = _calibrationService.GetAllSources(scene);
-            var converged = sources.FirstOrDefault(s => s.Source is CalibrationSource.UserRefinement or CalibrationSource.AutoCapture);
-            if (converged is not null)
+            var convergedTexture = sources.FirstOrDefault(s =>
+                s.Frame == CalibrationFrame.Texture &&
+                s.Source is CalibrationSource.AutoCapture or CalibrationSource.BundledBaseline);
+            if (convergedTexture is not null)
             {
                 _logger.LogInformation(
-                    "Auto-trigger skipped for {MapAssetKey}: store has {Source} record (residual {Residual:0.00}px, refs {Refs}). One-shot-per-install respected.",
-                    key, converged.Source, converged.ResidualPixels, converged.ReferenceCount);
+                    "Auto-trigger skipped for {MapAssetKey}: store has converged texture-frame {Source} record (residual {Residual:0.00}px, refs {Refs}). One-shot-per-install respected.",
+                    key, convergedTexture.Source, convergedTexture.ResidualPixels, convergedTexture.ReferenceCount);
 
                 // Picker/store-disagreement telemetry — informational, surfaces how
                 // often the picker prefers a baseline over a stored auto.
@@ -173,11 +175,11 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
                 // list (what the trigger gates on); GetCalibration runs the picker (what
                 // the runtime renderer sees). Comparing the two surfaces the divergence.
                 var picked = _calibrationService.GetCalibration(scene);
-                if (picked is not null && picked.Source != converged.Source)
+                if (picked is not null && picked.Source != convergedTexture.Source)
                 {
                     _logger.LogInformation(
-                        "Auto-trigger skipped for {MapAssetKey}: store has converged solve (source={StoredSource}) but picker returned {PickedSource}. Picker chose better-quality record; trigger respects store.",
-                        key, converged.Source, picked.Source);
+                        "Auto-trigger skipped for {MapAssetKey}: store has converged texture-frame solve (source={StoredSource}) but picker returned {PickedSource}. Picker may have crossed frames or chose a different-quality record; trigger respects texture-frame store record.",
+                        key, convergedTexture.Source, picked.Source);
                 }
                 return;
             }
