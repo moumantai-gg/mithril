@@ -135,6 +135,8 @@ internal sealed class MapCalibrationService : IMapCalibrationService
         return pick?.FromOverlay(pixel, currentZoom);
     }
 
+    public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) => PickTexture(scene);
+
     /// <summary>
     /// #1076 picker for the texture-frame slice. Same tie-break semantics as
     /// <see cref="GetCalibration"/> (residual asc + MinReferences floor + source

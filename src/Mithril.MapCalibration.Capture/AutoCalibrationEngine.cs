@@ -163,6 +163,24 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return new DriftCheckOutcome.NoStoredCalibration();
         }
 
+        // mithril#1076 frame-aware refusal (spec §2.4 / §13 P.1b): the drift
+        // check projects through a texture-frame calibration then converts to
+        // crop frame for comparison against the detector's anchors. If the
+        // active stored record is overlay-frame (a Legolas-wizard fit per
+        // spec §7.2) there is no texture-frame source to project through —
+        // running the locate→detect→compare pipeline would silently produce
+        // 0/N matches on whatever record happens to be stored. Refuse honestly
+        // before any capture / refine / detect work runs; the chip surfaces an
+        // actionable reason (CalibrationStatusFormatter.DriftCheckNoTextureFrameRecord).
+        if (_calibrationService.GetTextureCalibration(sceneRef) is null)
+        {
+            _logger?.LogInformation(
+                "Drift check {MapAssetKey}: no texture-frame calibration record — refusing to run; chip shows actionable reason.",
+                sceneRef.MapAssetKey);
+            span?.SetTag("outcome", "NoTextureFrameRecord");
+            return new DriftCheckOutcome.NoTextureFrameRecord();
+        }
+
         // Step 3a: bbox gate.
         var bbox = _region.Current;
         if (bbox is null)

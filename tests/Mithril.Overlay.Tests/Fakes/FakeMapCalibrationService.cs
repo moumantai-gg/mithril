@@ -47,6 +47,7 @@ internal sealed class FakeMapCalibrationService : IMapCalibrationService
         return new OverlayPixel(world.X, world.Z);
     }
     public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom) => null;
+    public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) => null;
     public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
     public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations { get; } = new Dictionary<string, AreaCalibration>();
     public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();

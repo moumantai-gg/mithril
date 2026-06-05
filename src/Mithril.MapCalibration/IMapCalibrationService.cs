@@ -73,6 +73,20 @@ public interface IMapCalibrationService
     WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom);
 
     /// <summary>
+    /// #1076 raw-struct accessor for the active texture-frame calibration.
+    /// Returns null when no texture-frame source has fit this scene — which is
+    /// the load-bearing signal for callers like AutoCalibration's drift check
+    /// to refuse honestly rather than running texture-bound arithmetic against
+    /// a non-texture record (spec §2.4 / §13 P.1b).
+    ///
+    /// <para>Use <see cref="WorldToTexture"/> for one-shot projection; this
+    /// method is for callers that need the existence answer ("does the scene
+    /// have a usable texture-frame record?") and / or the struct itself for
+    /// downstream composition.</para>
+    /// </summary>
+    WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene);
+
+    /// <summary>
     /// The active calibration record for a scene (or null if uncalibrated).
     /// Consumers needing the residual + reference count for an "approximate
     /// location" chip read it here.

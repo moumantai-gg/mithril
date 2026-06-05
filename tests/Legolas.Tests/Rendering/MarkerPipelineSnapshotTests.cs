@@ -285,6 +285,7 @@ public sealed class MarkerPipelineSnapshotTests
         public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom)
             => new WorldCoord(pixel.X, 0, pixel.Y);
 
+        public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) => null;
         public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
         public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations
             => new Dictionary<string, AreaCalibration>();

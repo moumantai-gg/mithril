@@ -248,10 +248,34 @@ internal sealed class FakeCalibrationService : IMapCalibrationService
 {
     private readonly Dictionary<string, AreaCalibration> _prior = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<AreaCalibration>> _allSources = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, WorldToTextureCalibration> _textureCals = new(StringComparer.Ordinal);
     public Dictionary<string, AreaCalibration> Saved { get; } = new(StringComparer.Ordinal);
     public List<MapSceneRef> SavedScenes { get; } = new();
 
-    public void Seed(string mapAssetKey, AreaCalibration cal) => _prior[mapAssetKey] = cal;
+    public void Seed(string mapAssetKey, AreaCalibration cal)
+    {
+        _prior[mapAssetKey] = cal;
+        // Seed a parallel texture-frame entry by default — mirrors the
+        // production picker's behaviour for AutoCapture/BundledBaseline records.
+        // Tests that want the "overlay-frame only" path explicitly leave
+        // _textureCals empty (don't call SeedTextureCalibration).
+        if (cal.Source is CalibrationSource.AutoCapture or CalibrationSource.BundledBaseline)
+        {
+            _textureCals[mapAssetKey] = new WorldToTextureCalibration(
+                cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
+                cal.MirrorNorth, cal.CalibrationZoom);
+        }
+    }
+
+    /// <summary>
+    /// #1076 explicit texture-frame seed for tests that need to control
+    /// <see cref="GetTextureCalibration"/> independently of
+    /// <see cref="GetCalibration"/> — e.g. the frame-aware refusal path
+    /// where an overlay-frame UserRefinement record exists but no texture
+    /// record does.
+    /// </summary>
+    public void SeedTextureCalibration(string mapAssetKey, WorldToTextureCalibration cal)
+        => _textureCals[mapAssetKey] = cal;
 
     /// <summary>
     /// Seeds the list returned by <see cref="GetAllSources"/> independently from
@@ -266,10 +290,14 @@ internal sealed class FakeCalibrationService : IMapCalibrationService
         Saved.ContainsKey(scene.MapAssetKey) || _prior.ContainsKey(scene.MapAssetKey);
     public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
     public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom) => null;
-    public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
-    public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) => null;
+    public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) =>
+        _textureCals.TryGetValue(scene.MapAssetKey, out var c) ? c.ToTexture(world, currentZoom) : null;
+    public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) =>
+        _textureCals.TryGetValue(scene.MapAssetKey, out var c) ? c.FromTexture(pixel, currentZoom) : null;
     public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
     public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom) => null;
+    public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) =>
+        _textureCals.TryGetValue(scene.MapAssetKey, out var c) ? c : null;
     public AreaCalibration? GetCalibration(MapSceneRef scene) =>
         Saved.TryGetValue(scene.MapAssetKey, out var s)
             ? s
