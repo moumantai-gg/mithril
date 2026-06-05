@@ -478,6 +478,73 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         return result;
     }
 
+    /// <summary>
+    /// mithril#1081 — three render-side outcomes for resolving a usable
+    /// <see cref="WorldToOverlayCalibration"/> for the current scene. Surfaced
+    /// as the <c>cal.path</c> tag on the <c>project</c> span.
+    /// </summary>
+    internal enum CalPath
+    {
+        /// <summary>No usable cal this frame (uncalibrated, null-sha cal,
+        /// catalogue miss, or surface unsized).</summary>
+        None,
+        /// <summary>An overlay-frame record exists; consumed directly.</summary>
+        DirectOverlay,
+        /// <summary>Only a texture-frame record exists; composed onto the
+        /// overlay surface via
+        /// <see cref="WorldToTextureCalibration.ProjectThroughOverlay(MapRect)"/>
+        /// with dims looked up from <see cref="IMapTextureDimensions"/>.</summary>
+        ComposedFromTexture,
+    }
+
+    /// <summary>
+    /// mithril#1081 — pure helper, exposed for unit tests. The decision table
+    /// is the load-bearing logic of #1081; production calls go through
+    /// <see cref="ResolveComposedOverlayCalibration(MapSceneRef?)"/> which reads
+    /// the service's <see cref="_calibration"/> + <see cref="_textureDimensions"/>
+    /// + the live overlay surface. This overload takes the inputs directly so
+    /// the table can be exercised without standing up the service.
+    /// </summary>
+    internal static (WorldToOverlayCalibration? Cal, CalPath Path)
+        ResolveComposedOverlayCalibrationForTest(
+            MapSceneRef? scene,
+            WorldToOverlayCalibration? overlayCal,
+            WorldToTextureCalibration? textureCal,
+            IMapTextureDimensions dims,
+            double surfaceWidth,
+            double surfaceHeight)
+    {
+        if (scene is null) return (null, CalPath.None);
+
+        // Prefer an overlay-frame record when present — direct path. Per
+        // mithril#1082's per-frame slots, this is both the wizard-only case
+        // AND the both-frames-present case; the texture-frame composition is
+        // dead code on the latter.
+        if (overlayCal is not null)
+            return (overlayCal, CalPath.DirectOverlay);
+
+        if (textureCal is null) return (null, CalPath.None);
+        var tex = textureCal.Value;
+
+        // F1 — pre-#1081 record with no stamped sha. Renderer skips; user
+        // recovers by re-running AutoCalibrate.
+        if (string.IsNullOrWhiteSpace(tex.PixelSha256)) return (null, CalPath.None);
+
+        // F2 — overlay surface not yet laid out (first frame after Show()).
+        if (surfaceWidth <= 0 || surfaceHeight <= 0) return (null, CalPath.None);
+
+        // F5 (the invalidation case) and F2 catalogue-miss collapse here.
+        var resolved = dims.TryGetSizeBySha(tex.PixelSha256);
+        if (resolved is not { } d) return (null, CalPath.None);
+
+        var overlayRect = new MapRect(
+            OriginX: 0, OriginY: 0,
+            Width: (int)surfaceWidth, Height: (int)surfaceHeight,
+            TextureWidth: d.Width, TextureHeight: d.Height);
+
+        return (tex.ProjectThroughOverlay(overlayRect), CalPath.ComposedFromTexture);
+    }
+
     /// <summary>Surface the renderer to test code &#8212; production
     /// consumers inject <see cref="MarkerSceneRenderer"/> directly via DI
     /// and call <c>RegisterDrawer</c> there.</summary>
