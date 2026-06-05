@@ -4,8 +4,8 @@ public sealed record Survey(
     Guid Id,
     string Name,
     MetreOffset Offset,
-    PixelPoint? PixelPos,
-    PixelPoint? ManualOverride,
+    OverlayPixel? PixelPos,
+    OverlayPixel? ManualOverride,
     int GridIndex,
     bool Collected,
     bool Skipped,
@@ -20,7 +20,7 @@ public sealed record Survey(
     /// </summary>
     public WorldCoord? World { get; init; }
 
-    public PixelPoint? EffectivePixel => ManualOverride ?? PixelPos;
+    public OverlayPixel? EffectivePixel => ManualOverride ?? PixelPos;
 
     public bool IsCorrected => ManualOverride.HasValue;
 
@@ -32,7 +32,7 @@ public sealed record Survey(
     /// authoritative and already projected to <paramref name="pixel"/>. No
     /// metre offset (the relative model doesn't apply to absolute targets).
     /// </summary>
-    public static Survey CreateAbsolute(string name, WorldCoord world, PixelPoint pixel, int gridIndex) =>
+    public static Survey CreateAbsolute(string name, WorldCoord world, OverlayPixel pixel, int gridIndex) =>
         new(Guid.NewGuid(), name, MetreOffset.Zero, pixel, null, gridIndex, false, false, null)
         {
             World = world,

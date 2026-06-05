@@ -28,12 +28,13 @@ public class LegolasWizardViewModelTests
         public MapSceneRef? CurrentScene { get; set; } = new MapSceneRef("AreaTest", null, "Map_AreaTest");
         public string? CurrentAreaFriendlyName => "Test";
         public AreaCalibration? CurrentCalibration => null;
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<Mithril.Shared.Reference.AreaEntry> AllAreas => Array.Empty<Mithril.Shared.Reference.AreaEntry>();
         public event EventHandler? Changed;
         public void SelectScene(MapSceneRef scene) { }
         public AreaCalibration? CalibrateCurrentArea(
-            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
+            IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements, double calibrationZoom = 1.0)
         {
             Calibrated = true;
             var c = new AreaCalibration(1, 0, 0, 0, placements.Count, 0);
@@ -77,7 +78,7 @@ public class LegolasWizardViewModelTests
     }
 
     private static SurveyItemViewModel Pin(string name = "Diamond", double px = 10, double py = 20) =>
-        new(Survey.CreateAbsolute(name, new WorldCoord(px, 0, py), new PixelPoint(px, py), 0));
+        new(Survey.CreateAbsolute(name, new WorldCoord(px, 0, py), new OverlayPixel(px, py), 0));
 
     [Fact]
     public void Initial_state_is_PickMode_with_HasPickedMode_false()
@@ -552,9 +553,9 @@ public class LegolasWizardViewModelTests
         pins.Add(3, 4);
         pins.Add(5, 6);
         wizard.ToggleCalibrationPhaseCommand.Execute(null);
-        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
-        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
-        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));
+        wizard.MapOverlay.PairCalibrationClick(new OverlayPixel(10, 10));
+        wizard.MapOverlay.PairCalibrationClick(new OverlayPixel(20, 20));
+        wizard.MapOverlay.PairCalibrationClick(new OverlayPixel(30, 30));
         wizard.ConfirmCalibrationCommand.Execute(null);
 
         calib.Calibrated.Should().BeTrue();
@@ -582,9 +583,9 @@ public class LegolasWizardViewModelTests
         pins.Add(3, 4);
         pins.Add(5, 6);
         wizard.ToggleCalibrationPhaseCommand.Execute(null); // Drop → Pair
-        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
-        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
-        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));
+        wizard.MapOverlay.PairCalibrationClick(new OverlayPixel(10, 10));
+        wizard.MapOverlay.PairCalibrationClick(new OverlayPixel(20, 20));
+        wizard.MapOverlay.PairCalibrationClick(new OverlayPixel(30, 30));
         wizard.PinCalibration.CanConfirm.Should().BeTrue();
 
         wizard.ConfirmCalibrationCommand.Execute(null);
@@ -662,9 +663,9 @@ public class LegolasWizardViewModelTests
         pins.Add(3, 4);
         pins.Add(5, 6);
         wizard.ToggleCalibrationPhaseCommand.Execute(null);
-        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(10, 10));
-        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(20, 20));
-        wizard.MapOverlay.PairCalibrationClick(new PixelPoint(30, 30));
+        wizard.MapOverlay.PairCalibrationClick(new OverlayPixel(10, 10));
+        wizard.MapOverlay.PairCalibrationClick(new OverlayPixel(20, 20));
+        wizard.MapOverlay.PairCalibrationClick(new OverlayPixel(30, 30));
         wizard.ConfirmCalibrationCommand.Execute(null);
 
         calib.Calibrated.Should().BeTrue("a fresh fit was saved (overwrite, not delete-then-maybe)");

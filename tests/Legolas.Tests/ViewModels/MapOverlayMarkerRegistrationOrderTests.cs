@@ -179,7 +179,7 @@ public sealed class MapOverlayMarkerRegistrationOrderTests
         // seeded pixel IS the pin's rendered position — matches the
         // identity-calibration behaviour the original registry-driven
         // test relied on.
-        var pixelPlaceholder = new PixelPoint(world.X, world.Z);
+        var pixelPlaceholder = new OverlayPixel(world.X, world.Z);
         var w = new WorldCoord(world.X, 0, world.Z);
         var model = Survey.CreateAbsolute(name, w, pixelPlaceholder, gridIndex: 0);
         var vm = new SurveyItemViewModel(model);

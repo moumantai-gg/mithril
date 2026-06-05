@@ -42,7 +42,7 @@ public sealed partial class SurveyItemViewModel : ObservableObject
     public bool Collected => Model.Collected;
     public bool Skipped => Model.Skipped;
     public int? RouteOrder => Model.RouteOrder;
-    public PixelPoint? EffectivePixel => Model.EffectivePixel;
+    public OverlayPixel? EffectivePixel => Model.EffectivePixel;
     public bool IsCorrected => Model.IsCorrected;
 
     public double X => EffectivePixel?.X ?? 0;

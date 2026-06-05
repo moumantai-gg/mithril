@@ -91,8 +91,10 @@ public sealed class MapCalibrationServiceTests : IDisposable
 
         svc.IsCalibrated(Scene("Map_AreaEltibule")).Should().BeFalse();
         svc.GetCalibration(Scene("Map_AreaEltibule")).Should().BeNull();
-        svc.WorldToWindow(Scene("Map_AreaEltibule"), new WorldCoord(1, 0, 1), 1.0).Should().BeNull();
-        svc.WindowToWorld(Scene("Map_AreaEltibule"), new PixelPoint(1, 1), 1.0).Should().BeNull();
+        svc.WorldToTexture(Scene("Map_AreaEltibule"), new WorldCoord(1, 0, 1), 1.0).Should().BeNull();
+        svc.TextureToWorld(Scene("Map_AreaEltibule"), new TexturePixel(1, 1), 1.0).Should().BeNull();
+        svc.WorldToOverlay(Scene("Map_AreaEltibule"), new WorldCoord(1, 0, 1), 1.0).Should().BeNull();
+        svc.OverlayToWorld(Scene("Map_AreaEltibule"), new OverlayPixel(1, 1), 1.0).Should().BeNull();
     }
 
     [Fact]

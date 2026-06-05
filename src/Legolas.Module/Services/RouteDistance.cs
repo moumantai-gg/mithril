@@ -4,7 +4,7 @@ namespace Legolas.Services;
 
 internal static class RouteDistance
 {
-    public static double[,] BuildMatrix(PixelPoint start, IReadOnlyList<PixelPoint> points)
+    public static double[,] BuildMatrix(OverlayPixel start, IReadOnlyList<OverlayPixel> points)
     {
         var n = points.Count + 1;
         var m = new double[n, n];

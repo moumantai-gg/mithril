@@ -41,6 +41,20 @@ public sealed class BundledBaselineLoaderTests
     }
 
     [Fact]
+    public void Every_entry_inferred_Frame_is_Texture()
+    {
+        // Schema-1 bundled records carry no "frame" field. Per spec §7.2, a
+        // BundledBaseline record infers to Texture (the hand-authored fits are
+        // RANSAC-style base-texture-pixel solves committed once per area).
+        var baseline = BundledBaselineLoader.Load(logger: null);
+
+        foreach (var (_, cal) in baseline)
+        {
+            cal.Frame.Should().Be(CalibrationFrame.Texture);
+        }
+    }
+
+    [Fact]
     public void Bundled_baseline_v2_keys_have_Map_prefix()
     {
         // The v2 schema (#1021) keys calibration entries by the per-scene asset name

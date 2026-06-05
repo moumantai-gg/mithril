@@ -9,7 +9,7 @@ using Mithril.MapCalibration;
 /// on per-ref residual when this marker corresponds to a committed ref, else
 /// neutral grey.
 /// </summary>
-public sealed record ProjectionMarkerViewModel(string Name, PixelPoint TexturePixel, double? ResidualPx)
+public sealed record ProjectionMarkerViewModel(string Name, TexturePixel TexturePixel, double? ResidualPx)
 {
     public Brush MarkerBrush => ResidualPx switch
     {

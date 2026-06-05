@@ -15,7 +15,7 @@ public class CalibrationRefTests
         Source = CalibrationRefSource.Manual,
         Confidence = 1.0,
         World = new WorldCoord(1, 0, 2),
-        TexturePixel = new PixelPoint(3, 4),
+        TexturePixel = new TexturePixel(3, 4),
     };
 
     [Fact]
@@ -31,7 +31,7 @@ public class CalibrationRefTests
         var raised = new List<string?>();
         ((INotifyPropertyChanged)r).PropertyChanged += (_, e) => raised.Add(e.PropertyName);
 
-        r.TexturePixel = new PixelPoint(9, 9);
+        r.TexturePixel = new TexturePixel(9, 9);
 
         raised.Should().Contain(nameof(CalibrationRef.TexturePixel));
     }

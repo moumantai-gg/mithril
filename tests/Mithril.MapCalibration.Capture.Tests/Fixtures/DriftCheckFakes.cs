@@ -45,7 +45,7 @@ internal static class TestDetections
         {
             var x = 100.0 + r.World.X + offsetPx;
             var y = 100.0 - r.World.Z + offsetPx;
-            list.Add(new TypedDetection(r.Type, r.Name, AnchorX: x, AnchorY: y, Score: 0.95));
+            list.Add(new TypedDetection(r.Type, r.Name, new CroppedFramePixel(x, y), Score: 0.95));
         }
         return list;
     }
@@ -62,7 +62,7 @@ internal static class TestDetections
         {
             var x = 100.0 + r.World.X + offsetPx;
             var y = 100.0 - r.World.Z + offsetPx;
-            list.Add(new TypedDetection(r.Type, r.Name, AnchorX: x, AnchorY: y, Score: 0.95));
+            list.Add(new TypedDetection(r.Type, r.Name, new CroppedFramePixel(x, y), Score: 0.95));
         }
         return list;
     }
@@ -96,6 +96,26 @@ internal sealed class FakeMapRegionRefinerDrift : IMapRegionRefiner
                 InlierCount: 30, CandidateCount: 40, InlierRatio: 0.75,
                 Scale: 1.0, RotationDegrees: 0, Mirror: false,
                 Tx: 0, Ty: 0, ResidualPixels: 0.5)));
+
+    /// <summary>
+    /// Accept with a configurable located-rect origin within the captured frame
+    /// (mithril#1076 regression marker). The pre-fix drift-check arithmetic
+    /// added <c>(Tx, Ty)</c> to texture-frame predictions and compared them
+    /// against crop-frame detections — non-zero <paramref name="originX"/> /
+    /// <paramref name="originY"/> drove every reference outside the 20 px gate.
+    /// </summary>
+    public static FakeMapRegionRefinerDrift AcceptAt(
+        int originX, int originY, int width, int height, int textureWidth, int textureHeight)
+    {
+        var rect = new MapRect(originX, originY, width, height, textureWidth, textureHeight);
+        return new(new MapRegionRefineResult(
+            AcceptedRect: rect,
+            RawFitRect: rect,
+            Metrics: new LocateMetrics(
+                InlierCount: 30, CandidateCount: 40, InlierRatio: 0.75,
+                Scale: 1.0, RotationDegrees: 0, Mirror: false,
+                Tx: originX, Ty: originY, ResidualPixels: 0.5)));
+    }
 
     public static FakeMapRegionRefinerDrift Reject(string reason) =>
         new(new MapRegionRefineResult(

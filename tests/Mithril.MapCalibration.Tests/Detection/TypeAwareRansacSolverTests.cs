@@ -9,11 +9,10 @@ namespace Mithril.MapCalibration.Tests.Detection;
 
 public sealed class TypeAwareRansacSolverTests
 {
-    // Ground-truth transform: world (X,Z) -> texture pixels.
-    private static readonly AreaCalibration Truth = new(
-        Scale: 1.2, RotationRadians: 0.35, OriginX: 400.0, OriginY: 300.0,
-        ReferenceCount: 0, ResidualPixels: 0.0)
-    { MirrorNorth = false, CalibrationZoom = 1.0 };
+    // #1076 Phase 6.5: ground-truth transform: world (X,Z) -> texture pixels.
+    private static readonly WorldToTextureCalibration Truth = new(
+        OriginX: 400.0, OriginY: 300.0, Scale: 1.2, RotationRadians: 0.35,
+        MirrorNorth: false, CalibrationZoom: 1.0);
 
     // Texture 800x600 rendered at native scale (factor 1.0) into a screenshot
     // padded by (50, 80) — so texture-pixel == screenshot-pixel - origin.
@@ -40,11 +39,11 @@ public sealed class TypeAwareRansacSolverTests
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
         foreach (var l in Landmarks)
         {
-            var tex = Truth.WorldToWindow(new WorldCoord(l.X, 0, l.Z));
+            var tex = Truth.ToTexture(new WorldCoord(l.X, 0, l.Z));
             double sx = tex.X + Rect.OriginX;
             double sy = tex.Y + Rect.OriginY;
             var key = collapseTypes ? "All" : l.Type;
-            var det = new TypedDetection(key, l.Icon, sx, sy, Score: 0.9);
+            var det = new TypedDetection(key, l.Icon, new CroppedFramePixel(sx, sy), Score: 0.9);
             if (!byType.TryGetValue(key, out var list)) { list = new(); byType[key] = list; }
             list.Add(det);
         }

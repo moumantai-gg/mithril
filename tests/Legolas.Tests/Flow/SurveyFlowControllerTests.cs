@@ -36,7 +36,7 @@ public class SurveyFlowControllerTests
     }
 
     private static SurveyItemViewModel Pin(string name = "Diamond", double px = 10, double py = 20) =>
-        new(Survey.CreateAbsolute(name, new WorldCoord(px, 0, py), new PixelPoint(px, py), 0));
+        new(Survey.CreateAbsolute(name, new WorldCoord(px, 0, py), new OverlayPixel(px, py), 0));
 
     [Fact]
     public void InitialState_is_Listening()

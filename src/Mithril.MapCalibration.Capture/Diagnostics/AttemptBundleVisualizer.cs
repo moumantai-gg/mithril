@@ -62,10 +62,10 @@ public sealed class AttemptBundleVisualizer : IAttemptBundleVisualizer
             double half = renderSizePx / 2.0;
             foreach (var det in detections)
             {
-                var rect = new System.Windows.Rect(det.AnchorX - half, det.AnchorY - half, renderSizePx, renderSizePx);
+                var rect = new System.Windows.Rect(det.Anchor.X - half, det.Anchor.Y - half, renderSizePx, renderSizePx);
                 dc.DrawRectangle(brush: null, cyan, rect);
-                dc.DrawLine(red, new System.Windows.Point(det.AnchorX - 4, det.AnchorY), new System.Windows.Point(det.AnchorX + 4, det.AnchorY));
-                dc.DrawLine(red, new System.Windows.Point(det.AnchorX, det.AnchorY - 4), new System.Windows.Point(det.AnchorX, det.AnchorY + 4));
+                dc.DrawLine(red, new System.Windows.Point(det.Anchor.X - 4, det.Anchor.Y), new System.Windows.Point(det.Anchor.X + 4, det.Anchor.Y));
+                dc.DrawLine(red, new System.Windows.Point(det.Anchor.X, det.Anchor.Y - 4), new System.Windows.Point(det.Anchor.X, det.Anchor.Y + 4));
 
                 var text = new FormattedText(
                     string.Format(System.Globalization.CultureInfo.InvariantCulture, "Score:{0:0.00}", det.Score),
@@ -102,10 +102,16 @@ public sealed class AttemptBundleVisualizer : IAttemptBundleVisualizer
             var yellow = new Pen(Brushes.Yellow, 1); yellow.Freeze();
             var green = new Pen(Brushes.LimeGreen, 2); green.Freeze();
 
-            // Project every ref via WorldToWindow (texture coords) → TextureToScreenshot.
+            // #1076 Phase 6.5: project every ref through a texture-frame view
+            // of the calibration (this visualizer renders against the base
+            // texture); the resulting TexturePixel is then mapped to screenshot
+            // coords for drawing.
+            var calTex = new WorldToTextureCalibration(
+                calibration.OriginX, calibration.OriginY, calibration.Scale,
+                calibration.RotationRadians, calibration.MirrorNorth, calibration.CalibrationZoom);
             foreach (var r in references)
             {
-                var px = calibration.WorldToWindow(r.World, currentZoom: 1.0);
+                var px = calTex.ToTexture(r.World, currentZoom: 1.0);
                 var (sx, sy) = mapRect.TextureToScreenshot(px.X, px.Y);
                 dc.DrawLine(yellow, new System.Windows.Point(sx - 5, sy), new System.Windows.Point(sx + 5, sy));
                 dc.DrawLine(yellow, new System.Windows.Point(sx, sy - 5), new System.Windows.Point(sx, sy + 5));

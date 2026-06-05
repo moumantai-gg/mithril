@@ -100,17 +100,23 @@ internal static class SelfTest
         //    bottom-centre lands exactly on the projected texture pixel.
         // ---------------------------------------------------------------------
         var compositePixels = (byte[])texturePixels.Clone();
+        // #1076 Phase 7.5: the self-test's synthetic ground truth lives in
+        // texture-pixel space (icons are blitted onto the base-texture image);
+        // project through a texture-frame view of truth.
+        var truthTex = new WorldToTextureCalibration(
+            truth.OriginX, truth.OriginY, truth.Scale, truth.RotationRadians,
+            truth.MirrorNorth, truth.CalibrationZoom);
         foreach (var (type, _, world) in landmarks)
         {
             var spec = iconSpecs.First(s => s.LandmarkType == type);
-            var tex = truth.WorldToWindow(world);
+            var tex = truthTex.ToTexture(world);
             BlitTeardrop(compositePixels, textureW, textureH,
                 anchorX: tex.X, anchorY: tex.Y, width: spec.Width, height: spec.Height, luminance: spec.LuminanceRgb);
         }
         // Player pin at world origin (the player). We pick a coord and use the
         // player-pin variant. Add player landmark separately.
         var playerWorld = new WorldCoord(20.0, 0.0, 15.0);
-        var playerTex = truth.WorldToWindow(playerWorld);
+        var playerTex = truthTex.ToTexture(playerWorld);
         var playerSpec = iconSpecs.First(s => s.LandmarkType == "Player");
         BlitTeardrop(compositePixels, textureW, textureH,
             anchorX: playerTex.X, anchorY: playerTex.Y, width: playerSpec.Width, height: playerSpec.Height,

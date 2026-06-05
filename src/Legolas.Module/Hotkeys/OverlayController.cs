@@ -1,3 +1,7 @@
+// #1076 Phase 5b: mouse-event positions (e.GetPosition) are typed as CanvasPixel
+// and converted to OverlayPixel via CanvasOverlayMapping before crossing into
+// overlay-frame code. Identity at DpiScale=1.0 today (P.3 audit confirmed
+// viewport-frame == overlay-frame in Legolas today).
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
@@ -61,6 +65,9 @@ public sealed class OverlayController : IHostedService
     // Hit-radius (px) for grabbing a placed calibration marker before a
     // pair-click — same constant as the legacy MapOverlayView.
     private const double CalibrationMarkerGrabRadius = 14;
+    // #1076 Phase 5b: identity mapping at DpiScale=1.0 today (per P.3 audit).
+    // When per-monitor DPI scaling lands the host will inject a real DpiScale.
+    private readonly CanvasOverlayMapping _canvasOverlayMapping = new(DpiScale: 1.0);
 
     public OverlayController(
         IServiceProvider services,
@@ -354,7 +361,8 @@ public sealed class OverlayController : IHostedService
         if (vp is null || vm is null) return;
 
         var canvasPos = e.GetPosition(vp);
-        var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
+        var clickPoint = _canvasOverlayMapping.CanvasToOverlay(
+            new CanvasPixel(canvasPos.X, canvasPos.Y));
 
         // Pair-phase capture: try grab-for-drag first, fall back to pair.
         if (vm.IsCalibrationCapturing)
@@ -398,7 +406,8 @@ public sealed class OverlayController : IHostedService
 
         if (_draggingCalibrationMarker)
         {
-            vm.DragCalibrationMarkerTo(new PixelPoint(canvasPos.X, canvasPos.Y));
+            vm.DragCalibrationMarkerTo(_canvasOverlayMapping.CanvasToOverlay(
+                new CanvasPixel(canvasPos.X, canvasPos.Y)));
             return;
         }
         if (_draggingPinFromViewport is not null)
@@ -427,7 +436,8 @@ public sealed class OverlayController : IHostedService
             // Final commit through CorrectSurveyCommand — a local pixel
             // correction + route rebuild (no projector refit, #454).
             var canvasPos = e.GetPosition(vp);
-            var finalPixel = new PixelPoint(canvasPos.X, canvasPos.Y);
+            var finalPixel = _canvasOverlayMapping.CanvasToOverlay(
+                new CanvasPixel(canvasPos.X, canvasPos.Y));
             vm.CorrectSurveyCommand.Execute(new CorrectionArgs(_draggingPinFromViewport, finalPixel));
             _draggingPinFromViewport = null;
         }
@@ -436,7 +446,7 @@ public sealed class OverlayController : IHostedService
     private void ApplyDraggedPinPosition(Point cursor)
     {
         if (_draggingPinFromViewport is null) return;
-        var newPixel = new PixelPoint(cursor.X, cursor.Y);
+        var newPixel = _canvasOverlayMapping.CanvasToOverlay(new CanvasPixel(cursor.X, cursor.Y));
         var updated = _draggingPinFromViewport.Model with { ManualOverride = newPixel };
         _draggingPinFromViewport.UpdateModel(updated);
     }
@@ -459,7 +469,8 @@ public sealed class OverlayController : IHostedService
     {
         var vp = _viewportRoot; var vm = _wiredMapVm;
         if (vp is null || vm is null) return false;
-        var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
+        var clickPoint = _canvasOverlayMapping.CanvasToOverlay(
+            new CanvasPixel(canvasPos.X, canvasPos.Y));
 
         if (vm.IsCalibrationCapturing)
         {
@@ -495,7 +506,8 @@ public sealed class OverlayController : IHostedService
         }
         if (_draggingPinFromViewport is not null)
         {
-            var finalPixel = new PixelPoint(canvasPos.X, canvasPos.Y);
+            var finalPixel = _canvasOverlayMapping.CanvasToOverlay(
+                new CanvasPixel(canvasPos.X, canvasPos.Y));
             vm.CorrectSurveyCommand.Execute(new CorrectionArgs(_draggingPinFromViewport, finalPixel));
             _draggingPinFromViewport = null;
         }

@@ -17,18 +17,18 @@ namespace Legolas.Rendering;
 /// the Motherlode marker takes none of the Survey active-pin treatment.
 /// </summary>
 public sealed record PinScene(
-    IReadOnlyList<PixelPoint> RoutePoints,
-    IReadOnlyList<PixelPoint> ActiveSegmentPoints,
+    IReadOnlyList<OverlayPixel> RoutePoints,
+    IReadOnlyList<OverlayPixel> ActiveSegmentPoints,
     IReadOnlyList<WedgeArc> Wedges,
-    IReadOnlyList<PixelPoint> SurveyPins,
-    IReadOnlyList<PixelPoint> MotherlodePins,
+    IReadOnlyList<OverlayPixel> SurveyPins,
+    IReadOnlyList<OverlayPixel> MotherlodePins,
     MotherlodeGuidanceCircle? MotherlodeGuidance,
     int? ActivePinIndex,
     ActivePinTreatmentSpec? ActiveTreatment,
     PinLayerStyle SurveyOuter,
     PinLayerStyle SurveyCenter,
     double SurveyOuterDiameter,
-    PixelPoint? PlayerPosition,
+    OverlayPixel? PlayerPosition,
     PinLayerStyle PlayerOuter,
     PinLayerStyle PlayerCenter,
     Color RouteLineColor,

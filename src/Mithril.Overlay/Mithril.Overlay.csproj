@@ -38,7 +38,7 @@
          camera-state consumption (Decision C from closed #832 — consume
          GameState directly, no IPlayerCameraState intermediary). -->
     <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
-    <!-- IMapCalibrationService.WorldToWindow is the only projection math —
+    <!-- IMapCalibrationService.WorldToOverlay is the only projection math —
          #836 lifted it out of Legolas, so the overlay's "projection driver"
          is a thin consumer of this service, not its own transform. -->
     <ProjectReference Include="..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />

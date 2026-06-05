@@ -11,14 +11,14 @@ public class NearestNeighbourTwoOptTests
     [Fact]
     public void Empty_input_returns_empty_route()
     {
-        _optimiser.Optimize(PixelPoint.Zero, Array.Empty<PixelPoint>())
+        _optimiser.Optimize(OverlayPixel.Zero, Array.Empty<OverlayPixel>())
             .Should().BeEmpty();
     }
 
     [Fact]
     public void Single_point_returns_zero()
     {
-        _optimiser.Optimize(PixelPoint.Zero, new[] { new PixelPoint(1, 1) })
+        _optimiser.Optimize(OverlayPixel.Zero, new[] { new OverlayPixel(1, 1) })
             .Should().Equal(0);
     }
 
@@ -27,10 +27,10 @@ public class NearestNeighbourTwoOptTests
     {
         var rng = new Random(Seed: 7);
         var points = Enumerable.Range(0, 12)
-            .Select(_ => new PixelPoint(rng.NextDouble() * 500, rng.NextDouble() * 500))
+            .Select(_ => new OverlayPixel(rng.NextDouble() * 500, rng.NextDouble() * 500))
             .ToArray();
 
-        var route = _optimiser.Optimize(PixelPoint.Zero, points);
+        var route = _optimiser.Optimize(OverlayPixel.Zero, points);
 
         route.Should().HaveCount(points.Length);
         route.Should().OnlyHaveUniqueItems();
@@ -42,13 +42,13 @@ public class NearestNeighbourTwoOptTests
     {
         var points = new[]
         {
-            new PixelPoint(3, 0),
-            new PixelPoint(1, 0),
-            new PixelPoint(5, 0),
-            new PixelPoint(2, 0),
+            new OverlayPixel(3, 0),
+            new OverlayPixel(1, 0),
+            new OverlayPixel(5, 0),
+            new OverlayPixel(2, 0),
         };
 
-        var route = _optimiser.Optimize(PixelPoint.Zero, points);
+        var route = _optimiser.Optimize(OverlayPixel.Zero, points);
 
         route.Should().Equal(1, 3, 0, 2);
     }

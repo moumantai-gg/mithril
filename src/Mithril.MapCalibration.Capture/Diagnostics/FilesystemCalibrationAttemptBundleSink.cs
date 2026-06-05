@@ -211,7 +211,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         {
             if (ctx.Result?.Detections is null) return null;
             var detections = ctx.Result.Detections
-                .Select(d => new DetectionJson(d.LandmarkType, d.IconName, d.AnchorX, d.AnchorY, d.Score))
+                .Select(d => new DetectionJson(d.LandmarkType, d.IconName, d.Anchor.X, d.Anchor.Y, d.Score))
                 .ToArray();
             var dto = new DetectionsJson(1, 16, detections);
             return WriteJson(dir, "10-detections.json", dto, CalibrationBundleJsonContext.Default.DetectionsJson);

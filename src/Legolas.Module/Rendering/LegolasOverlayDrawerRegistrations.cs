@@ -19,7 +19,7 @@ namespace Legolas.Rendering;
 /// <c>ItemsControl</c> in <c>MapOverlayView.xaml</c>; the marker pipeline
 /// takes over for areas with a baseline calibration, the <c>ItemsControl</c>
 /// stays as the fallback for brand-new areas with no baseline
-/// (<c>WindowToWorld</c> can't convert the click pixel to a world coord
+/// (<c>OverlayToWorld</c> can't convert the click pixel to a world coord
 /// without a baseline calibration).</para>
 /// </summary>
 public static class LegolasOverlayDrawerRegistrations

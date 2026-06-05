@@ -1,3 +1,6 @@
+// #1076 Phase 5a: P.3 audit found all Legolas test PixelPoint sites are
+// overlay-frame, so this Rendering test file was migrated alongside the 5a
+// scope (its PinScene/drawer dependencies now take OverlayPixel).
 using System.Windows.Media;
 using FluentAssertions;
 using Legolas.Domain;
@@ -77,7 +80,7 @@ public sealed class LegolasOverlaySceneDrawerPlacementPinTests
         // Pairing phase is live (≥3 seeded pins → Arm lands in Pair). Pair a
         // click so a CalibrationMarker exists in PlacedMarkers (which the VM
         // surfaces as CalibrationMarkers).
-        vm.PairCalibrationClick(new PixelPoint(120, 240));
+        vm.PairCalibrationClick(new OverlayPixel(120, 240));
         vm.IsCalibrationCapturing.Should().BeTrue("Arm with ≥3 pins enters the Pair phase");
         vm.CalibrationMarkers.Should().NotBeNull();
         vm.CalibrationMarkers!.Count.Should().BeGreaterThan(0, "the paired click placed a marker");
@@ -122,12 +125,13 @@ public sealed class LegolasOverlaySceneDrawerPlacementPinTests
     private sealed class FakeCalib : IAreaCalibrationService
     {
         public AreaCalibration? CalibrateCurrentArea(
-            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
+            IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements, double calibrationZoom = 1.0)
             => new(1, 0, 0, 0, placements.Count, 0);
         public MapSceneRef? CurrentScene => new MapSceneRef("AreaUncalibrated", null, "Map_AreaUncalibrated");
         public string? CurrentAreaFriendlyName => "Test";
         public bool IsCurrentAreaCalibrated => false;
         public AreaCalibration? CurrentCalibration => null;
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => System.Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => System.Array.Empty<AreaEntry>();
         public event EventHandler? Changed { add { } remove { } }
@@ -162,6 +166,6 @@ public sealed class LegolasOverlaySceneDrawerPlacementPinTests
         public ID2D1Factory Factory => null!;
         public string CurrentAreaKey => "AreaUncalibrated";
         public MapSceneRef CurrentScene => new MapSceneRef("AreaUncalibrated", null, "Map_AreaUncalibrated");
-        public PixelPoint? Project(double worldX, double worldZ) => new PixelPoint(worldX, worldZ);
+        public OverlayPixel? Project(double worldX, double worldZ) => new OverlayPixel(worldX, worldZ);
     }
 }

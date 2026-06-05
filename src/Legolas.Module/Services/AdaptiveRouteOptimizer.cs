@@ -23,8 +23,8 @@ public sealed class AdaptiveRouteOptimizer : IRouteOptimizer
     public int ExactThreshold { get; init; } = 15;
 
     public IReadOnlyList<int> Optimize(
-        PixelPoint start,
-        IReadOnlyList<PixelPoint> points,
+        OverlayPixel start,
+        IReadOnlyList<OverlayPixel> points,
         CancellationToken cancellationToken = default)
     {
         return points.Count <= ExactThreshold

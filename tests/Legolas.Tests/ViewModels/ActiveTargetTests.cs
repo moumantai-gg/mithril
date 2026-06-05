@@ -24,7 +24,7 @@ public class ActiveTargetTests
     private static SurveyItemViewModel SeedSurveyAt(SessionState session, string name, double x, double y, int routeOrder)
     {
         var survey = Survey.Create(name, new MetreOffset(x, y), gridIndex: routeOrder)
-            with { ManualOverride = new PixelPoint(x, y), RouteOrder = routeOrder };
+            with { ManualOverride = new OverlayPixel(x, y), RouteOrder = routeOrder };
         var vm = new SurveyItemViewModel(survey);
         session.Surveys.Add(vm);
         return vm;
@@ -56,7 +56,7 @@ public class ActiveTargetTests
     public void ActiveSegment_starts_from_last_collected_pin_after_one_collection()
     {
         var (session, map, _) = BuildSut();
-        session.PlayerPosition = new PixelPoint(100, 100);
+        session.PlayerPosition = new OverlayPixel(100, 100);
         var first = SeedSurveyAt(session, "First", 200, 200, 0);
         SeedSurveyAt(session, "Second", 300, 300, 1);
 
@@ -75,7 +75,7 @@ public class ActiveTargetTests
     public void ActiveSegment_uses_highest_RouteOrder_collected_as_start()
     {
         var (session, map, _) = BuildSut();
-        session.PlayerPosition = new PixelPoint(0, 0);
+        session.PlayerPosition = new OverlayPixel(0, 0);
         var p0 = SeedSurveyAt(session, "P0", 100, 100, 0);
         var p1 = SeedSurveyAt(session, "P1", 200, 200, 1);
         SeedSurveyAt(session, "P2", 300, 300, 2);
@@ -110,7 +110,7 @@ public class ActiveTargetTests
     public void ActiveSegment_clears_when_all_collected()
     {
         var (session, map, _) = BuildSut();
-        session.PlayerPosition = new PixelPoint(0, 0);
+        session.PlayerPosition = new OverlayPixel(0, 0);
         var only = SeedSurveyAt(session, "Only", 100, 100, 0);
 
         only.UpdateModel(only.Model with { Collected = true });

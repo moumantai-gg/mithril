@@ -24,6 +24,17 @@ public interface IAreaCalibrationService
     AreaCalibration? CurrentCalibration { get; }
 
     /// <summary>
+    /// #1076 frame-typed view of the current scene's overlay-frame calibration.
+    /// Returns null when no overlay-frame record exists (uncalibrated, or only
+    /// a texture-frame record is present and Legolas can't yet compose it onto
+    /// the overlay — see spec §6 "AutoCal release blocker"). Consumers project
+    /// world coords directly into <see cref="OverlayPixel"/> through this
+    /// struct rather than going through a frame-erased projection (the #1076
+    /// migration retired the untyped entry point).
+    /// </summary>
+    WorldToOverlayCalibration? CurrentOverlayCalibration { get; }
+
+    /// <summary>
     /// Landmark + NPC reference points in the current area, with parseable
     /// positions, ordered NPCs-then-landmarks (NPCs are the dense recognizable
     /// set). Empty when no current area or no reference data loaded.
@@ -73,7 +84,7 @@ public interface IAreaCalibrationService
     /// shared service.</para>
     /// </summary>
     AreaCalibration? CalibrateCurrentArea(
-        IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+        IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements,
         double calibrationZoom = 1.0);
 
     /// <summary>Drop the current area's persisted calibration (forces a recalibrate).</summary>
@@ -148,6 +159,9 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     public AreaCalibration? CurrentCalibration =>
         CurrentScene is { } scene ? _mapCal.GetCalibration(scene) : null;
 
+    public WorldToOverlayCalibration? CurrentOverlayCalibration =>
+        CurrentScene is { } scene ? _mapCal.GetOverlayCalibration(scene) : null;
+
     public IReadOnlyList<CalibrationReference> CurrentAreaReferences => _currentRefs;
 
     private IReadOnlyList<AreaEntry>? _allAreas;
@@ -207,14 +221,14 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     }
 
     public AreaCalibration? CalibrateCurrentArea(
-        IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+        IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements,
         double calibrationZoom = 1.0)
     {
         if (CurrentScene is not { } scene || placements is null || placements.Count < 2)
             return null;
 
         var refs = placements
-            .Select(p => new LandmarkCalibrationSolver.Reference(p.World.X, p.World.Z, p.Pixel))
+            .Select(p => new LandmarkCalibrationSolver.Reference(p.World.X, p.World.Z, p.Pixel.X, p.Pixel.Y))
             .ToList();
 
         var solved = LandmarkCalibrationSolver.Solve(refs);

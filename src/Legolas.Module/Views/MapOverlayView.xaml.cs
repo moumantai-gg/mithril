@@ -1,7 +1,13 @@
+// #1076 Phase 5b: mouse-event Mouse.GetPosition results are typed as CanvasPixel
+// and converted to OverlayPixel via CanvasOverlayMapping before crossing into
+// overlay-frame code. CanvasOverlayMapping is identity at DpiScale=1.0 today
+// (P.3 audit confirmed Mouse.GetPosition(Viewport) is overlay-frame in Legolas
+// today); when per-monitor DPI lands, this one site updates.
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using Mithril.MapCalibration;
 using Mithril.Shared.Settings;
 using Legolas.Controls;
 using Legolas.Domain;
@@ -67,6 +73,10 @@ public partial class MapOverlayView : Window
 
     private readonly D2DBrushCache _brushCache = new();
     private readonly MarchingAntsClock _antsClock = new();
+    // #1076 Phase 5b: identity mapping at DpiScale=1.0 (Mouse.GetPosition(Viewport)
+    // returns overlay-frame today per P.3 audit). When per-monitor DPI scaling
+    // lands the constructor will swap in a real DpiScale.
+    private readonly CanvasOverlayMapping _canvasOverlayMapping = new(DpiScale: 1.0);
 
     public MapOverlayView()
     {
@@ -136,7 +146,7 @@ public partial class MapOverlayView : Window
         _brushCache.Bind(e.RenderTarget);
 
         var wedges = new List<WedgeArc>(vm.Surveys.Count);
-        var pins = new List<PixelPoint>(vm.Surveys.Count);
+        var pins = new List<OverlayPixel>(vm.Surveys.Count);
         var selected = vm.Session.SelectedSurvey;
         var listening = vm.IsListening;
         int? activeIndex = null;
@@ -293,7 +303,8 @@ public partial class MapOverlayView : Window
         if (!ReferenceEquals(fe, Viewport)) return;
 
         var canvasPos = Mouse.GetPosition(Viewport);
-        var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
+        var clickPoint = _canvasOverlayMapping.CanvasToOverlay(
+            new CanvasPixel(canvasPos.X, canvasPos.Y));
 
         // #460/#477A: in the guided walkthrough's Pair phase the overlay
         // captures clicks. A click first tries to grab a placed marker for
@@ -338,7 +349,8 @@ public partial class MapOverlayView : Window
 
         if (_draggingCalibrationMarker)
         {
-            vm.DragCalibrationMarkerTo(new PixelPoint(canvasPos.X, canvasPos.Y));
+            vm.DragCalibrationMarkerTo(_canvasOverlayMapping.CanvasToOverlay(
+                new CanvasPixel(canvasPos.X, canvasPos.Y)));
             return;
         }
 
@@ -366,7 +378,8 @@ public partial class MapOverlayView : Window
             // Final commit through CorrectSurveyCommand — a local pixel
             // correction + route rebuild (no projector refit any more, #454).
             var canvasPos = Mouse.GetPosition(Viewport);
-            var finalPixel = new PixelPoint(canvasPos.X, canvasPos.Y);
+            var finalPixel = _canvasOverlayMapping.CanvasToOverlay(
+                new CanvasPixel(canvasPos.X, canvasPos.Y));
             vm.CorrectSurveyCommand.Execute(new CorrectionArgs(_draggingPinFromViewport, finalPixel));
             _draggingPinFromViewport = null;
         }
@@ -375,7 +388,7 @@ public partial class MapOverlayView : Window
     private void ApplyDraggedPinPosition(Point cursor)
     {
         if (_draggingPinFromViewport is null) return;
-        var newPixel = new PixelPoint(cursor.X, cursor.Y);
+        var newPixel = _canvasOverlayMapping.CanvasToOverlay(new CanvasPixel(cursor.X, cursor.Y));
         var updated = _draggingPinFromViewport.Model with { ManualOverride = newPixel };
         _draggingPinFromViewport.UpdateModel(updated);
     }

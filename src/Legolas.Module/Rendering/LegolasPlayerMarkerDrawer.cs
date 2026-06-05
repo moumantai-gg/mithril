@@ -19,7 +19,7 @@ internal static class LegolasPlayerMarkerDrawer
 {
     public static void Draw(
         LegolasPlayerMarkerStyle style,
-        PixelPoint pixel,
+        OverlayPixel pixel,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes)

@@ -36,18 +36,51 @@ public interface IMapCalibrationService
     bool IsCalibrated(MapSceneRef scene);
 
     /// <summary>
-    /// Project a world coord to a pixel in the scene's map space. Returns null
-    /// when the scene is uncalibrated (consumer chooses how to degrade &#8212;
-    /// chip, hide, fallback text).
+    /// #1076 frame-explicit projection: world → base-texture-pixel. Returns
+    /// null when no texture-frame calibration exists for the scene. Used by
+    /// AutoCalibration / drift-check where the comparison is bound to the base
+    /// texture's pixel space.
     /// </summary>
-    PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom);
+    TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom);
+
+    /// <summary>#1076 inverse of <see cref="WorldToTexture"/>.</summary>
+    WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom);
 
     /// <summary>
-    /// Inverse projection &#8212; pixel &#8594; world coord. Returns null when
-    /// uncalibrated. Required by Gwaihir's "click the map to drop a pin" UX
-    /// (#830 §3a).
+    /// #1076 frame-explicit projection: world → overlay-pixel. Returns null
+    /// when no overlay-frame calibration exists for the scene. Used by Legolas
+    /// overlay rendering.
     /// </summary>
-    WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom);
+    OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom);
+
+    /// <summary>#1076 inverse of <see cref="WorldToOverlay"/>.</summary>
+    WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom);
+
+    /// <summary>
+    /// #1076 raw-struct accessor for the active texture-frame calibration.
+    /// Returns null when no texture-frame source has fit this scene — which is
+    /// the load-bearing signal for callers like AutoCalibration's drift check
+    /// to refuse honestly rather than running texture-bound arithmetic against
+    /// a non-texture record (spec §2.4 / §13 P.1b).
+    ///
+    /// <para>Use <see cref="WorldToTexture"/> for one-shot projection; this
+    /// method is for callers that need the existence answer ("does the scene
+    /// have a usable texture-frame record?") and / or the struct itself for
+    /// downstream composition.</para>
+    /// </summary>
+    WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene);
+
+    /// <summary>
+    /// #1076 raw-struct accessor for the active overlay-frame calibration.
+    /// Returns null when no overlay-frame source has fit this scene — the
+    /// symmetric counterpart to <see cref="GetTextureCalibration"/> for
+    /// overlay-bound callers (Legolas rendering / wizard ghosts). Use
+    /// <see cref="WorldToOverlay"/> for one-shot projection; this method is
+    /// for callers that need the existence answer ("does the scene have a
+    /// usable overlay-frame record?") and / or the struct itself for
+    /// downstream composition.
+    /// </summary>
+    WorldToOverlayCalibration? GetOverlayCalibration(MapSceneRef scene);
 
     /// <summary>
     /// The active calibration record for a scene (or null if uncalibrated).

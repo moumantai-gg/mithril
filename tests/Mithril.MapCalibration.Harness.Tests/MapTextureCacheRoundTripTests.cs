@@ -4,6 +4,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Mithril.MapCalibration;
 using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration.Detection.DependencyInjection;
 using Mithril.Tools.MapCalibration.Common;

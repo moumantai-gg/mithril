@@ -1,3 +1,7 @@
+// #1076 Phase 5a: PinScene now carries OverlayPixel fields, so PinSceneRenderer's
+// private D2D helpers were migrated to take OverlayPixel directly. This file was
+// originally tagged for Phase 5b but the Phase 4 drawer-bridging idiom did not
+// extend to PinScene-driven rendering, so the migration landed here in 5a.
 using System.Numerics;
 using Legolas.Domain;
 // #835: D2DBrushCache lifted to Mithril.Overlay.Internal — InternalsVisibleTo
@@ -132,7 +136,7 @@ internal static class PinSceneRenderer
 
     private static void DrawPolyline(
         ID2D1RenderTarget rt,
-        IReadOnlyList<PixelPoint> points,
+        IReadOnlyList<OverlayPixel> points,
         ID2D1SolidColorBrush brush,
         float thickness,
         ID2D1StrokeStyle? style)
@@ -189,7 +193,7 @@ internal static class PinSceneRenderer
 
     private static void DrawPin(
         ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
-        PixelPoint pos, PinLayerStyle outer, PinLayerStyle center, double diameter)
+        OverlayPixel pos, PinLayerStyle outer, PinLayerStyle center, double diameter)
     {
         DrawPinLayer(rt, factory, brushes, pos, diameter, outer);
         DrawPinLayer(rt, factory, brushes, pos, center.Size, center);
@@ -197,7 +201,7 @@ internal static class PinSceneRenderer
 
     private static void DrawActivePin(
         ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
-        PixelPoint pos, PinScene scene, ActivePinTreatmentSpec spec)
+        OverlayPixel pos, PinScene scene, ActivePinTreatmentSpec spec)
     {
         switch (spec.Treatment)
         {
@@ -235,7 +239,7 @@ internal static class PinSceneRenderer
 
     private static void DrawHalo(
         ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
-        PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
+        OverlayPixel pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         var haloDiameter = pinDiameter + 2 * spec.HaloPaddingPx;
         // Transparent fill so the halo is a ring, not a filled blob obscuring
@@ -252,7 +256,7 @@ internal static class PinSceneRenderer
 
     private static void DrawGlow(
         ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
-        PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
+        OverlayPixel pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         if (spec.GlowBlurRadius <= 0) return;
         // Multi-ring fake blur: 4 concentric filled rings with falling alpha,
@@ -295,7 +299,7 @@ internal static class PinSceneRenderer
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes,
-        PixelPoint center,
+        OverlayPixel center,
         double diameter,
         PinLayerStyle style)
     {

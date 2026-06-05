@@ -344,6 +344,9 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         }
 
         public AreaCalibration? CurrentCalibration => _cal;
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => _cal is { } c
+            ? new WorldToOverlayCalibration(c.OriginX, c.OriginY, c.Scale, c.RotationRadians, c.MirrorNorth, c.CalibrationZoom)
+            : null;
         public bool IsCurrentAreaCalibrated => _cal is not null;
 
         public MapSceneRef? CurrentScene => null;
@@ -353,7 +356,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
         public event EventHandler? Changed { add { } remove { } }
         public AreaCalibration? CalibrateCurrentArea(
-            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+            IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements,
             double calibrationZoom = 1.0) => null;
         public void ClearCurrentAreaCalibration() { }
         public List<(string Name, MetreOffset Offset)> NotedSurveys { get; } = new();

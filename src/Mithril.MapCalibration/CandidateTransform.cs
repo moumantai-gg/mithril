@@ -2,15 +2,17 @@ namespace Mithril.MapCalibration;
 
 /// <summary>
 /// World-coord → aligned-pair-pixel transform — the input to <see cref="JEvaluator"/>.
-/// Mirrors <see cref="AreaCalibration.WorldToWindow(WorldCoord)"/> at <c>CalibrationZoom = 1.0</c>;
-/// intentionally a distinct record so we don't allocate a full
-/// <see cref="AreaCalibration"/> per candidate in the synthesis-J top-K loop.
-/// Keep <see cref="Apply"/> in sync with <see cref="AreaCalibration.WorldToWindow(WorldCoord)"/>;
-/// the equivalence test in <c>CandidateTransformConversionTests</c> is the trip-wire.
+/// Mirrors <see cref="WorldToTextureCalibration.ToTexture(WorldCoord)"/> at
+/// <c>CalibrationZoom = 1.0</c>; intentionally a distinct record so we don't
+/// allocate a full <see cref="AreaCalibration"/> per candidate in the
+/// synthesis-J top-K loop. Keep <see cref="Apply"/> in sync with
+/// <see cref="WorldToTextureCalibration.ToTexture(WorldCoord)"/>; the
+/// equivalence test in <c>CandidateTransformConversionTests</c> is the
+/// trip-wire.
 /// </summary>
 public readonly record struct CandidateTransform(double Scale, double RotRadians, bool Mirror, double Tx, double Ty)
 {
-    public PixelPoint Apply(WorldCoord world)
+    public TexturePixel Apply(WorldCoord world)
     {
         var east = world.X;
         var north = Mirror ? -world.Z : world.Z;
@@ -18,7 +20,7 @@ public readonly record struct CandidateTransform(double Scale, double RotRadians
         var sin = Math.Sin(RotRadians);
         var rotE = east * cos + north * sin;
         var rotN = -east * sin + north * cos;
-        return new PixelPoint(Tx + Scale * rotE, Ty - Scale * rotN);
+        return new TexturePixel(Tx + Scale * rotE, Ty - Scale * rotN);
     }
 
     /// <summary>

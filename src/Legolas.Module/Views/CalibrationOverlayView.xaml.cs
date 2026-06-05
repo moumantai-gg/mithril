@@ -1,5 +1,10 @@
+// #1076 Phase 5b: mouse-event Mouse.GetPosition results are typed as CanvasPixel
+// and converted to OverlayPixel via CanvasOverlayMapping before crossing into
+// overlay-frame code. Identity at DpiScale=1.0 today (per P.3 audit).
 using System.Windows;
 using System.Windows.Input;
+using Mithril.MapCalibration;
+using Mithril.Overlay;
 using Mithril.Shared.Settings;
 using Legolas.Controls;
 using Legolas.Domain;
@@ -19,6 +24,9 @@ namespace Legolas.Views;
 /// </summary>
 public partial class CalibrationOverlayView : Window
 {
+    // #1076 Phase 5b: identity mapping at DpiScale=1.0 today (per P.3 audit).
+    private readonly CanvasOverlayMapping _canvasOverlayMapping = new(DpiScale: 1.0);
+
     public CalibrationOverlayView()
     {
         InitializeComponent();
@@ -54,7 +62,7 @@ public partial class CalibrationOverlayView : Window
         if (e.OriginalSource is not FrameworkElement fe || !ReferenceEquals(fe, Viewport)) return;
 
         var p = Mouse.GetPosition(Viewport);
-        var pos = new PixelPoint(p.X, p.Y);
+        var pos = _canvasOverlayMapping.CanvasToOverlay(new CanvasPixel(p.X, p.Y));
 
         // Hit an existing pin → grab it and drag (mouse, not arrow keys —
         // bypasses the listbox/hotkey fight). Miss → click-to-place / arm.
@@ -76,7 +84,7 @@ public partial class CalibrationOverlayView : Window
     {
         if (!_dragging || DataContext is not CalibrationSessionViewModel vm) return;
         var p = Mouse.GetPosition(Viewport);
-        vm.DragSelectedTo(new PixelPoint(p.X, p.Y));
+        vm.DragSelectedTo(_canvasOverlayMapping.CanvasToOverlay(new CanvasPixel(p.X, p.Y)));
     }
 
     private void Viewport_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)

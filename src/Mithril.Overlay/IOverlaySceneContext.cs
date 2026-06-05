@@ -78,10 +78,10 @@ public interface IOverlaySceneContext
     /// from the injected <see cref="IOverlayZoomSource"/>). Returns
     /// <see langword="null"/> when the calibration service can't resolve
     /// the point &#8212; mirrors
-    /// <see cref="IMapCalibrationService.WorldToWindow"/>'s null return for
+    /// <see cref="IMapCalibrationService.WorldToOverlay"/>'s null return for
     /// uncalibrated areas or out-of-range coords. Scene drawers gate
     /// world-space geometry on a non-null projection; pixel-native bits
     /// (route polyline pixels, calibration placement pins captured by
     /// pixel) skip the projection entirely.</summary>
-    PixelPoint? Project(double worldX, double worldZ);
+    OverlayPixel? Project(double worldX, double worldZ);
 }

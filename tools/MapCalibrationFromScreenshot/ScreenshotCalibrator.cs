@@ -252,9 +252,12 @@ internal static class ScreenshotCalibrator
             double syPerTy = (double)mapRect.Height / mapRect.TextureHeight;
             var inlierLabels = new HashSet<string>(assigned.Select(a => a.Label.Split(':').Last().Split(' ')[0]), StringComparer.Ordinal);
             int onScreen = 0, offScreen = 0;
+            // #1076 Phase 7.5: project through a texture-frame view of the
+            // solved calibration; refs in this CLI live in texture-pixel space.
+            var calTex = AsTexture(cal);
             foreach (var r in allRefs)
             {
-                var pred = cal.WorldToWindow(new WorldCoord(r.World.X, 0, r.World.Z));
+                var pred = calTex.ToTexture(new WorldCoord(r.World.X, 0, r.World.Z));
                 int sx = (int)Math.Round(pred.X * sxPerTx + mapRect.OriginX);
                 int sy = (int)Math.Round(pred.Y * syPerTy + mapRect.OriginY);
                 if (sx < 0 || sx >= projW || sy < 0 || sy >= projH) { offScreen++; continue; }
@@ -322,9 +325,12 @@ internal static class ScreenshotCalibrator
         // Up to 10 iterations to drop accumulated outliers; usually 1-2.
         for (int iter = 0; iter < 10 && current.Count > MinInliers; iter++)
         {
+            // #1076 Phase 7.5: project through a texture-frame view of the
+            // current best fit (CLI residuals are texture-pixel).
+            var bestCalTex = AsTexture(bestCal);
             var perInlier = current.Select(a =>
             {
-                var p = bestCal.WorldToWindow(new Mithril.MapCalibration.WorldCoord(a.WorldX, 0, a.WorldZ));
+                var p = bestCalTex.ToTexture(new Mithril.MapCalibration.WorldCoord(a.WorldX, 0, a.WorldZ));
                 var dx = p.X - a.PixelX;
                 var dy = p.Y - a.PixelY;
                 return (Ref: a, Dist: Math.Sqrt(dx * dx + dy * dy));
@@ -358,10 +364,19 @@ internal static class ScreenshotCalibrator
     private static AreaCalibration? SolveOver(IEnumerable<AssignedReference> refs)
     {
         var input = refs
-            .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
+            .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, a.PixelX, a.PixelY))
             .ToList();
         return LandmarkCalibrationSolver.Solve(input);
     }
+
+    // #1076 Phase 7.5: field-identity re-tag of an AreaCalibration to its
+    // texture-frame view. The CLI's RANSAC + refinement work in texture-pixel
+    // space (mapRect.CroppedToTexture is the front-end), so projecting through
+    // a frame-typed struct keeps the pixel comparison explicit and avoids the
+    // deleted untyped WorldToWindow surface.
+    private static WorldToTextureCalibration AsTexture(AreaCalibration cal) =>
+        new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
+            cal.MirrorNorth, cal.CalibrationZoom);
 
     // Inlier threshold for RANSAC: a detection is an inlier of a candidate
     // calibration if its pivot-corrected pixel is within this many texture
@@ -401,8 +416,12 @@ internal static class ScreenshotCalibrator
             if (typeRefs.Count == 0) continue;
             foreach (var det in kv.Value)
             {
-                var (tx, ty) = mapRect.ScreenshotToTexture(det.AnchorScreenshotX, det.AnchorScreenshotY);
-                pool.Add((det, tx, ty, typeRefs));
+                // #1076 Phase 7.5: typed screenshot→texture. The CLI treats the
+                // input screenshot as the cropped frame (no captured→cropped
+                // offset), so feeding the anchor pixel as a CroppedFramePixel
+                // is numerically identical to the deleted untyped overload.
+                var tex = mapRect.CroppedToTexture(new CroppedFramePixel(det.AnchorScreenshotX, det.AnchorScreenshotY));
+                pool.Add((det, tex.X, tex.Y, typeRefs));
             }
         }
         if (pool.Count < 2) return [];
@@ -425,11 +444,14 @@ internal static class ScreenshotCalibrator
             var r2 = e2.Candidates[rng.Next(e2.Candidates.Count)];
             if (r1.World.X == r2.World.X && r1.World.Z == r2.World.Z) continue;
 
-            var seed = LandmarkCalibrationSolver.Solve([
-                new LandmarkCalibrationSolver.Reference(r1.World.X, r1.World.Z, new PixelPoint(e1.Tx, e1.Ty)),
-                new LandmarkCalibrationSolver.Reference(r2.World.X, r2.World.Z, new PixelPoint(e2.Tx, e2.Ty)),
+            var seedLegacy = LandmarkCalibrationSolver.Solve([
+                new LandmarkCalibrationSolver.Reference(r1.World.X, r1.World.Z, e1.Tx, e1.Ty),
+                new LandmarkCalibrationSolver.Reference(r2.World.X, r2.World.Z, e2.Tx, e2.Ty),
             ]);
-            if (seed is null) continue;
+            if (seedLegacy is null) continue;
+            // #1076 Phase 7.5: RANSAC works in texture-pixel space; project
+            // candidate refs through a texture-frame view of the seed.
+            var seed = AsTexture(seedLegacy);
 
             // For each pool entry, project each of its candidate refs through
             // the seed; the closest projection wins. If within RansacInlierPx
@@ -448,7 +470,7 @@ internal static class ScreenshotCalibrator
                 double bestDist = double.PositiveInfinity;
                 foreach (var cand in e.Candidates)
                 {
-                    var pred = seed.WorldToWindow(cand.World);
+                    var pred = seed.ToTexture(cand.World);
                     var dx = pred.X - e.Tx;
                     var dy = pred.Y - e.Ty;
                     var d = Math.Sqrt(dx * dx + dy * dy);
@@ -503,7 +525,7 @@ internal static class ScreenshotCalibrator
             // "correct" seed with the same inlier count refits to near-zero
             // residual.
             var refitRefs = inliers
-                .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
+                .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, a.PixelX, a.PixelY))
                 .ToList();
             var refit = LandmarkCalibrationSolver.Solve(refitRefs);
             if (refit is null) continue;
@@ -629,8 +651,9 @@ internal static class ScreenshotCalibrator
             var list = new List<(double, double, double, string)>(kv.Value.Count);
             foreach (var det in kv.Value)
             {
-                var (tx, ty) = mapRect.ScreenshotToTexture(det.AnchorScreenshotX, det.AnchorScreenshotY);
-                list.Add((tx, ty, det.MatchScore, det.IconName));
+                // #1076 Phase 7.5: typed screenshot→texture; see RansacAssign.
+                var tex = mapRect.CroppedToTexture(new CroppedFramePixel(det.AnchorScreenshotX, det.AnchorScreenshotY));
+                list.Add((tex.X, tex.Y, det.MatchScore, det.IconName));
             }
             poolByType[kv.Key] = list;
         }
@@ -643,10 +666,13 @@ internal static class ScreenshotCalibrator
             // detection contention by keeping the closest ref per detection.
             var perDet = new Dictionary<(string Type, int DetIdx),
                 (LandmarkRef Ref, double Dist, double Tx, double Ty, double Score, string IconName)>();
+            // #1076 Phase 7.5: project through a texture-frame view of the
+            // current seed/refined calibration (texture-pixel space).
+            var calTex = AsTexture(cal);
             foreach (var r in allRefs)
             {
                 if (!poolByType.TryGetValue(r.Type, out var pool) || pool.Count == 0) continue;
-                var p = cal.WorldToWindow(new WorldCoord(r.World.X, 0, r.World.Z));
+                var p = calTex.ToTexture(new WorldCoord(r.World.X, 0, r.World.Z));
                 int bestIdx = -1;
                 double bestDist = double.PositiveInfinity;
                 for (int i = 0; i < pool.Count; i++)
@@ -895,13 +921,14 @@ internal static class ScreenshotCalibrator
         var result = new List<AssignedReference>(detections.Count);
         for (int i = 0; i < detections.Count; i++)
         {
-            var (tx, ty) = mapRect.ScreenshotToTexture(detections[i].AnchorScreenshotX, detections[i].AnchorScreenshotY);
+            // #1076 Phase 7.5: typed screenshot→texture; see RansacAssign.
+            var tex = mapRect.CroppedToTexture(new CroppedFramePixel(detections[i].AnchorScreenshotX, detections[i].AnchorScreenshotY));
             result.Add(new AssignedReference(
                 Label: $"{typeName}:{areaRefs[i].Name} ({detections[i].IconName})",
                 WorldX: areaRefs[i].World.X,
                 WorldZ: areaRefs[i].World.Z,
-                PixelX: tx,
-                PixelY: ty,
+                PixelX: tex.X,
+                PixelY: tex.Y,
                 MatchScore: detections[i].MatchScore));
         }
         return result;

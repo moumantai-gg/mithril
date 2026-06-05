@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Mithril.MapCalibration;
 
 namespace Legolas.Domain;
 
@@ -17,8 +18,8 @@ namespace Legolas.Domain;
 /// already-placed label.</para>
 ///
 /// <para>Pure + WPF-free so it is unit-testable. The label box is estimated in
-/// the same pixel frame <see cref="AreaCalibration.WorldToWindow"/> produces
-/// (the WPF layer positions items by that pixel directly). Declutter is by
+/// the overlay-pixel frame <see cref="WorldToOverlayCalibration.ToOverlay(WorldCoord)"/>
+/// produces (the WPF layer positions items by that pixel directly). Declutter is by
 /// mutual label overlap only — the overlay's on-screen pixel bounds aren't
 /// known VM-side, so off-screen markers are still listed (harmless: the Canvas
 /// just positions them out of view).</para>
@@ -37,11 +38,10 @@ public static class GhostLabelDeclutter
 
     public static IReadOnlyList<GhostMarker> Build(
         IEnumerable<CalibrationReference> references,
-        AreaCalibration calibration,
+        WorldToOverlayCalibration calibration,
         double currentMapZoom = 0.0)
     {
         ArgumentNullException.ThrowIfNull(references);
-        ArgumentNullException.ThrowIfNull(calibration);
 
         // #524: thread the in-game map zoom through the projection so the
         // validate-calibration ghosts re-scale live as the user drags PG's
@@ -55,7 +55,8 @@ public static class GhostLabelDeclutter
 
         foreach (var r in references)
         {
-            var p = calibration.WorldToWindow(r.World, effectiveZoom);
+            // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
+            var p = calibration.ToOverlay(r.World, effectiveZoom);
             var name = r.Name ?? string.Empty;
             var box = new Rect(
                 p.X + LabelAnchorDx,

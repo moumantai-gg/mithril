@@ -57,10 +57,10 @@ public sealed class SyntheticLargeTemplateEndToEndTests
     // IconRenderScaler must downscale templates to match.
     private const int RenderSizePx = 32;
 
-    private static readonly AreaCalibration Truth = new(
-        Scale: 1.1, RotationRadians: 0.2, OriginX: 380.0, OriginY: 280.0,
-        ReferenceCount: 0, ResidualPixels: 0.0)
-    { MirrorNorth = false, CalibrationZoom = 1.0 };
+    // #1076 Phase 6.5: ground truth in texture-pixel frame.
+    private static readonly WorldToTextureCalibration Truth = new(
+        OriginX: 380.0, OriginY: 280.0, Scale: 1.1, RotationRadians: 0.2,
+        MirrorNorth: false, CalibrationZoom: 1.0);
 
     // Large templates: same shapes as SyntheticMap.DefaultIcons, scaled up.
     // All max-dims are ≥ 90 px, well above ScaleSearchThresholdPx = 64 px.
@@ -124,7 +124,7 @@ public sealed class SyntheticLargeTemplateEndToEndTests
             match.SmallT.Should().NotBeNull($"no template found for type {l.Type}");
 
             var t = match.SmallT;
-            var pix = Truth.WorldToWindow(new WorldCoord(l.X, 0, l.Z));
+            var pix = Truth.ToTexture(new WorldCoord(l.X, 0, l.Z));
             // Blit: small template alpha-composited into shotPixels at anchor (bottom-centre).
             int topLeftX = (int)Math.Round(pix.X - t.Gray.Width / 2.0);
             int topLeftY = (int)Math.Round(pix.Y - (t.Gray.Height - 1));

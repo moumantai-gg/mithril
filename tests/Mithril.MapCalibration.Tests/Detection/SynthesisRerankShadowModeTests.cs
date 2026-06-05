@@ -10,10 +10,10 @@ namespace Mithril.MapCalibration.Tests.Detection;
 public sealed class SynthesisRerankShadowModeTests
 {
     private const int TexW = 320, TexH = 260;
-    private static readonly AreaCalibration Truth = new(
-        Scale: 1.1, RotationRadians: 0.25, OriginX: 160, OriginY: 130,
-        ReferenceCount: 0, ResidualPixels: 0.0)
-    { MirrorNorth = false, CalibrationZoom = 1.0 };
+    // #1076 Phase 6.5: ground truth in texture-pixel frame.
+    private static readonly WorldToTextureCalibration Truth = new(
+        OriginX: 160, OriginY: 130, Scale: 1.1, RotationRadians: 0.25,
+        MirrorNorth: false, CalibrationZoom: 1.0);
 
     private static readonly (string Type, string Icon, int W, int H, int Lum, double X, double Z)[] Landmarks =
     [
@@ -31,7 +31,7 @@ public sealed class SynthesisRerankShadowModeTests
         var refs = new System.Collections.Generic.List<LandmarkReference>();
         foreach (var l in Landmarks)
         {
-            var tex = Truth.WorldToWindow(new WorldCoord(l.X, 0, l.Z));
+            var tex = Truth.ToTexture(new WorldCoord(l.X, 0, l.Z));
             SyntheticMap.BlitTeardrop(shotPixels, TexW, TexH, tex.X, tex.Y, l.W, l.H, l.Lum);
             refs.Add(new LandmarkReference(l.Type, l.Icon, new WorldCoord(l.X, 0, l.Z)));
         }

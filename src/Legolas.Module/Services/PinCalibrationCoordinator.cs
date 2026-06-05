@@ -34,8 +34,8 @@ public enum CalibrationPhase
 
 /// <summary>
 /// A placed calibration marker — the overlay-pixel half of one
-/// <c>(WorldCoord ↔ PixelPoint)</c> solve pair, promoted from a bare
-/// <c>PixelPoint</c> to an observable VM so it can be selected, dragged and
+/// <c>(WorldCoord ↔ OverlayPixel)</c> solve pair, promoted from a bare
+/// <c>OverlayPixel</c> to an observable VM so it can be selected, dragged and
 /// nudged after placement (the dominant accuracy bottleneck is click
 /// precision — see #443/#449). The marker's <see cref="Pixel"/> and its
 /// <c>_pairs[<see cref="PairIndex"/>]</c> entry move in lockstep; the world
@@ -48,20 +48,20 @@ public enum CalibrationPhase
 /// </summary>
 public sealed partial class CalibrationMarker : ObservableObject
 {
-    public CalibrationMarker(PixelPoint pixel, int pairIndex)
+    public CalibrationMarker(OverlayPixel pixel, int pairIndex)
     {
         _pixel = pixel;
         PairIndex = pairIndex;
     }
 
-    [ObservableProperty] private PixelPoint _pixel;
+    [ObservableProperty] private OverlayPixel _pixel;
     [ObservableProperty] private bool _isSelected;
 
     /// <summary>Index into the coordinator's pair list. Stable: pairs only ever
     /// grow (until a full Clear/Arm), so no re-indexing is needed.</summary>
     public int PairIndex { get; }
 
-    partial void OnPixelChanged(PixelPoint value)
+    partial void OnPixelChanged(OverlayPixel value)
     {
         OnPropertyChanged(nameof(X));
         OnPropertyChanged(nameof(Y));
@@ -75,7 +75,7 @@ public sealed partial class CalibrationMarker : ObservableObject
 /// View-agnostic driver for the <b>guided two-phase correctable</b> cold-start
 /// pin calibration done through the survey map overlay (#460 → #477 Part A).
 /// Consumes Arda's <see cref="IMapPinState"/> — the authoritative, area-scoped
-/// player pin set — and feeds click-paired <c>(WorldCoord ↔ PixelPoint)</c>
+/// player pin set — and feeds click-paired <c>(WorldCoord ↔ OverlayPixel)</c>
 /// placements to <see cref="IAreaCalibrationService.CalibrateCurrentArea"/>.
 ///
 /// <para><b>The flow.</b> One model, two phases (see
@@ -90,7 +90,7 @@ public sealed partial class CalibrationMarker : ObservableObject
 ///
 /// <para><b>#454 label-agnostic preserved.</b> Identity (label/colour/shape) is
 /// UX-only — it only helps the human decide which service-supplied world coord
-/// they are clicking. The solve is purely <c>(WorldCoord ↔ PixelPoint)</c>;
+/// they are clicking. The solve is purely <c>(WorldCoord ↔ OverlayPixel)</c>;
 /// colour/shape/label never reach <c>LandmarkCalibrationSolver</c>. Correction
 /// edits only the <em>pixel</em> half.</para>
 ///
@@ -119,7 +119,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
 
     // The accumulated solve pairs. Keyed by the MapPinEntry (for spread + identity);
     // only (WorldCoord, Pixel) ever reaches the solver.
-    private readonly List<(MapPinEntry Pin, PixelPoint Pixel)> _pairs = new();
+    private readonly List<(MapPinEntry Pin, OverlayPixel Pixel)> _pairs = new();
     // Pins the user deferred ("skip") — excluded from the next suggestion until
     // everything else is paired (then recycled, so the user is never stuck).
     private readonly List<MapPinEntry> _skipped = new();
@@ -343,7 +343,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     /// well-conditioned. The just-placed marker becomes the selection so an
     /// immediate nudge corrects it.
     /// </summary>
-    public void PairClick(PixelPoint pixel)
+    public void PairClick(OverlayPixel pixel)
     {
         if (!IsArmed || Phase != CalibrationPhase.Pair) return;
         if (SuggestedPin is not { } pin) return;
@@ -379,7 +379,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     /// <summary>Mouse-down hit-test: select the nearest marker within
     /// <paramref name="radius"/> px (so the view starts a drag) and return
     /// true; else false → the click falls through to <see cref="PairClick"/>.</summary>
-    public bool TrySelectMarkerAt(PixelPoint at, double radius)
+    public bool TrySelectMarkerAt(OverlayPixel at, double radius)
     {
         CalibrationMarker? best = null;
         var bestD = radius;
@@ -395,7 +395,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
 
     /// <summary>Drag the selected marker to an absolute pixel. Mutates only the
     /// pixel half of its pair; the world coord is untouched.</summary>
-    public void DragSelectedTo(PixelPoint at)
+    public void DragSelectedTo(OverlayPixel at)
     {
         if (SelectedMarker is not { } m) return;
         m.Pixel = at;
@@ -409,7 +409,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     public void NudgeSelected(double dx, double dy)
     {
         if (SelectedMarker is not { } m) return;
-        var moved = new PixelPoint(m.Pixel.X + dx, m.Pixel.Y + dy);
+        var moved = new OverlayPixel(m.Pixel.X + dx, m.Pixel.Y + dy);
         m.Pixel = moved;
         _pairs[m.PairIndex] = (_pairs[m.PairIndex].Pin, moved);
         RecomputeResidual();
@@ -541,7 +541,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     {
         if (_pairs.Count < 3) { PreviewResidual = null; return; }
         var refs = _pairs
-            .Select(p => new LandmarkCalibrationSolver.Reference(p.Pin.X, p.Pin.Z, p.Pixel))
+            .Select(p => new LandmarkCalibrationSolver.Reference(p.Pin.X, p.Pin.Z, p.Pixel.X, p.Pixel.Y))
             .ToList();
         PreviewResidual = LandmarkCalibrationSolver.Solve(refs)?.ResidualPixels;
     }

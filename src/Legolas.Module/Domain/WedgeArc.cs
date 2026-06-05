@@ -24,7 +24,7 @@ namespace Legolas.Domain;
 /// <param name="DistancePx">Radius of the arc, in pixels. Equal to the
 /// projected distance from anchor to the survey's offset.</param>
 public readonly record struct WedgeArc(
-    PixelPoint Origin,
+    OverlayPixel Origin,
     double BearingRadians,
     double HalfAngleRadians,
     double DistancePx);

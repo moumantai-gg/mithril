@@ -1,3 +1,6 @@
+// #1076 Phase 5a: P.3 audit found all Legolas test PixelPoint sites are
+// overlay-frame, so this Rendering test file was migrated alongside the 5a
+// scope (its PinScene/drawer dependencies now take OverlayPixel).
 using System.Windows.Media;
 using FluentAssertions;
 using Legolas.Domain;
@@ -35,8 +38,8 @@ public sealed class LegolasOverlaySceneDrawerGhostTests
     public void Ghost_pass_draws_when_populated_and_visible()
     {
         var (drawer, vm) = BuildDrawer();
-        vm.CalibrationGhosts.Add(new GhostMarker("Landmark", new PixelPoint(100, 200), ShowLabel: true));
-        vm.CalibrationGhosts.Add(new GhostMarker("NPC", new PixelPoint(140, 260), ShowLabel: false));
+        vm.CalibrationGhosts.Add(new GhostMarker("Landmark", new OverlayPixel(100, 200), ShowLabel: true));
+        vm.CalibrationGhosts.Add(new GhostMarker("NPC", new OverlayPixel(140, 260), ShowLabel: false));
         vm.ShowCalibrationGhosts = true;
 
         var ctx = new CountingSceneContext();
@@ -52,7 +55,7 @@ public sealed class LegolasOverlaySceneDrawerGhostTests
     public void Ghost_pass_is_skipped_when_validation_off()
     {
         var (drawer, vm) = BuildDrawer();
-        vm.CalibrationGhosts.Add(new GhostMarker("Landmark", new PixelPoint(100, 200), ShowLabel: true));
+        vm.CalibrationGhosts.Add(new GhostMarker("Landmark", new OverlayPixel(100, 200), ShowLabel: true));
         vm.ShowCalibrationGhosts = false; // user hasn't toggled validation
 
         var ctx = new CountingSceneContext();
@@ -117,6 +120,6 @@ public sealed class LegolasOverlaySceneDrawerGhostTests
             "Factory must not be touched in the ghost-pass test.");
         public string CurrentAreaKey => "AreaTest";
         public MapSceneRef CurrentScene => new MapSceneRef("AreaTest", null, "Map_AreaTest");
-        public PixelPoint? Project(double worldX, double worldZ) => new PixelPoint(worldX, worldZ);
+        public OverlayPixel? Project(double worldX, double worldZ) => new OverlayPixel(worldX, worldZ);
     }
 }

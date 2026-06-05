@@ -27,7 +27,7 @@ public class NudgePinCommandTests
         SessionState session, double x, double y)
     {
         var survey = Survey.Create("Test", new MetreOffset(0, 0), gridIndex: 0)
-            with { ManualOverride = new PixelPoint(x, y) };
+            with { ManualOverride = new OverlayPixel(x, y) };
         var vm = new SurveyItemViewModel(survey);
         session.Surveys.Add(vm);
         session.SelectedSurvey = vm;

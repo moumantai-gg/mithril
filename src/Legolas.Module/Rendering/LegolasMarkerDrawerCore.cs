@@ -28,7 +28,7 @@ internal static class LegolasMarkerDrawerCore
     /// </summary>
     public static void DrawPin(
         ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
-        PixelPoint pos, PinLayerStyle outer, PinLayerStyle center, double outerDiameter)
+        OverlayPixel pos, PinLayerStyle outer, PinLayerStyle center, double outerDiameter)
     {
         DrawPinLayer(rt, factory, brushes, pos, outerDiameter, outer);
         DrawPinLayer(rt, factory, brushes, pos, center.Size, center);
@@ -41,7 +41,7 @@ internal static class LegolasMarkerDrawerCore
     /// </summary>
     public static void DrawActivePin(
         ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
-        PixelPoint pos, PinLayerStyle outer, PinLayerStyle center, double outerDiameter,
+        OverlayPixel pos, PinLayerStyle outer, PinLayerStyle center, double outerDiameter,
         ActivePinTreatmentSpec spec)
     {
         switch (spec.Treatment)
@@ -99,7 +99,7 @@ internal static class LegolasMarkerDrawerCore
 
     private static void DrawHalo(
         ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
-        PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
+        OverlayPixel pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         var haloDiameter = pinDiameter + 2 * spec.HaloPaddingPx;
         // Transparent fill so the halo is a ring, not a filled blob obscuring
@@ -116,7 +116,7 @@ internal static class LegolasMarkerDrawerCore
 
     private static void DrawGlow(
         ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
-        PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
+        OverlayPixel pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         if (spec.GlowBlurRadius <= 0) return;
         // Multi-ring fake blur: 4 concentric filled rings with falling alpha,
@@ -160,7 +160,7 @@ internal static class LegolasMarkerDrawerCore
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes,
-        PixelPoint center,
+        OverlayPixel center,
         double diameter,
         PinLayerStyle style)
     {

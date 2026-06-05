@@ -11,8 +11,8 @@ public sealed class HeldKarpOptimizer : IRouteOptimizer
     public const int MaxPoints = 18;
 
     public IReadOnlyList<int> Optimize(
-        PixelPoint start,
-        IReadOnlyList<PixelPoint> points,
+        OverlayPixel start,
+        IReadOnlyList<OverlayPixel> points,
         CancellationToken cancellationToken = default)
     {
         var n = points.Count;

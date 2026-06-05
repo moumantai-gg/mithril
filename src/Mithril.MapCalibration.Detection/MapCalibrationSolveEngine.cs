@@ -337,9 +337,14 @@ public sealed class MapCalibrationSolveEngine
         var parts = new List<string>(inliers.Count);
         double minX = double.PositiveInfinity, maxX = double.NegativeInfinity;
         double minY = double.PositiveInfinity, maxY = double.NegativeInfinity;
+        // #1076 Phase 6.5: inlier residuals are texture-pixel distances; project
+        // through a texture-frame view of the solved calibration.
+        var calTex = new WorldToTextureCalibration(
+            calibration.OriginX, calibration.OriginY, calibration.Scale,
+            calibration.RotationRadians, calibration.MirrorNorth, calibration.CalibrationZoom);
         foreach (var a in inliers)
         {
-            var p = calibration.WorldToWindow(new WorldCoord(a.WorldX, 0, a.WorldZ));
+            var p = calTex.ToTexture(new WorldCoord(a.WorldX, 0, a.WorldZ));
             var dx = p.X - a.PixelX;
             var dy = p.Y - a.PixelY;
             var residual = Math.Sqrt(dx * dx + dy * dy);

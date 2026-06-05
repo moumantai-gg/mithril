@@ -43,7 +43,7 @@ public class CalibrationSessionViewModelTests
         vm.CanSolve.Should().BeFalse();
 
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(10, 10));
         vm.CanSolve.Should().BeFalse();
         // The dropped reference stays the active target — visible & nudgeable.
         vm.SelectedReference.Should().Be(vm.References[0]);
@@ -52,7 +52,7 @@ public class CalibrationSessionViewModelTests
 
         // Picking another reference swaps target; the first pin stays put.
         vm.SelectedReference = vm.References[1];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(200, 10));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(200, 10));
         vm.Placements.Should().HaveCount(2);
         vm.Placements[0].X.Should().Be(10);   // untouched by the swap
         vm.CanSolve.Should().BeTrue();
@@ -63,7 +63,7 @@ public class CalibrationSessionViewModelTests
         vm.SelectedReference.Should().BeNull();
         vm.SelectedPlacement.Should().BeNull();
         vm.CanNudge.Should().BeFalse();
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(5, 5));
         vm.Placements.Should().HaveCount(2);  // nothing placed/moved
         vm.ClickWarning.Should().NotBeNull();
     }
@@ -80,10 +80,10 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(svc);
 
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(10, 10));
         // Selection persists, so clicking again repositions the same pin
         // (it's the clearly-indicated active target).
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(50, 60));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(50, 60));
 
         vm.Placements.Should().HaveCount(1);   // replaced, not appended
         vm.Placements[0].X.Should().Be(50);
@@ -102,9 +102,9 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(0, 0));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(0, 0));
         vm.SelectedReference = vm.References[1];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(100, 0));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(100, 0));
 
         vm.SolveCommand.Execute(null);
 
@@ -124,9 +124,9 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(0, 0));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(0, 0));
         vm.SelectedReference = vm.References[1];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(100, 0));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(100, 0));
 
         vm.SolveCommand.Execute(null);
 
@@ -144,7 +144,7 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(1, 1));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(1, 1));
 
         vm.RecalibrateCommand.Execute(null);
 
@@ -171,7 +171,7 @@ public class CalibrationSessionViewModelTests
     public void Dead_click_sets_an_explanatory_warning_instead_of_silently_failing()
     {
         var noArea = new CalibrationSessionViewModel(new FakeService());
-        noArea.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5));
+        noArea.PlaceSelectedAtCommand.Execute(new OverlayPixel(5, 5));
         noArea.ClickWarning.Should().Contain("No area");
 
         var withRefs = new CalibrationSessionViewModel(new FakeService
@@ -180,7 +180,7 @@ public class CalibrationSessionViewModelTests
             CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0) },
         });
-        withRefs.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5)); // nothing selected
+        withRefs.PlaceSelectedAtCommand.Execute(new OverlayPixel(5, 5)); // nothing selected
         withRefs.ClickWarning.Should().Contain("Pick a landmark");
     }
 
@@ -193,11 +193,11 @@ public class CalibrationSessionViewModelTests
             CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
             Refs = { Ref("A", 0, 0) },
         });
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(5, 5)); // sets a warning
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(5, 5)); // sets a warning
         vm.ClickWarning.Should().NotBeNull();
 
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(40, 60));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(40, 60));
 
         vm.ClickWarning.Should().BeNull();
         vm.SelectedPlacement.Should().NotBeNull();
@@ -214,7 +214,7 @@ public class CalibrationSessionViewModelTests
             Refs = { Ref("A", 0, 0) },
         });
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(100, 100));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(100, 100));
         var placed = vm.SelectedPlacement!;
 
         var xRaised = false;
@@ -243,7 +243,7 @@ public class CalibrationSessionViewModelTests
 
         // A is "used" (placed); only B should ghost.
         vm.SelectedReference = vm.References.First(r => r.Name == "A");
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(0, 0));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(0, 0));
 
         vm.ProjectLandmarksCommand.Execute(null);
 
@@ -286,7 +286,7 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(svc);
         vm.SetViewport(200, 200);
         vm.SetPlayerPositionCommand.Execute(null);            // arm
-        vm.ViewportClickedCommand.Execute(new PixelPoint(50, 50)); // drop "you"
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(50, 50)); // drop "you"
 
         svc.NoteSurvey("Far", new MetreOffset(East: 1000, North: 0));
         var far = vm.SurveyPins[0];
@@ -318,7 +318,7 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(svc);
         vm.MapZoom = 4.0;                                 // currently 2× the cal zoom
         vm.SetPlayerPositionCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(0, 0));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(0, 0));
 
         svc.NoteSurvey("Vein", new MetreOffset(East: 100, North: 0));
         var s = vm.SurveyPins[0];
@@ -342,9 +342,9 @@ public class CalibrationSessionViewModelTests
         var vm = new CalibrationSessionViewModel(svc);
         vm.MapZoom = 0.39;
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(10, 10));
         vm.SelectedReference = vm.References[1];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(200, 10));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(200, 10));
 
         vm.SolveCommand.Execute(null);
 
@@ -363,7 +363,7 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SetPlayerPositionCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(100, 100));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(100, 100));
 
         svc.NoteSurvey("Vein", new MetreOffset(50, 20));
         svc.NoteSurvey("Vein", new MetreOffset(51, 19));    // within 2m → dup
@@ -388,19 +388,19 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SetPlayerPositionCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(300, 300)); // player
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(300, 300)); // player
 
         // Within radius of the player pin → selects it.
-        vm.TrySelectPinAt(new PixelPoint(307, 304), 14).Should().BeTrue();
+        vm.TrySelectPinAt(new OverlayPixel(307, 304), 14).Should().BeTrue();
         vm.IsPlayerSelected.Should().BeTrue();
 
         // Empty space → no hit.
-        vm.TrySelectPinAt(new PixelPoint(10, 10), 14).Should().BeFalse();
+        vm.TrySelectPinAt(new OverlayPixel(10, 10), 14).Should().BeFalse();
 
         // A placement gets hit-selected too.
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(50, 60));
-        vm.TrySelectPinAt(new PixelPoint(52, 58), 14).Should().BeTrue();
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(50, 60));
+        vm.TrySelectPinAt(new OverlayPixel(52, 58), 14).Should().BeTrue();
         vm.SelectedPlacement.Should().NotBeNull();
         vm.IsPlayerSelected.Should().BeFalse(); // mutually exclusive
     }
@@ -416,19 +416,19 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SetPlayerPositionCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(100, 100));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(100, 100));
         svc.NoteSurvey("Vein", new MetreOffset(0, 50)); // proj (100,50)
         var s = vm.SurveyPins[0];
 
         vm.SelectedSurveyPin = s;
-        vm.DragSelectedTo(new PixelPoint(420, 360));
+        vm.DragSelectedTo(new OverlayPixel(420, 360));
         s.OverlayX.Should().Be(420);
         s.OverlayY.Should().Be(360);
         s.Corrected.Should().BeTrue();
 
         // Drag the player pin (absolute) → survey re-projects from it.
         vm.SetPlayerPositionCommand.Execute(null); // selects existing player
-        vm.DragSelectedTo(new PixelPoint(200, 100));
+        vm.DragSelectedTo(new OverlayPixel(200, 100));
         vm.PlayerPinX.Should().Be(200);
         s.ProjX.Should().BeApproximately(200, 1e-6); // re-projected
         s.OverlayX.Should().Be(420);                 // corrected → unaffected
@@ -452,7 +452,7 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SetPlayerPositionCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(200, 200));
         svc.NoteSurvey("Vein", new MetreOffset(East: 0, North: 50)); // proj (200,150)
 
         var s = vm.SurveyPins.Should().ContainSingle().Subject;
@@ -482,7 +482,7 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SetPlayerPositionCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(200, 200));
         svc.NoteSurvey("Vein", new MetreOffset(East: 0, North: 50));
         var s = vm.SurveyPins[0];
 
@@ -511,7 +511,7 @@ public class CalibrationSessionViewModelTests
             Refs = { Ref("A", 0, 0) },
         });
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(100, 100));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(100, 100));
 
         vm.CanNudge.Should().BeTrue();
         vm.NudgeSelected(-3, 4);
@@ -533,13 +533,13 @@ public class CalibrationSessionViewModelTests
         vm.NudgeTargetText.Should().BeNull(); // nothing armed yet
 
         vm.SelectedReference = vm.References[0];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(10, 10));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(10, 10));
         var a = vm.Placements[0];
         a.IsSelected.Should().BeTrue();
         vm.NudgeTargetText.Should().Contain("A");
 
         vm.SelectedReference = vm.References[1];
-        vm.PlaceSelectedAtCommand.Execute(new PixelPoint(200, 10));
+        vm.PlaceSelectedAtCommand.Execute(new OverlayPixel(200, 10));
         var b = vm.Placements[1];
         // Exactly one is highlighted — the new one.
         b.IsSelected.Should().BeTrue();
@@ -572,7 +572,7 @@ public class CalibrationSessionViewModelTests
         vm.SelectedReference = vm.References[0];
 
         vm.SetPlayerPositionCommand.Execute(null);            // arm
-        vm.ViewportClickedCommand.Execute(new PixelPoint(120, 80));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(120, 80));
 
         vm.HasPlayerPin.Should().BeTrue();
         vm.PlayerPinX.Should().Be(120);
@@ -593,7 +593,7 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SetPlayerPositionCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(200, 200));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(200, 200));
 
         svc.NoteSurvey("Iron Vein", new MetreOffset(East: 0, North: 50));
         var pin = vm.SurveyPins.Should().ContainSingle().Subject;
@@ -641,7 +641,7 @@ public class CalibrationSessionViewModelTests
         };
         var vm = new CalibrationSessionViewModel(svc);
         vm.SetPlayerPositionCommand.Execute(null);
-        vm.ViewportClickedCommand.Execute(new PixelPoint(0, 0));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(0, 0));
         svc.NoteSurvey("Vein", new MetreOffset(East: 100, North: 0)); // 100m → proj 100px
         var s = vm.SurveyPins[0];
 
@@ -686,7 +686,7 @@ public class CalibrationSessionViewModelTests
         vm.PendingPinCount.Should().Be(0);
 
         // A click while disarmed/empty doesn't fabricate a placement.
-        vm.ViewportClickedCommand.Execute(new PixelPoint(100, 100));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(100, 100));
         vm.Placements.Should().BeEmpty();
     }
 
@@ -707,9 +707,9 @@ public class CalibrationSessionViewModelTests
 
         // …then click three overlay spots. Pairing is OLDEST-first (turn
         // order): click#i ↔ pin#i, irrespective of anything else.
-        vm.ViewportClickedCommand.Execute(new PixelPoint(10, 11));
-        vm.ViewportClickedCommand.Execute(new PixelPoint(20, 22));
-        vm.ViewportClickedCommand.Execute(new PixelPoint(30, 33));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(10, 11));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(20, 22));
+        vm.ViewportClickedCommand.Execute(new OverlayPixel(30, 33));
 
         vm.Placements.Should().HaveCount(3);
         vm.PendingPinCount.Should().Be(0);
@@ -717,9 +717,9 @@ public class CalibrationSessionViewModelTests
 
         vm.SolveCommand.Execute(null);
         svc.LastSolvePairs.Should().Equal(
-            (w0, new PixelPoint(10, 11)),
-            (w1, new PixelPoint(20, 22)),
-            (w2, new PixelPoint(30, 33)));
+            (w0, new OverlayPixel(10, 11)),
+            (w1, new OverlayPixel(20, 22)),
+            (w2, new OverlayPixel(30, 33)));
     }
 
     [Fact]
@@ -742,7 +742,7 @@ public class CalibrationSessionViewModelTests
     {
         public List<CalibrationReference> Refs { get; } = new();
         public AreaCalibration? SolveResult { get; set; }
-        public List<(WorldCoord, PixelPoint)>? LastSolvePairs { get; private set; }
+        public List<(WorldCoord, OverlayPixel)>? LastSolvePairs { get; private set; }
         public bool ClearCalled { get; private set; }
 
         public List<AreaEntry> Areas { get; } = new();
@@ -752,6 +752,9 @@ public class CalibrationSessionViewModelTests
         public string? CurrentAreaFriendlyName { get; set; }
         public bool IsCurrentAreaCalibrated => CurrentCalibration is not null;
         public AreaCalibration? CurrentCalibration { get; set; }
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => CurrentCalibration is { } c
+            ? new WorldToOverlayCalibration(c.OriginX, c.OriginY, c.Scale, c.RotationRadians, c.MirrorNorth, c.CalibrationZoom)
+            : null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Refs;
         public IReadOnlyList<AreaEntry> AllAreas => Areas;
         public event EventHandler? Changed;
@@ -767,7 +770,7 @@ public class CalibrationSessionViewModelTests
         public double LastCalibrationZoom { get; private set; } = 1.0;
 
         public AreaCalibration? CalibrateCurrentArea(
-            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+            IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements,
             double calibrationZoom = 1.0)
         {
             LastSolvePairs = placements.Select(p => (p.World, p.Pixel)).ToList();

@@ -16,7 +16,10 @@ public class SurveyAnchorResolutionTests
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     // ProjectWorld with this cal: (100 + 2x, 200 - 2z).
-    private static AreaCalibration Cal() => new(2.0, 0.0, 100, 200, 3, 1.0);
+    // #1076 Phase 6.5: typed overlay-frame view of the same similarity.
+    private static WorldToOverlayCalibration Cal() => new(
+        OriginX: 100, OriginY: 200, Scale: 2.0, RotationRadians: 0.0,
+        MirrorNorth: false, CalibrationZoom: 1.0);
     private static TrackerFix Tracker(double x, double z, DateTimeOffset at,
         PositionSource src = PositionSource.Spawn) => new(x, 0, z, at, src);
     private static CharacterPinFix Pin(double x, double z, DateTimeOffset at) =>
@@ -33,7 +36,7 @@ public class SurveyAnchorResolutionTests
         r!.Value.IsPinned.Should().BeTrue();
         r.Value.IsManual.Should().BeTrue();
         r.Value.Source.Should().BeNull();
-        r.Value.Pixel.Should().Be(new PixelPoint(120, 190));   // 100+2*10, 200-2*5
+        r.Value.Pixel.Should().Be(new OverlayPixel(120, 190));   // 100+2*10, 200-2*5
         r.Value.MeasuredAt.Should().Be(T0.AddMinutes(5));
     }
 
@@ -47,7 +50,7 @@ public class SurveyAnchorResolutionTests
         r!.Value.IsPinned.Should().BeFalse();
         r.Value.IsManual.Should().BeFalse();
         r.Value.Source.Should().Be(PositionSource.Spawn);
-        r.Value.Pixel.Should().Be(new PixelPoint(106, 192));   // tracker projected
+        r.Value.Pixel.Should().Be(new OverlayPixel(106, 192));   // tracker projected
     }
 
     [Fact]
@@ -58,7 +61,7 @@ public class SurveyAnchorResolutionTests
             fromTrackerFix: true, currentIsManual: true, currentIsPinned: true);
 
         r!.Value.IsPinned.Should().BeTrue();
-        r.Value.Pixel.Should().Be(new PixelPoint(120, 190));
+        r.Value.Pixel.Should().Be(new OverlayPixel(120, 190));
     }
 
     [Fact]
@@ -91,7 +94,7 @@ public class SurveyAnchorResolutionTests
             fromTrackerFix: true, currentIsManual: true, currentIsPinned: false);
 
         r!.Value.IsManual.Should().BeFalse();
-        r.Value.Pixel.Should().Be(new PixelPoint(102, 198));
+        r.Value.Pixel.Should().Be(new OverlayPixel(102, 198));
     }
 
     [Fact]
@@ -104,7 +107,7 @@ public class SurveyAnchorResolutionTests
 
         r!.Value.IsPinned.Should().BeFalse();
         r.Value.IsManual.Should().BeFalse();
-        r.Value.Pixel.Should().Be(new PixelPoint(104, 196));
+        r.Value.Pixel.Should().Be(new OverlayPixel(104, 196));
     }
 
     [Fact]

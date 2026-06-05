@@ -53,7 +53,7 @@ public sealed class DeviationBlobCalibrationDetectorTests
         foreach (var p in Placements)
         {
             if (!byType.TryGetValue(p.Type, out var dets)) continue;
-            bool near = dets.Any(d => Math.Abs(d.AnchorX - p.Ax) <= 6 && Math.Abs(d.AnchorY - p.Ay) <= 6);
+            bool near = dets.Any(d => Math.Abs(d.Anchor.X - p.Ax) <= 6 && Math.Abs(d.Anchor.Y - p.Ay) <= 6);
             if (near) correct++;
         }
         correct.Should().BeGreaterThanOrEqualTo(3);

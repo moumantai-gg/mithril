@@ -9,7 +9,7 @@ public interface IRouteOptimizer
     /// from <paramref name="start"/> that visits every point.
     /// </summary>
     IReadOnlyList<int> Optimize(
-        PixelPoint start,
-        IReadOnlyList<PixelPoint> points,
+        OverlayPixel start,
+        IReadOnlyList<OverlayPixel> points,
         CancellationToken cancellationToken = default);
 }

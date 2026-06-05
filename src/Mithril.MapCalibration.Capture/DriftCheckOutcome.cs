@@ -12,6 +12,15 @@ public abstract record DriftCheckOutcome
     /// should fall through to the cold solve path.</summary>
     public sealed record NoStoredCalibration : DriftCheckOutcome;
 
+    /// <summary>
+    /// A calibration is stored for the scene but it lives in OVERLAY frame (a
+    /// Legolas-wizard fit, spec §2.4), not TEXTURE frame. The drift check
+    /// compares predictions against detections in TEXTURE-then-CROP space; a
+    /// non-texture-frame record can't legitimately enter that arithmetic.
+    /// Refuse honestly instead of silently producing 0/N matches (mithril#1076).
+    /// </summary>
+    public sealed record NoTextureFrameRecord : DriftCheckOutcome;
+
     /// <summary>Map capture failed (black frame, wrong size, PG not foreground).
     /// Surface <paramref name="Reason"/> via the chip; do not arm.</summary>
     public sealed record CaptureFailed(string Reason) : DriftCheckOutcome;

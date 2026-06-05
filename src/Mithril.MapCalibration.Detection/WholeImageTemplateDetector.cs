@@ -46,7 +46,7 @@ public sealed class WholeImageTemplateDetector : ICalibrationDetector
                 var (cx, cy) = hit.Centre(rw, rh);
                 double anchorX = cx + rw * (icon.PivotX - 0.5);
                 double anchorY = cy + rh * (0.5 - icon.PivotY);
-                list.Add(new TypedDetection(icon.LandmarkType, icon.Name, anchorX, anchorY, hit.Score));
+                list.Add(new TypedDetection(icon.LandmarkType, icon.Name, new CroppedFramePixel(anchorX, anchorY), hit.Score));
             }
         }
 

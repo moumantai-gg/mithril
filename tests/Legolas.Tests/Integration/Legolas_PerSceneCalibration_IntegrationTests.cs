@@ -206,11 +206,11 @@ public sealed class Legolas_PerSceneCalibration_IntegrationTests : IDisposable
         public AreaCalibration? LastApplied { get; private set; }
         public double Scale => 1;
         public double RotationRadians => 0;
-        public PixelPoint Origin => PixelPoint.Zero;
-        public PixelPoint Project(MetreOffset offset) => PixelPoint.Zero;
-        public void SetOrigin(PixelPoint origin) { }
-        public void CalibrateFromClick(PixelPoint playerPixel, PixelPoint click, MetreOffset offset) { }
-        public void Refit(IReadOnlyList<(MetreOffset Offset, PixelPoint Pixel)> corrections) { }
+        public OverlayPixel Origin => OverlayPixel.Zero;
+        public OverlayPixel Project(MetreOffset offset) => OverlayPixel.Zero;
+        public void SetOrigin(OverlayPixel origin) { }
+        public void CalibrateFromClick(OverlayPixel playerPixel, OverlayPixel click, MetreOffset offset) { }
+        public void Refit(IReadOnlyList<(MetreOffset Offset, OverlayPixel Pixel)> corrections) { }
         public void ApplyCalibration(AreaCalibration calibration) => LastApplied = calibration;
     }
 }

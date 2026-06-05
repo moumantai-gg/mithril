@@ -1,3 +1,6 @@
+// #1076 Phase 5a: P.3 audit found all Legolas test PixelPoint sites are
+// overlay-frame, so this Rendering test file was migrated alongside the 5a
+// scope (its PinScene/drawer dependencies now take OverlayPixel).
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Rendering;
@@ -16,7 +19,7 @@ namespace Legolas.Tests.Rendering;
 /// <see cref="IWorldOverlayMarkers.AddMarker"/>; the projection driver
 /// (<see cref="OverlayWindowService.ProjectMarkers"/>) reads
 /// <see cref="WorldOverlayMarkers.CurrentAreaMarkers"/>, projects via
-/// <see cref="IMapCalibrationService.WorldToWindow"/>, and hands the
+/// <see cref="IMapCalibrationService.WorldToOverlay"/>, and hands the
 /// pixel+style list to <see cref="MarkerSceneRenderer.Render"/>.
 ///
 /// <para><b>Why both this and <see cref="LegolasMarkerDrawerSnapshotTests"/>.</b>
@@ -266,18 +269,21 @@ public sealed class MarkerPipelineSnapshotTests
 
     /// <summary>Identity world→pixel mapping for snapshot tests:
     /// <c>(x, _, z)</c> → <c>(x, z)</c>. The Y-axis component is dropped
-    /// — same as <c>AreaCalibration.WorldToWindow</c>'s ground-plane
+    /// — same as <c>WorldToOverlayCalibration.ToOverlay</c>'s ground-plane
     /// projection.</summary>
     private sealed class IdentityCalibrationService : IMapCalibrationService
     {
         public bool IsCalibrated(MapSceneRef scene) => true;
 
-        public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom)
-            => new PixelPoint(world.X, world.Z);
-
-        public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom)
+        public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
+        public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) => null;
+        public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom)
+            => new OverlayPixel(world.X, world.Z);
+        public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom)
             => new WorldCoord(pixel.X, 0, pixel.Y);
 
+        public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) => null;
+        public WorldToOverlayCalibration? GetOverlayCalibration(MapSceneRef scene) => null;
         public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
         public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations
             => new Dictionary<string, AreaCalibration>();

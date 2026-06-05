@@ -22,11 +22,10 @@ namespace Mithril.MapCalibration.Capture.Tests;
 /// </summary>
 public sealed class ReferenceProviderSolverSeamTests
 {
-    // Ground-truth world (X,Z) -> texture-pixel transform.
-    private static readonly AreaCalibration Truth = new(
-        Scale: 1.2, RotationRadians: 0.35, OriginX: 400.0, OriginY: 300.0,
-        ReferenceCount: 0, ResidualPixels: 0.0)
-    { MirrorNorth = false, CalibrationZoom = 1.0 };
+    // #1076 Phase 6.5: ground-truth world (X,Z) -> texture-pixel transform.
+    private static readonly WorldToTextureCalibration Truth = new(
+        OriginX: 400.0, OriginY: 300.0, Scale: 1.2, RotationRadians: 0.35,
+        MirrorNorth: false, CalibrationZoom: 1.0);
 
     // Texture 800x600 at native scale, screenshot padded by (50, 80): so
     // texture-pixel == screenshot-pixel - origin.
@@ -78,8 +77,8 @@ public sealed class ReferenceProviderSolverSeamTests
         var detections = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
         foreach (var p in Points)
         {
-            var tex = Truth.WorldToWindow(new WorldCoord(p.X, 0, p.Z));
-            var det = new TypedDetection(p.Type, p.Name, tex.X + Rect.OriginX, tex.Y + Rect.OriginY, Score: 0.9);
+            var tex = Truth.ToTexture(new WorldCoord(p.X, 0, p.Z));
+            var det = new TypedDetection(p.Type, p.Name, new CroppedFramePixel(tex.X + Rect.OriginX, tex.Y + Rect.OriginY), Score: 0.9);
             if (!detections.TryGetValue(p.Type, out var list)) { list = new(); detections[p.Type] = list; }
             list.Add(det);
         }

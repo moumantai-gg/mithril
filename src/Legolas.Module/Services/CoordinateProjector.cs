@@ -6,24 +6,24 @@ public sealed class CoordinateProjector : ICoordinateProjector
 {
     private double _scale = 1.0;
     private double _rotation;
-    private PixelPoint _origin = PixelPoint.Zero;
+    private OverlayPixel _origin = OverlayPixel.Zero;
 
     public double Scale => _scale;
     public double RotationRadians => _rotation;
-    public PixelPoint Origin => _origin;
+    public OverlayPixel Origin => _origin;
 
-    public PixelPoint Project(MetreOffset offset)
+    public OverlayPixel Project(MetreOffset offset)
     {
         var cos = Math.Cos(_rotation);
         var sin = Math.Sin(_rotation);
         var rotE = offset.East * cos + offset.North * sin;
         var rotN = -offset.East * sin + offset.North * cos;
-        return new PixelPoint(
+        return new OverlayPixel(
             _origin.X + _scale * rotE,
             _origin.Y - _scale * rotN);
     }
 
-    public void SetOrigin(PixelPoint origin) => _origin = origin;
+    public void SetOrigin(OverlayPixel origin) => _origin = origin;
 
     public void ApplyCalibration(AreaCalibration calibration)
     {
@@ -39,7 +39,7 @@ public sealed class CoordinateProjector : ICoordinateProjector
         _rotation = calibration.RotationRadians;
     }
 
-    public void CalibrateFromClick(PixelPoint playerPixel, PixelPoint click, MetreOffset offset)
+    public void CalibrateFromClick(OverlayPixel playerPixel, OverlayPixel click, MetreOffset offset)
     {
         _origin = playerPixel;
 
@@ -85,7 +85,7 @@ public sealed class CoordinateProjector : ICoordinateProjector
     /// magnitude. Two coincident points carry no rotation/scale information.
     /// Silently no-ops otherwise.
     /// </summary>
-    public void Refit(IReadOnlyList<(MetreOffset Offset, PixelPoint Pixel)> corrections)
+    public void Refit(IReadOnlyList<(MetreOffset Offset, OverlayPixel Pixel)> corrections)
     {
         if (corrections.Count < 2)
         {
@@ -147,7 +147,7 @@ public sealed class CoordinateProjector : ICoordinateProjector
 
         _scale = newScale;
         _rotation = NormaliseAngle(Math.Atan2(cIm, cRe));
-        _origin = new PixelPoint(wMeanRe - cZmeanRe, wMeanIm - cZmeanIm);
+        _origin = new OverlayPixel(wMeanRe - cZmeanRe, wMeanIm - cZmeanIm);
     }
 
     private static double NormaliseAngle(double radians)

@@ -26,9 +26,9 @@ public class OptimiserParityTests
 
         for (var trial = 0; trial < trials; trial++)
         {
-            var start = new PixelPoint(rng.NextDouble() * 200, rng.NextDouble() * 200);
+            var start = new OverlayPixel(rng.NextDouble() * 200, rng.NextDouble() * 200);
             var points = Enumerable.Range(0, n)
-                .Select(_ => new PixelPoint(rng.NextDouble() * 1000, rng.NextDouble() * 1000))
+                .Select(_ => new OverlayPixel(rng.NextDouble() * 1000, rng.NextDouble() * 1000))
                 .ToArray();
 
             var exactRoute = exact.Optimize(start, points);
@@ -53,7 +53,7 @@ public class OptimiserParityTests
             because: "worst-case NN+2-opt+Or-opt ratio guards against catastrophic regressions");
     }
 
-    private static double PathLength(PixelPoint start, IReadOnlyList<PixelPoint> points, IReadOnlyList<int> route)
+    private static double PathLength(OverlayPixel start, IReadOnlyList<OverlayPixel> points, IReadOnlyList<int> route)
     {
         if (route.Count == 0) return 0;
         var length = start.DistanceTo(points[route[0]]);

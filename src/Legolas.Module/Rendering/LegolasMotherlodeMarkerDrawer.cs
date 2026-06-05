@@ -16,7 +16,7 @@ internal static class LegolasMotherlodeMarkerDrawer
 {
     public static void Draw(
         LegolasMotherlodeMarkerStyle style,
-        PixelPoint pixel,
+        OverlayPixel pixel,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes)

@@ -21,11 +21,13 @@ internal static class LegolasMotherlodeGuidanceMarkerDrawer
 {
     public static void Draw(
         LegolasMotherlodeGuidanceMarkerStyle style,
-        PixelPoint pixel,
+        OverlayPixel pixel,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes)
     {
+        // #1076: Overlay-facing OverlayPixel; this drawer paints directly off
+        // pixel.X/.Y (no Core dispatch), so no conversion is required.
         if (style.RadiusPixels <= 0) return;
         var stroke = brushes.Get(style.StrokeColor);
         if (stroke is null) return;

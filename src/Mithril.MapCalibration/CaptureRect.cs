@@ -42,4 +42,17 @@ public readonly record struct CaptureRect(int X, int Y, int Width, int Height)
     /// </summary>
     public bool Contains(CaptureRect inner) =>
         inner.X >= X && inner.Y >= Y && inner.Right <= Right && inner.Bottom <= Bottom;
+
+    /// <summary>
+    /// Typed translation from a game-window-frame pixel into the captured-frame
+    /// pixel space this rect describes. Subtracts the rect's origin (the rect's
+    /// (<see cref="X"/>, <see cref="Y"/>) within the game window's client area).
+    /// See spec §5 of the pixel-frame-typing refactor (#1076).
+    /// </summary>
+    public CapturedFramePixel GameWindowToCaptured(GameWindowPixel pixel) =>
+        new(pixel.X - X, pixel.Y - Y);
+
+    /// <summary>Inverse of <see cref="GameWindowToCaptured"/>.</summary>
+    public GameWindowPixel CapturedToGameWindow(CapturedFramePixel pixel) =>
+        new(pixel.X + X, pixel.Y + Y);
 }

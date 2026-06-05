@@ -276,7 +276,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     {
         if (PlayerPin is { IsSelected: true } pp)
         {
-            pp.Pixel = new PixelPoint(pp.Pixel.X + dx, pp.Pixel.Y + dy);
+            pp.Pixel = new OverlayPixel(pp.Pixel.X + dx, pp.Pixel.Y + dy);
             OnPropertyChanged(nameof(PlayerPinX));
             OnPropertyChanged(nameof(PlayerPinY));
             ReprojectSurveyPins();
@@ -285,14 +285,14 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
         }
         if (SelectedSurveyPin is { } s)
         {
-            s.OverlayPixel = new PixelPoint(s.OverlayPixel.X + dx, s.OverlayPixel.Y + dy);
+            s.OverlayPixel = new OverlayPixel(s.OverlayPixel.X + dx, s.OverlayPixel.Y + dy);
             s.Corrected = true; // it's now the real-ping position, not the projection
             ClampSurvey(s);
             RaiseDebug();
             return;
         }
         if (SelectedPlacement is { } p)
-            p.Pixel = new PixelPoint(p.Pixel.X + dx, p.Pixel.Y + dy);
+            p.Pixel = new OverlayPixel(p.Pixel.X + dx, p.Pixel.Y + dy);
     }
 
     private static double Dist(double ax, double ay, double bx, double by)
@@ -307,7 +307,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     /// it (mutually exclusive) and return true so the view starts a drag.
     /// Otherwise false → the click falls through to place/arm. Priority:
     /// player, then nearest on-screen survey overlay, then nearest placement.</summary>
-    public bool TrySelectPinAt(PixelPoint at, double radius)
+    public bool TrySelectPinAt(OverlayPixel at, double radius)
     {
         if (PlayerPin is { } pp && Dist(at.X, at.Y, pp.X, pp.Y) <= radius)
         {
@@ -339,7 +339,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
 
     /// <summary>Drag: move the selected pin to the absolute pixel (not a delta).
     /// Same target rules as <see cref="NudgeSelected"/>.</summary>
-    public void DragSelectedTo(PixelPoint at)
+    public void DragSelectedTo(OverlayPixel at)
     {
         if (PlayerPin is { IsSelected: true } pp)
         {
@@ -402,7 +402,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     }
 
     [RelayCommand]
-    private void PlaceSelectedAt(PixelPoint pixel)
+    private void PlaceSelectedAt(OverlayPixel pixel)
     {
         if (SelectedReference is not { } reference)
         {
@@ -430,7 +430,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     /// <summary>Single map-click entry point. If the player-pin click is armed,
     /// the click drops/moves "you"; otherwise it places the selected reference.</summary>
     [RelayCommand]
-    private void ViewportClicked(PixelPoint pixel)
+    private void ViewportClicked(OverlayPixel pixel)
     {
         if (_armPlayerClick)
         {
@@ -533,7 +533,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     private void ProjectLandmarks()
     {
         GhostPins.Clear();
-        if (_service.CurrentCalibration is not { } c)
+        if (_service.CurrentOverlayCalibration is not { } c)
         {
             ClickWarning = "Solve a calibration first — nothing to project.";
             RaiseDebug();
@@ -544,7 +544,8 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
             if (Placements.Any(p => ReferenceEquals(p.Reference, r))) continue;
             // Canonical absolute world→pixel — shared with the #454
             // ProcessMapFx placement path so the two can't drift.
-            GhostPins.Add(new GhostPin(r.Name, c.WorldToWindow(r.World)));
+            // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
+            GhostPins.Add(new GhostPin(r.Name, c.ToOverlay(r.World)));
         }
         ClickWarning = null;
         RaiseDebug();
@@ -677,7 +678,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     /// <see cref="AreaCalibration.Scale"/> needs the zoom factor because the
     /// origin is the player pin the user placed at the CURRENT zoom (no stored
     /// origin to also rescale) — so this is exact across zooms.</summary>
-    private PixelPoint ProjectSurvey(AreaCalibration c, PixelPoint origin, MetreOffset off)
+    private OverlayPixel ProjectSurvey(AreaCalibration c, OverlayPixel origin, MetreOffset off)
         => ProjectAtScale(c, origin, off, c.Scale * ZoomFactor(c));
 
     /// <summary><c>currentZoom / calibrationZoom</c>, guarded. 1.0 when either
@@ -685,13 +686,13 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     public double ZoomFactor(AreaCalibration c) =>
         MapZoom > 1e-6 && c.CalibrationZoom > 1e-6 ? MapZoom / c.CalibrationZoom : 1.0;
 
-    private static PixelPoint ProjectAtScale(AreaCalibration c, PixelPoint origin, MetreOffset off, double scale)
+    private static OverlayPixel ProjectAtScale(AreaCalibration c, OverlayPixel origin, MetreOffset off, double scale)
     {
         var cos = Math.Cos(c.RotationRadians);
         var sin = Math.Sin(c.RotationRadians);
         var rotE = off.East * cos + off.North * sin;
         var rotN = -off.East * sin + off.North * cos;
-        return new PixelPoint(origin.X + scale * rotE, origin.Y - scale * rotN);
+        return new OverlayPixel(origin.X + scale * rotE, origin.Y - scale * rotN);
     }
 
     /// <summary>Re-project every survey pin from the (moved) player pin. The
@@ -812,14 +813,14 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
 /// marker (minimal, static).</summary>
 public sealed class GhostPin
 {
-    public GhostPin(string name, PixelPoint pixel)
+    public GhostPin(string name, OverlayPixel pixel)
     {
         Name = name;
         Pixel = pixel;
     }
 
     public string Name { get; }
-    public PixelPoint Pixel { get; }
+    public OverlayPixel Pixel { get; }
     public double X => Pixel.X;
     public double Y => Pixel.Y;
 }
@@ -827,12 +828,12 @@ public sealed class GhostPin
 /// <summary>The "you are here" pin — selectable/nudgeable like a placement.</summary>
 public sealed partial class PlayerPin : ObservableObject
 {
-    public PlayerPin(PixelPoint pixel) => _pixel = pixel;
+    public PlayerPin(OverlayPixel pixel) => _pixel = pixel;
 
-    [ObservableProperty] private PixelPoint _pixel;
+    [ObservableProperty] private OverlayPixel _pixel;
     [ObservableProperty] private bool _isSelected;
 
-    partial void OnPixelChanged(PixelPoint value)
+    partial void OnPixelChanged(OverlayPixel value)
     {
         OnPropertyChanged(nameof(X));
         OnPropertyChanged(nameof(Y));
@@ -849,7 +850,7 @@ public sealed partial class PlayerPin : ObservableObject
 /// offset is the empirical scale check.</summary>
 public sealed partial class SurveyPin : ObservableObject
 {
-    public SurveyPin(string name, MetreOffset offset, PixelPoint origin, PixelPoint projected)
+    public SurveyPin(string name, MetreOffset offset, OverlayPixel origin, OverlayPixel projected)
     {
         Name = name;
         Offset = offset;
@@ -861,9 +862,9 @@ public sealed partial class SurveyPin : ObservableObject
     public string Name { get; }
     public MetreOffset Offset { get; }
 
-    [ObservableProperty] private PixelPoint _originPixel;
-    [ObservableProperty] private PixelPoint _projectedPixel;
-    [ObservableProperty] private PixelPoint _overlayPixel;
+    [ObservableProperty] private OverlayPixel _originPixel;
+    [ObservableProperty] private OverlayPixel _projectedPixel;
+    [ObservableProperty] private OverlayPixel _overlayPixel;
     [ObservableProperty] private bool _isSelected;
 
     /// <summary>True once the user has dragged the overlay — it then sticks
@@ -875,14 +876,14 @@ public sealed partial class SurveyPin : ObservableObject
     [ObservableProperty] private double _displayY;
     [ObservableProperty] private bool _isOffscreen;
 
-    partial void OnProjectedPixelChanged(PixelPoint value)
+    partial void OnProjectedPixelChanged(OverlayPixel value)
     {
         OnPropertyChanged(nameof(ProjX));
         OnPropertyChanged(nameof(ProjY));
         OnPropertyChanged(nameof(MathText));
     }
 
-    partial void OnOverlayPixelChanged(PixelPoint value)
+    partial void OnOverlayPixelChanged(OverlayPixel value)
     {
         OnPropertyChanged(nameof(OverlayX));
         OnPropertyChanged(nameof(OverlayY));
@@ -913,7 +914,7 @@ public sealed partial class SurveyPin : ObservableObject
         }
     }
 
-    private static double Dist(PixelPoint a, PixelPoint b)
+    private static double Dist(OverlayPixel a, OverlayPixel b)
     {
         var dx = a.X - b.X;
         var dy = a.Y - b.Y;
@@ -923,7 +924,7 @@ public sealed partial class SurveyPin : ObservableObject
 
 public sealed partial class PlacedReference : ObservableObject
 {
-    public PlacedReference(CalibrationReference reference, PixelPoint pixel)
+    public PlacedReference(CalibrationReference reference, OverlayPixel pixel)
     {
         Reference = reference;
         _pixel = pixel;
@@ -931,10 +932,10 @@ public sealed partial class PlacedReference : ObservableObject
 
     public CalibrationReference Reference { get; }
 
-    [ObservableProperty] private PixelPoint _pixel;
+    [ObservableProperty] private OverlayPixel _pixel;
     [ObservableProperty] private bool _isSelected;
 
-    partial void OnPixelChanged(PixelPoint value)
+    partial void OnPixelChanged(OverlayPixel value)
     {
         OnPropertyChanged(nameof(X));
         OnPropertyChanged(nameof(Y));

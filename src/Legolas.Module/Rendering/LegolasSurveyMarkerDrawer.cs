@@ -27,7 +27,7 @@ internal static class LegolasSurveyMarkerDrawer
 {
     public static void Draw(
         LegolasSurveyMarkerStyle style,
-        PixelPoint pixel,
+        OverlayPixel pixel,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes)

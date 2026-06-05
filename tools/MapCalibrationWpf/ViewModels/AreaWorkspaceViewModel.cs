@@ -125,7 +125,7 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     public void PlaceRefAt(double x, double y)
     {
         if (Picker.Selected is not LandmarkPickerItem sel) return;
-        var refVm = new RefViewModel(sel.Name, sel.Kind, sel.World, new PixelPoint(x, y));
+        var refVm = new RefViewModel(sel.Name, sel.Kind, sel.World, new TexturePixel(x, y));
         Refs.Add(refVm);
         Picker.Selected = null;
         // Solver re-runs via the OnRefsChanged hook below.
@@ -143,7 +143,7 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
         }
 
         var solverRefs = Refs.Select(r =>
-            new LandmarkCalibrationSolver.Reference(r.World.X, r.World.Z, r.TexturePixel))
+            new LandmarkCalibrationSolver.Reference(r.World.X, r.World.Z, r.TexturePixel.X, r.TexturePixel.Y))
             .ToList();
         var cal = LandmarkCalibrationSolver.Solve(solverRefs);
         Calibration = cal;
@@ -156,9 +156,13 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
             return;
         }
 
+        // #1076 Phase 7.5: the WPF tool displays texture-frame calibration data;
+        // project through a texture-frame view of the solved AreaCalibration so
+        // residuals + projection markers stay frame-explicit.
+        var calTex = AsTexture(cal);
         foreach (var r in Refs)
         {
-            var projected = cal.WorldToWindow(r.World);
+            var projected = calTex.ToTexture(r.World);
             var dx = projected.X - r.TexturePixel.X;
             var dy = projected.Y - r.TexturePixel.Y;
             r.ResidualPx = Math.Sqrt(dx * dx + dy * dy);
@@ -170,13 +174,22 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     private void RefreshProjections(AreaCalibration cal)
     {
         Projections.Clear();
+        var calTex = AsTexture(cal);
         foreach (var item in Picker.AllItems)
         {
-            var px = cal.WorldToWindow(item.World);
+            var px = calTex.ToTexture(item.World);
             var refMatch = RefForLandmark(item);
             Projections.Add(new ProjectionMarkerViewModel(item.Name, px, refMatch?.ResidualPx));
         }
     }
+
+    // #1076 Phase 7.5: field-identity re-tag of an AreaCalibration to its
+    // texture-frame view. The WPF tool's overlay markers sit in texture space
+    // (drawn over the loaded base-texture image), so projection through a
+    // frame-typed struct keeps the pixel comparison explicit.
+    private static WorldToTextureCalibration AsTexture(AreaCalibration cal) =>
+        new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
+            cal.MirrorNorth, cal.CalibrationZoom);
 
     private RefViewModel? RefForLandmark(LandmarkPickerItem item) =>
         Refs.FirstOrDefault(r =>

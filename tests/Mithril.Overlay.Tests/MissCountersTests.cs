@@ -60,11 +60,11 @@ public sealed class MissCountersTests
         });
         listener.Start();
 
-        var markers = new List<(PixelPoint, IMarkerStyle)>
+        var markers = new List<(OverlayPixel, IMarkerStyle)>
         {
-            (new PixelPoint(0, 0), new MissCountersTestStyle("a")),
-            (new PixelPoint(1, 1), new MissCountersTestStyle("b")),
-            (new PixelPoint(2, 2), new MissCountersTestStyle("a")),
+            (new OverlayPixel(0, 0), new MissCountersTestStyle("a")),
+            (new OverlayPixel(1, 1), new MissCountersTestStyle("b")),
+            (new OverlayPixel(2, 2), new MissCountersTestStyle("a")),
         };
 
         // Phase 1: no drawer registered — every marker misses.

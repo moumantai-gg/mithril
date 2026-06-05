@@ -29,7 +29,7 @@ internal static class LegolasCalibrationMarkerDrawer
     /// position from the marker registry.</summary>
     public static void Draw(
         LegolasCalibrationMarkerStyle style,
-        PixelPoint pixel,
+        OverlayPixel pixel,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes)

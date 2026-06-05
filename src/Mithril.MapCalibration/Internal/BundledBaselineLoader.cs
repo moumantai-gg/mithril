@@ -40,13 +40,21 @@ internal static class BundledBaselineLoader
                 return EmptyCatalogue();
             }
 
-            // Stamp Source on every entry so consumers always see BundledBaseline,
-            // even if the file omits the property (defaults to UserRefinement on
-            // the record).
+            // Stamp Source AND Frame on every entry so consumers always see
+            // BundledBaseline + Texture, even if the file omits either property.
+            // (Source defaults to UserRefinement on the record; Frame defaults to
+            // Texture and so is technically redundant — set explicitly anyway so
+            // the post-deserialise stamping is the single source of truth for the
+            // bundled catalogue. The bundled JSON is, by construction, all
+            // BundledBaseline → Texture per spec §7.2.)
             var stamped = new Dictionary<string, AreaCalibration>(file.Anchors.Count, StringComparer.Ordinal);
             foreach (var (key, cal) in file.Anchors)
             {
-                stamped[key] = cal with { Source = CalibrationSource.BundledBaseline };
+                stamped[key] = cal with
+                {
+                    Source = CalibrationSource.BundledBaseline,
+                    Frame = CalibrationFrame.Texture,
+                };
             }
             return stamped;
         }
