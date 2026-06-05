@@ -92,6 +92,67 @@ internal sealed class MapCalibrationService : IMapCalibrationService
     public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom) =>
         GetCalibration(scene)?.WindowToWorld(pixel, currentZoom);
 
+    public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom)
+    {
+        var pick = PickTexture(scene);
+        return pick is null ? null : pick.Value.ToTexture(world, currentZoom);
+    }
+
+    public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom)
+    {
+        var pick = PickTexture(scene);
+        return pick?.FromTexture(pixel, currentZoom);
+    }
+
+    public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom)
+    {
+        var pick = PickOverlay(scene);
+        return pick is null ? null : pick.Value.ToOverlay(world, currentZoom);
+    }
+
+    public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom)
+    {
+        var pick = PickOverlay(scene);
+        return pick?.FromOverlay(pixel, currentZoom);
+    }
+
+    /// <summary>
+    /// #1076 picker for the texture-frame slice. Same tie-break semantics as
+    /// <see cref="GetCalibration"/> (residual asc + MinReferences floor + source
+    /// precedence) but restricted to candidates whose source maps to texture.
+    /// Returns null when no texture-frame candidate exists.
+    /// </summary>
+    private WorldToTextureCalibration? PickTexture(MapSceneRef scene)
+    {
+        var legacy = PickByFrame(scene, CalibrationFrameKind.Texture);
+        return legacy is null ? null : ToTextureCalibration(legacy);
+    }
+
+    /// <summary>#1076 picker for the overlay-frame slice; see <see cref="PickTexture"/>.</summary>
+    private WorldToOverlayCalibration? PickOverlay(MapSceneRef scene)
+    {
+        var legacy = PickByFrame(scene, CalibrationFrameKind.Overlay);
+        return legacy is null ? null : ToOverlayCalibration(legacy);
+    }
+
+    private AreaCalibration? PickByFrame(MapSceneRef scene, CalibrationFrameKind frame)
+    {
+        if (string.IsNullOrWhiteSpace(scene.MapAssetKey)) return null;
+
+        var candidates = new List<AreaCalibration>(capacity: 2);
+        if (_userStore.TryGet(scene.MapAssetKey, out var user)
+            && InferFrameFromSource(user.Source) == frame) candidates.Add(user);
+        if (_baseline.TryGetValue(scene.MapAssetKey, out var baseline)
+            && InferFrameFromSource(baseline.Source) == frame) candidates.Add(baseline);
+
+        if (candidates.Count == 0) return null;
+
+        var eligible = candidates.Where(c => c.ReferenceCount >= MinReferences).ToList();
+        return eligible.Count == 0
+            ? candidates.OrderByDescending(SourceRank).First()
+            : eligible.OrderBy(c => c.ResidualPixels).ThenByDescending(SourceRank).First();
+    }
+
     public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations
     {
         get

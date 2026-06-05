@@ -50,6 +50,27 @@ public interface IMapCalibrationService
     WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom);
 
     /// <summary>
+    /// #1076 frame-explicit projection: world → base-texture-pixel. Returns
+    /// null when no texture-frame calibration exists for the scene. Used by
+    /// AutoCalibration / drift-check where the comparison is bound to the base
+    /// texture's pixel space.
+    /// </summary>
+    TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom);
+
+    /// <summary>#1076 inverse of <see cref="WorldToTexture"/>.</summary>
+    WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom);
+
+    /// <summary>
+    /// #1076 frame-explicit projection: world → overlay-pixel. Returns null
+    /// when no overlay-frame calibration exists for the scene. Used by Legolas
+    /// overlay rendering.
+    /// </summary>
+    OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom);
+
+    /// <summary>#1076 inverse of <see cref="WorldToOverlay"/>.</summary>
+    WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom);
+
+    /// <summary>
     /// The active calibration record for a scene (or null if uncalibrated).
     /// Consumers needing the residual + reference count for an "approximate
     /// location" chip read it here.

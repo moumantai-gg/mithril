@@ -80,6 +80,59 @@ public sealed class MapCalibrationServiceTypedFrameTests
     }
 
     [Fact]
+    public void WorldToTexture_ReturnsNull_WhenSceneHasOnlyOverlayRecords()
+    {
+        var svc = NewSvc(
+            userRefs: new Dictionary<string, AreaCalibration> { [Key] = Cal(CalibrationSource.UserRefinement) });
+
+        svc.WorldToTexture(Scene, new WorldCoord(0, 0, 0), currentZoom: 1.0).Should().BeNull();
+        svc.TextureToWorld(Scene, new TexturePixel(50, 60), currentZoom: 1.0).Should().BeNull();
+    }
+
+    [Fact]
+    public void WorldToOverlay_ReturnsNull_WhenSceneHasOnlyTextureRecords()
+    {
+        var svc = NewSvc(
+            baseline: new Dictionary<string, AreaCalibration> { [Key] = Cal(CalibrationSource.BundledBaseline) });
+
+        svc.WorldToOverlay(Scene, new WorldCoord(0, 0, 0), currentZoom: 1.0).Should().BeNull();
+        svc.OverlayToWorld(Scene, new OverlayPixel(50, 60), currentZoom: 1.0).Should().BeNull();
+    }
+
+    [Fact]
+    public void WorldToTexture_ReturnsResult_FromTextureRecord()
+    {
+        var svc = NewSvc(
+            baseline: new Dictionary<string, AreaCalibration> { [Key] = Cal(CalibrationSource.BundledBaseline) });
+
+        var result = svc.WorldToTexture(Scene, new WorldCoord(10, 0, 5), currentZoom: 1.0);
+        result.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WorldToOverlay_ReturnsResult_FromOverlayRecord()
+    {
+        var svc = NewSvc(
+            userRefs: new Dictionary<string, AreaCalibration> { [Key] = Cal(CalibrationSource.UserRefinement) });
+
+        var result = svc.WorldToOverlay(Scene, new WorldCoord(10, 0, 5), currentZoom: 1.0);
+        result.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WorldToTexture_RoundTripsThroughTextureToWorld()
+    {
+        var svc = NewSvc(
+            baseline: new Dictionary<string, AreaCalibration> { [Key] = Cal(CalibrationSource.BundledBaseline) });
+
+        var pix = svc.WorldToTexture(Scene, new WorldCoord(10, 0, 5), 1.0)!.Value;
+        var roundTrip = svc.TextureToWorld(Scene, pix, 1.0);
+        roundTrip.Should().NotBeNull();
+        roundTrip!.Value.X.Should().BeApproximately(10, 1e-9);
+        roundTrip.Value.Z.Should().BeApproximately(5, 1e-9);
+    }
+
+    [Fact]
     public void TextureRecord_PreservesProjectionParameters()
     {
         var legacy = new AreaCalibration(

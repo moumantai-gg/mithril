@@ -34,6 +34,19 @@ internal sealed class FakeMapCalibrationService : IMapCalibrationService
     }
 
     public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom) => null;
+    public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
+    public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) => null;
+    public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom)
+    {
+        if (!IsCalibrated(scene)) return null;
+        if (Projector is { } p)
+        {
+            var px = p(scene, world, currentZoom);
+            return px is { } v ? new OverlayPixel(v.X, v.Y) : null;
+        }
+        return new OverlayPixel(world.X, world.Z);
+    }
+    public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom) => null;
     public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
     public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations { get; } = new Dictionary<string, AreaCalibration>();
     public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
