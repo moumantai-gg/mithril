@@ -14,7 +14,7 @@ namespace Mithril.Tools.MapCalibration.Harness;
 /// afterward). <see cref="Confidence"/> is 1.0 for manual clicks.</para>
 /// </summary>
 public sealed record CandidateRef(
-    PixelPoint TexturePixel,
+    TexturePixel TexturePixel,
     WorldCoord? World,
     string? LandmarkId,
     string? SuggestedName,

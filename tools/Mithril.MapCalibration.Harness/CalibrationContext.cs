@@ -58,25 +58,28 @@ public sealed class CalibrationContext
     /// <see cref="MapRect"/> is unset (a method that emits texture-space coords
     /// requires the map-rect to have been drawn).
     /// </summary>
-    public PixelPoint ScreenshotToTexture(double sx, double sy)
+    public TexturePixel ScreenshotToTexture(double sx, double sy)
     {
         var rect = RequireRect();
         var tx = (sx - rect.Left) * TextureSize.W / rect.Width;
         var ty = (sy - rect.Top) * TextureSize.H / rect.Height;
-        return new PixelPoint(tx, ty);
+        return new TexturePixel(tx, ty);
     }
 
     /// <summary>
     /// Inverse of <see cref="ScreenshotToTexture"/>: maps a texture-pixel back
     /// onto the screenshot (used by the projection overlay to draw on the loaded
-    /// image). Throws if <see cref="MapRect"/> is unset.
+    /// image). Returns a screenshot-frame pair as <c>(double Sx, double Sy)</c>;
+    /// the harness's own <c>MapRect</c> is screenshot-frame and the rendering
+    /// surface doesn't (yet) have a dedicated frame-typed pixel.
+    /// Throws if <see cref="MapRect"/> is unset.
     /// </summary>
-    public PixelPoint TextureToScreenshot(PixelPoint texture)
+    public (double Sx, double Sy) TextureToScreenshot(TexturePixel texture)
     {
         var rect = RequireRect();
         var sx = rect.Left + texture.X * rect.Width / TextureSize.W;
         var sy = rect.Top + texture.Y * rect.Height / TextureSize.H;
-        return new PixelPoint(sx, sy);
+        return (sx, sy);
     }
 
     private MapRect RequireRect()

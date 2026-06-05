@@ -24,7 +24,7 @@ public sealed partial class CalibrationRef : ObservableObject
     private WorldCoord _world;
 
     [ObservableProperty]
-    private PixelPoint _texturePixel;
+    private TexturePixel _texturePixel;
 
     [ObservableProperty]
     private bool _enabled = true;

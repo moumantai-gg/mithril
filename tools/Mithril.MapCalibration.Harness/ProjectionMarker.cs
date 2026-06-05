@@ -13,5 +13,5 @@ namespace Mithril.Tools.MapCalibration.Harness;
 public sealed record ProjectionMarker(
     string Name,
     string Kind,
-    PixelPoint TexturePixel,
+    TexturePixel TexturePixel,
     double? ResidualPx);

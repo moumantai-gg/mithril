@@ -115,7 +115,7 @@ public sealed partial class CalibrationSession : ObservableObject, ICandidateSin
     public void NudgeSelected(CalibrationRef r, double dx, double dy)
     {
         if (r is null || !Refs.Contains(r)) return;
-        r.TexturePixel = new PixelPoint(r.TexturePixel.X + dx, r.TexturePixel.Y + dy);
+        r.TexturePixel = new TexturePixel(r.TexturePixel.X + dx, r.TexturePixel.Y + dy);
     }
 
     // Re-solve only when a solve-input property changes. ResidualPx is an OUTPUT
@@ -152,7 +152,7 @@ public sealed partial class CalibrationSession : ObservableObject, ICandidateSin
 
         var solverRefs = enabled
             .Select(r => new LandmarkCalibrationSolver.Reference(
-                r.World.X, r.World.Z, r.TexturePixel))
+                r.World.X, r.World.Z, r.TexturePixel.X, r.TexturePixel.Y))
             .ToList();
         var cal = LandmarkCalibrationSolver.Solve(solverRefs);
         Calibration = cal;
@@ -170,6 +170,12 @@ public sealed partial class CalibrationSession : ObservableObject, ICandidateSin
         _suppressReSolve = true;
         try
         {
+            // #1076 Phase 7.5: project through a texture-frame view of the solved
+            // calibration so the pixel comparison stays frame-explicit (the
+            // harness solves in texture-pixel space — refs and projections are
+            // both texture-frame). AsTexture is a field-identity re-tag of the
+            // same similarity transform.
+            var calTex = AsTexture(cal);
             // Disabled refs carry no residual; enabled refs get the projected error.
             foreach (var r in Refs)
             {
@@ -178,7 +184,7 @@ public sealed partial class CalibrationSession : ObservableObject, ICandidateSin
                     r.ResidualPx = null;
                     continue;
                 }
-                var projected = cal.WorldToWindow(r.World);
+                var projected = calTex.ToTexture(r.World);
                 var dx = projected.X - r.TexturePixel.X;
                 var dy = projected.Y - r.TexturePixel.Y;
                 r.ResidualPx = Math.Sqrt(dx * dx + dy * dy);
@@ -209,14 +215,24 @@ public sealed partial class CalibrationSession : ObservableObject, ICandidateSin
     private void RefreshProjections(AreaCalibration cal)
     {
         Projections.Clear();
+        var calTex = AsTexture(cal);
         foreach (var landmark in _ctx.Landmarks)
         {
-            var px = cal.WorldToWindow(landmark.World);
+            var px = calTex.ToTexture(landmark.World);
             var refMatch = RefForLandmark(landmark);
             Projections.Add(new ProjectionMarker(
                 landmark.Name, landmark.Type, px, refMatch?.ResidualPx));
         }
     }
+
+    // #1076 Phase 7.5: field-identity re-tag of an AreaCalibration to its
+    // texture-frame view. The harness solves calibrations in texture-pixel
+    // space (refs and ProjectionMarker positions are both texture-frame), so
+    // projecting through a frame-typed struct keeps the pixel comparison
+    // explicit instead of going through the deleted PixelPoint surface.
+    private static WorldToTextureCalibration AsTexture(AreaCalibration cal) =>
+        new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
+            cal.MirrorNorth, cal.CalibrationZoom);
 
     // Prefer the enabled ref at this coord; disabled refs carry no residual, so
     // a disabled ref must not supply a projection marker's ResidualPx. (The
