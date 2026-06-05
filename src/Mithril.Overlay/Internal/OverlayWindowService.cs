@@ -78,6 +78,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     private IDisposable? _mapAssetChangedSub;
     private readonly IPositionState _positionState; // reserved for future consumers; ensures the DI shape matches Decision C
     private readonly IOverlayZoomSource _zoomSource;
+    private readonly IMapTextureDimensions _textureDimensions; // mithril#1081
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger? _logger;
     private readonly D2DBrushCache _brushCache = new();
@@ -120,6 +121,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         IDomainEventSubscriber bus,
         IPositionState positionState,
         IOverlayZoomSource zoomSource,
+        IMapTextureDimensions textureDimensions,   // mithril#1081
         ILoggerFactory? loggerFactory = null)
     {
         _markers = markers;
@@ -131,6 +133,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         _bus = bus;
         _positionState = positionState;
         _zoomSource = zoomSource;
+        _textureDimensions = textureDimensions;    // mithril#1081
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger("Mithril.Overlay");
         _sceneContext = new OverlaySceneContext(this);
@@ -358,6 +361,12 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         // inconsistency across the frame).
         var currentZoom = SnapshotZoom();
 
+        // mithril#1081 — resolve the per-frame composed overlay-frame calibration
+        // once, then thread it through to scene drawers (via BeginFrame) and to the
+        // marker loop. Replaces the per-call calibration.WorldToOverlay path the
+        // marker loop and IOverlaySceneContext.Project used to take individually.
+        var (composedCal, calPath) = ResolveComposedOverlayCalibration(resolvedScene);
+
         // The scene the per-frame context binds to: if resolution failed, use
         // a synthesized composite with empty calibration key so Project()
         // returns null (no calibration → uncalibrated path); scene drawers
@@ -374,7 +383,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         var drawers = _sceneDrawers;
         if (drawers.Length > 0)
         {
-            _sceneContext.BeginFrame(e.RenderTarget, e.Factory, _brushCache, areaKey, frameScene, currentZoom);
+            _sceneContext.BeginFrame(e.RenderTarget, e.Factory, _brushCache, areaKey, frameScene, currentZoom, composedCal);
             using (var sceneAct = MithrilActivitySources.Overlay.StartActivity("scene"))
             {
                 sceneAct?.SetTag("area", areaKey);
@@ -387,6 +396,25 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             }
         }
 
+        // mithril#1081 — composed cal resolution can fail with isCalibrated=true
+        // (texture-frame cal exists but sha is null, catalogue misses, or surface unsized).
+        // Increment the per-scene miss counter and log once-per-scene at Trace to
+        // distinguish the four sub-reasons so a user inspecting boot.log can act
+        // (re-run AutoCalibrate / wait for catalogue refresh / etc).
+        if (isCalibrated && composedCal is null && resolvedScene is { } missedScene)
+        {
+            var assetKey = missedScene.MapAssetKey;
+            MithrilMeters.Overlay.ProjectionMisses.Add(1,
+                new KeyValuePair<string, object?>("area", areaKey));
+            if (_projectionMissAreasLogged.TryAdd(assetKey, 0))
+            {
+                var reason = ClassifyComposedMissReason(missedScene);
+                _logger?.LogTrace(
+                    "OverlayWindowService: cal.path=none for calibrated scene {AssetKey} (reason={Reason}); marker projection skipped this frame and subsequent frames until the condition resolves.",
+                    assetKey, reason);
+            }
+        }
+
         // Marker projection + render — calibrated areas only. WorldToOverlay
         // returns null without a calibration, so there is nothing meaningful
         // to project here when uncalibrated (the scene drawers above already
@@ -394,7 +422,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         if (!isCalibrated) return;
 
         var snapshot = _markers.CurrentAreaMarkers;
-        var projected = ProjectMarkers(snapshot, resolvedScene!.Value, _calibration, currentZoom,
+        var projected = ProjectMarkers(snapshot, composedCal, currentZoom,
             onMiss: this, snapshotCount: snapshot.Count);
         if (!_firstFrameLogged)
         {
@@ -410,6 +438,12 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             renderAct?.SetTag("area", areaKey);
             renderAct?.SetTag("scene.asset_key", resolvedScene!.Value.MapAssetKey);
             renderAct?.SetTag("marker_count", projected.Count);
+            renderAct?.SetTag("cal.path", calPath switch
+            {
+                CalPath.DirectOverlay => "direct_overlay",
+                CalPath.ComposedFromTexture => "composed_from_texture",
+                _ => "none",
+            });  // mithril#1081 — observable in perf-recorder JSONL
             _renderer.Render(projected, e.RenderTarget, e.Factory, _brushCache);
         }
         var elapsedMs = sw.GetElapsedMilliseconds();
@@ -429,53 +463,160 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         return double.IsFinite(z) && z > 0 ? z : 1.0;
     }
 
-    /// <summary>Pure projection helper &#8212; takes a snapshot + a calibration
-    /// service and returns the projected pixel list. Test-friendly overload.</summary>
+    /// <summary>Pure projection helper — takes a snapshot + a composed
+    /// overlay-frame calibration and returns the projected pixel list. The
+    /// composed cal is resolved once per frame by
+    /// <see cref="ResolveComposedOverlayCalibration"/>; this helper has no
+    /// dependency on <see cref="IMapCalibrationService"/>. Test-friendly
+    /// overload.</summary>
     internal static IReadOnlyList<(OverlayPixel Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
-        MapSceneRef scene,
-        IMapCalibrationService calibration,
+        WorldToOverlayCalibration? composedCal,
         double currentZoom)
-        => ProjectMarkers(markers, scene, calibration, currentZoom, onMiss: null, snapshotCount: markers.Count);
+        => ProjectMarkers(markers, composedCal, currentZoom, onMiss: null, snapshotCount: markers.Count);
 
     private static IReadOnlyList<(OverlayPixel Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
-        MapSceneRef scene,
-        IMapCalibrationService calibration,
+        WorldToOverlayCalibration? composedCal,
         double currentZoom,
         OverlayWindowService? onMiss,
         int snapshotCount)
     {
-        if (markers.Count == 0)
+        if (markers.Count == 0 || composedCal is null)
+        {
+            // mithril#1081: per-scene miss telemetry fires at the
+            // OnSurfaceRender level (cal.path = none), not per marker.
             return Array.Empty<(OverlayPixel, IMarkerStyle)>();
+        }
 
         var result = new List<(OverlayPixel, IMarkerStyle)>(markers.Count);
+        var cal = composedCal.Value;
         for (var i = 0; i < markers.Count; i++)
         {
             var snap = markers[i];
-            // #1076: WorldToOverlay (frame-explicit) is the projection
-            // call — its OverlayPixel? result flows frame-typed
-            // end-to-end into MarkerSceneRenderer.
-            var pixel = calibration.WorldToOverlay(scene, snap.World, currentZoom);
-            if (pixel is null)
-            {
-                if (onMiss is not null)
-                {
-                    var assetKey = scene.MapAssetKey;
-                    MithrilMeters.Overlay.ProjectionMisses.Add(1,
-                        new KeyValuePair<string, object?>("area", scene.ParentAreaKey));
-                    if (onMiss._projectionMissAreasLogged.TryAdd(assetKey, 0))
-                    {
-                        onMiss._logger?.LogTrace(
-                            "OverlayWindowService: WorldToOverlay returned null for a marker in calibrated scene {AssetKey} (style={StyleType}); marker silently skipped.",
-                            assetKey, snap.Style.GetType().Name);
-                    }
-                }
-                continue;
-            }
-            result.Add((pixel.Value, snap.Style));
+            result.Add((cal.ToOverlay(snap.World, currentZoom), snap.Style));
         }
         return result;
+    }
+
+    /// <summary>
+    /// mithril#1081 — three render-side outcomes for resolving a usable
+    /// <see cref="WorldToOverlayCalibration"/> for the current scene. Surfaced
+    /// as the <c>cal.path</c> tag on the <c>project</c> span.
+    /// </summary>
+    internal enum CalPath
+    {
+        /// <summary>No usable cal this frame (uncalibrated, null-sha cal,
+        /// catalogue miss, or surface unsized).</summary>
+        None,
+        /// <summary>An overlay-frame record exists; consumed directly.</summary>
+        DirectOverlay,
+        /// <summary>Only a texture-frame record exists; composed onto the
+        /// overlay surface via
+        /// <see cref="WorldToTextureCalibration.ProjectThroughOverlay(MapRect)"/>
+        /// with dims looked up from <see cref="IMapTextureDimensions"/>.</summary>
+        ComposedFromTexture,
+    }
+
+    /// <summary>
+    /// mithril#1081 — pure helper, exposed for unit tests. The decision table
+    /// is the load-bearing logic of #1081; production calls go through
+    /// <see cref="ResolveComposedOverlayCalibration(MapSceneRef?)"/> which reads
+    /// the service's <see cref="_calibration"/> + <see cref="_textureDimensions"/>
+    /// + the live overlay surface. This overload takes the inputs directly so
+    /// the table can be exercised without standing up the service.
+    /// </summary>
+    internal static (WorldToOverlayCalibration? Cal, CalPath Path)
+        ResolveComposedOverlayCalibrationForTest(
+            MapSceneRef? scene,
+            WorldToOverlayCalibration? overlayCal,
+            WorldToTextureCalibration? textureCal,
+            IMapTextureDimensions dims,
+            double surfaceWidth,
+            double surfaceHeight)
+    {
+        if (scene is null) return (null, CalPath.None);
+
+        // Prefer an overlay-frame record when present — direct path. Per
+        // mithril#1082's per-frame slots, this is both the wizard-only case
+        // AND the both-frames-present case; the texture-frame composition is
+        // dead code on the latter.
+        if (overlayCal is not null)
+            return (overlayCal, CalPath.DirectOverlay);
+
+        if (textureCal is null) return (null, CalPath.None);
+        var tex = textureCal.Value;
+
+        // F1 — pre-#1081 record with no stamped sha. Renderer skips; user
+        // recovers by re-running AutoCalibrate.
+        if (string.IsNullOrWhiteSpace(tex.PixelSha256)) return (null, CalPath.None);
+
+        // F2 — overlay surface not yet laid out (first frame after Show()).
+        if (surfaceWidth <= 0 || surfaceHeight <= 0) return (null, CalPath.None);
+
+        // F5 (the invalidation case) and F2 catalogue-miss collapse here.
+        var resolved = dims.TryGetSizeBySha(tex.PixelSha256);
+        if (resolved is not { } d) return (null, CalPath.None);
+
+        var overlayRect = new MapRect(
+            OriginX: 0, OriginY: 0,
+            Width: (int)surfaceWidth, Height: (int)surfaceHeight,
+            TextureWidth: d.Width, TextureHeight: d.Height);
+
+        return (tex.ProjectThroughOverlay(overlayRect), CalPath.ComposedFromTexture);
+    }
+
+    /// <summary>
+    /// mithril#1081 — production overload. Reads the active calibration via
+    /// <see cref="_calibration"/>, the texture-dim catalogue via
+    /// <see cref="_textureDimensions"/>, and the overlay surface's live size,
+    /// then delegates to the pure helper.
+    /// </summary>
+    private (WorldToOverlayCalibration? Cal, CalPath Path)
+        ResolveComposedOverlayCalibration(MapSceneRef? scene)
+    {
+        if (scene is not { } s) return (null, CalPath.None);
+        var overlayCal = _calibration.GetOverlayCalibration(s);
+        var textureCal = overlayCal is null ? _calibration.GetTextureCalibration(s) : null;
+        var (w, h) = ResolveOverlaySurfaceSize();
+        return ResolveComposedOverlayCalibrationForTest(s, overlayCal, textureCal, _textureDimensions, w, h);
+    }
+
+    /// <summary>
+    /// Read the live overlay surface's DIU size. Per the overlay's strict-1:1
+    /// invariant (docs/legolas-overview.md §Pitfalls + the XAML's no-internal-
+    /// zoom-pan promise) the surface fills the in-game map region; ActualWidth/
+    /// Height in DIU == OverlayPixel in current Mithril (single-monitor DPI;
+    /// CanvasOverlayMapping identity case per #1077 §3 / P.3). Returns (0,0)
+    /// when the window or surface isn't realised yet — caller treats as F2
+    /// fail-soft.
+    /// </summary>
+    private (double Width, double Height) ResolveOverlaySurfaceSize()
+    {
+        var window = _window;
+        if (window is null) return (0, 0);
+        var surface = window.OverlaySurface;
+        if (surface is null) return (0, 0);
+        return (surface.ActualWidth, surface.ActualHeight);
+    }
+
+    /// <summary>
+    /// mithril#1081 — re-derives the reason a composed overlay calibration
+    /// could not be built for a scene that <see cref="IMapCalibrationService.IsCalibrated"/>
+    /// reports as calibrated. Called at most once per scene per session (gated by
+    /// <see cref="_projectionMissAreasLogged"/>). Cheap: all lookups are O(1).
+    /// </summary>
+    private string ClassifyComposedMissReason(MapSceneRef scene)
+    {
+        if (_calibration.GetOverlayCalibration(scene) is not null)
+            return "unexpected (overlay-frame cal present)";
+        var texCal = _calibration.GetTextureCalibration(scene);
+        if (texCal is null) return "no usable calibration";
+        if (string.IsNullOrWhiteSpace(texCal.Value.PixelSha256)) return "null_sha (pre-#1081 record)";
+        var (w, h) = ResolveOverlaySurfaceSize();
+        if (w <= 0 || h <= 0) return "unsized_surface";
+        if (_textureDimensions.TryGetSizeBySha(texCal.Value.PixelSha256) is null) return "catalogue_miss";
+        return "unknown";
     }
 
     /// <summary>Surface the renderer to test code &#8212; production
@@ -514,7 +655,13 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
         var drawers = _sceneDrawers;
         if (drawers.Length == 0) return;
-        _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, scene, currentZoom);
+        // mithril#1081 (Task 11): resolve the composed cal so tests that exercise
+        // the bound-cal zoom path (Project_plumbs_current_zoom_into_bound_composed_cal)
+        // and the texture-frame composition path see the same code as production.
+        // Previously passed composedCal: null, which meant _composedCal was always
+        // null in the scene context and Project() always returned null.
+        var (composedCal, _) = ResolveComposedOverlayCalibration(scene);
+        _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, scene, currentZoom, composedCal);
         for (var i = 0; i < drawers.Length; i++)
         {
             InvokeSceneDrawerIsolated(drawers[i], i);
@@ -662,6 +809,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         private string _areaKey = string.Empty;
         private MapSceneRef _scene;
         private double _currentZoom = 1.0;
+        private WorldToOverlayCalibration? _composedCal; // mithril#1081
 
         public OverlaySceneContext(OverlayWindowService owner) { _owner = owner; }
 
@@ -671,7 +819,8 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             D2DBrushCache brushes,
             string areaKey,
             MapSceneRef scene,
-            double currentZoom)
+            double currentZoom,
+            WorldToOverlayCalibration? composedCal = null)   // mithril#1081
         {
             _renderTarget = renderTarget;
             _factory = factory;
@@ -679,6 +828,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             _areaKey = areaKey;
             _scene = scene;
             _currentZoom = currentZoom;
+            _composedCal = composedCal; // mithril#1081
         }
 
         public ID2D1RenderTarget RenderTarget =>
@@ -697,19 +847,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
         public MapSceneRef CurrentScene => _scene;
 
-        public OverlayPixel? Project(double worldX, double worldZ)
-        {
-            // Calibrated-area gate is enforced before drawers fire, so we
-            // can call WorldToOverlay directly. A null return here means the
-            // calibration service couldn't project this specific point
-            // (e.g. NaN inputs); the drawer treats that as "skip this pin"
-            // — same shape as the marker renderer's null-skip branch.
-            //
-            // #1076: WorldToOverlay returns OverlayPixel?, so the overlay
-            // frame stays frame-typed end-to-end through the scene drawer
-            // surface.
-            return _owner._calibration.WorldToOverlay(
-                _scene, new WorldCoord(worldX, 0, worldZ), _currentZoom);
-        }
+        public OverlayPixel? Project(double worldX, double worldZ) =>
+            _composedCal?.ToOverlay(new WorldCoord(worldX, 0, worldZ), _currentZoom);
     }
 }

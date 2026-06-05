@@ -278,13 +278,14 @@ Per-tick world→pixel projection through the shared overlay (`Mithril.Overlay`)
 |---|---|
 | `area` | The Arda area key the projection ran for (e.g. `AreaEltibule`). Empty when the player is not in-world. |
 | `marker_count` | Number of markers in the area filtered from the current `IWorldOverlayMarkers` snapshot. |
+| `cal.path` | One of `direct_overlay` (overlay-frame record consumed directly), `composed_from_texture` (texture-frame record composed via `WorldToTextureCalibration.ProjectThroughOverlay(MapRect)` — dims looked up from `IMapTextureDimensions` by `cal.PixelSha256`; see #1081), `none` (no usable calibration this frame: uncalibrated scene, null-sha cal, catalogue miss, or overlay surface not laid out yet). |
 | `DurationMs` | Wall-clock for `MarkerSceneRenderer.Render` (the full per-tick draw dispatch). |
 
 Companion `Mithril.Overlay` meter instruments emitted in `meter_counter` records (below):
 
 - `mithril.overlay.projection.latency_ms` — histogram, ms. Tag: `area`.
 - `mithril.overlay.frame.markers` — counter, per-tick marker count. Tag: `area`.
-- `mithril.overlay.projection.misses` — counter, per-marker `WorldToWindow` null on a calibrated area. Tag: `area`. First-time-per-area logged at Trace from `OverlayWindowService`. A flood here means calibration is in the registry but rejecting marker coords (out-of-range, NaN that slipped past producer guards).
+- `mithril.overlay.projection.misses` — counter, per-scene miss when `ResolveComposedOverlayCalibration` returns null even though the scene is otherwise calibrated (`isCalibrated=true`). Covers: uncalibrated scene (not reached), null-sha pre-#1081 record, catalogue miss, or overlay surface not yet sized. Tag: `area`. First-time-per-scene logged at Trace from `OverlayWindowService` with the specific sub-reason (re-run AutoCalibrate / wait for catalogue refresh / etc.).
 - `mithril.overlay.dispatch.misses` — counter, per-marker drawer-dispatch miss (no drawer registered for the marker style type). Tag: `style_type`. First-time-per-type logged at Trace from `MarkerSceneRenderer`. A flood here means a consumer is producing markers before its drawer registration ran.
 - `mithril.overlay.scene.exceptions` — counter, a registered scene-drawer callback (`IOverlayWindow.RegisterScene`) threw and was isolated from sibling drawers + the per-tick render loop (#835 step 6, review B1). Tag: `drawer_type` (the throwing callback's target type name, or `"unknown"`). Pairs with a `LogError` per occurrence on the `Mithril.Overlay` category. A flood here means a consumer's scene drawer is throwing every tick — the overlay keeps rendering siblings, but that consumer's layer is missing.
 

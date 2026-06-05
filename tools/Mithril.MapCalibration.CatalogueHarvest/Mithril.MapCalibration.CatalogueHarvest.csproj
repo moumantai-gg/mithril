@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Mithril.Tools.CatalogueHarvest</RootNamespace>
+    <AssemblyName>mithril-catalogue-harvest</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!--
+      One-shot dev tool: enumerates every Map_<X> bundle in the PG Addressables
+      directory, extracts each texture via the shared MapTextureExtractor pipeline,
+      and writes canonical-asset-hashes.json for mithril#1081.
+
+      Same isolation as Mithril.AssetExtractor: AssetsTools.NET / System.Drawing
+      stay out of the main src/** graph. NOT added to Mithril.slnx.
+    -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
+    <!-- Reads the registry (Steam install) and decodes via System.Drawing — Windows-only. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <ProjectReference Include="..\Mithril.MapCalibration.Tools.Common\Mithril.MapCalibration.Tools.Common.csproj" />
+  </ItemGroup>
+</Project>

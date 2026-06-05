@@ -36,7 +36,8 @@ public sealed class OverlaySceneHookTests
         FakeMapCalibrationService calibration,
         StubAreaState areaState,
         IOverlayZoomSource zoom,
-        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null,
+        IMapTextureDimensions? dims = null)   // mithril#1081 Task 11: optional dims
     {
         var markers = new WorldOverlayMarkers();
         var renderer = new MarkerSceneRenderer();
@@ -51,7 +52,17 @@ public sealed class OverlaySceneHookTests
         var bus = new StubDomainEventSubscriber();
         return new OverlayWindowService(
             markers, renderer, calibration, areaState, mapState, sceneCache, bus,
-            position, zoom, loggerFactory);
+            position, zoom,
+            textureDimensions: dims ?? new NullMapTextureDimensions(),  // mithril#1081
+            loggerFactory);
+    }
+
+    /// <summary>mithril#1081 — no-op dims stub; null dims → composed-from-texture
+    /// path returns null, matching the prior null-projection-on-uncalibrated
+    /// behaviour so existing tests are unaffected.</summary>
+    private sealed class NullMapTextureDimensions : IMapTextureDimensions
+    {
+        public (int Width, int Height)? TryGetSizeBySha(string? sha) => null;
     }
 
     [Fact]
@@ -160,45 +171,51 @@ public sealed class OverlaySceneHookTests
             "is suppressed for this area (only the projection — not the scene drawers).");
     }
 
+    /// <summary>
+    /// mithril#1081 Task 11 — replaces <c>Project_plumbs_current_zoom_into_WorldToOverlay</c>.
+    /// Same invariant (live zoom flows into projection); new seam. Post-#1081 the
+    /// calibration service is no longer on the per-marker render path — the seam
+    /// moved to <see cref="OverlaySceneContext._composedCal"/>'s <c>ToOverlay</c>
+    /// call. Verify the invariant by checking the projected <see cref="OverlayPixel"/>
+    /// changes as zoom changes (Scale=10, CalibrationZoom=1 → output scales with
+    /// per-tick zoom ratio).
+    /// </summary>
     [Fact]
-    public void Project_plumbs_current_zoom_into_WorldToOverlay()
+    public void Project_plumbs_current_zoom_into_bound_composed_cal()
     {
         var calibration = new FakeMapCalibrationService();
-        calibration.CalibratedAreas.Add("A");
-        var zoomsSeenByProjector = new List<double>();
-        calibration.Projector = (_, world, zoom) =>
-        {
-            zoomsSeenByProjector.Add(zoom);
-            return new OverlayPixel(world.X, world.Z);
-        };
-        var areaState = new StubAreaState { CurrentArea = "A" };
+        calibration.CalibratedAreas.Add("Map_A");
+        // Scale=10, CalibrationZoom=1.0 → ToOverlay output is 10 * (currentZoom/1.0) * world.
+        // Different zooms produce observably different pixels.
+        calibration.OverlayCalForScene = _ =>
+            new WorldToOverlayCalibration(
+                OriginX: 0, OriginY: 0, Scale: 10.0,
+                RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0);
 
-        // Mutable zoom source so we can change it between ticks.
+        var areaState = new StubAreaState { CurrentArea = "Map_A" };
         var zoom = new MutableZoomSource(1.5);
         var service = BuildService(calibration, areaState, zoom);
 
+        var projectedPoints = new List<OverlayPixel?>();
         using var h = ((IOverlayWindow)service).RegisterScene(ctx =>
         {
-            // Two projection calls per tick to exercise multiple Project()
-            // invocations on the same context.
-            ctx.Project(10, 20);
-            ctx.Project(30, 40);
+            projectedPoints.Add(ctx.Project(10, 20));
         });
 
-        service.DriveSceneForTest(null!, null!, "A", 1.5);
+        service.DriveSceneForTest(null!, null!, "Map_A", 1.5);
+        var firstAtZoom1_5 = projectedPoints[^1];
 
-        zoomsSeenByProjector.Should().Equal(new[] { 1.5, 1.5 },
-            because: "the scene context must pass the per-tick snapshot of IOverlayZoomSource " +
-            "through to IMapCalibrationService.WorldToOverlay on every Project() call — " +
-            "if this regresses to 1.0, the hardcoded zoom from PR #863 is back and " +
-            "pins drift whenever the user has the in-game zoom slider off 1.0.");
-
-        // Flip the zoom and drive again — next tick must see the new value.
         zoom.CurrentZoom = 0.75;
-        service.DriveSceneForTest(null!, null!, "A", 0.75);
-        zoomsSeenByProjector.Should().Equal(new[] { 1.5, 1.5, 0.75, 0.75 },
-            because: "zoom changes between ticks must propagate to Project() — a stale snapshot " +
-            "captured at scene-context construction would freeze pins at the old zoom.");
+        service.DriveSceneForTest(null!, null!, "Map_A", 0.75);
+        var secondAtZoom0_75 = projectedPoints[^1];
+
+        firstAtZoom1_5.Should().NotBe(secondAtZoom0_75,
+            because: "Project must pass the per-tick live zoom into the bound " +
+            "WorldToOverlayCalibration.ToOverlay call. If this regresses to a hardcoded " +
+            "zoom (or the bound cal's CalibrationZoom only), pins drift whenever the " +
+            "in-game zoom slider is off the calibration zoom. mithril#1081 moved the " +
+            "seam from IMapCalibrationService.WorldToOverlay to OverlaySceneContext's " +
+            "bound _composedCal.ToOverlay call, but the live-zoom invariant from PR #863 remains.");
     }
 
     [Fact]
@@ -209,30 +226,34 @@ public sealed class OverlaySceneHookTests
         // world-projecting drawer can call Project() with no calibration —
         // it must return null instead of fabricating a pixel rather than
         // relying on a loop-level gate to keep it from ever being reached.
-        var calibration = new FakeMapCalibrationService(); // nothing calibrated
-        var areaState = new StubAreaState { CurrentArea = "AreaUncalibrated" };
+        //
+        // mithril#1081 Task 11: Project() uses _composedCal?.ToOverlay(…) on
+        // the bound composed cal. To get null out of Project() we need a null
+        // composed cal — i.e. GetOverlayCalibration returns null AND
+        // GetTextureCalibration returns null (no texture-frame record either).
+        // Use OverlayCalForScene = _ => null to force the null-cal path while
+        // still having IsCalibrated = true so DriveSceneForTest runs drawers.
+        var calibration = new FakeMapCalibrationService();
+        calibration.CalibratedAreas.Add("A"); // IsCalibrated = true so drawers fire
+        calibration.OverlayCalForScene = _ => null; // no overlay-frame cal
+        // TextureCalForScene is null by default (no hook) → no texture-frame cal
+        // → ResolveComposedOverlayCalibration returns (null, None)
+        var areaState = new StubAreaState { CurrentArea = "A" };
         var service = BuildService(calibration, areaState, new FixedOverlayZoomSource(1.0));
-
-        // Capture the context from a calibrated-area scene tick, then call
-        // Project against the uncalibrated area. Use a calibrated area key
-        // to get past the gate during DriveSceneForTest, then verify Project
-        // returns null for an out-of-range/uncalibrated lookup.
-        calibration.CalibratedAreas.Add("A");
-        areaState.CurrentArea = "A";
 
         IOverlaySceneContext? ctx = null;
         using var h = ((IOverlayWindow)service).RegisterScene(c => ctx = c);
-        // Configure the projector to return null — simulates an
-        // out-of-range world coord on a calibrated area.
-        calibration.Projector = (_, _, _) => null;
 
         service.DriveSceneForTest(null!, null!, "A", 1.0);
 
         ctx.Should().NotBeNull();
         var px = ctx!.Project(10, 20);
         px.Should().BeNull(
-            "Project must propagate WorldToOverlay's null return — a fabricated pixel " +
-            "would silently land the marker at (0,0) or similar nonsense.");
+            "Project must return null when the composed cal is null (no usable calibration " +
+            "this frame) — a fabricated pixel would silently land the marker at (0,0) or " +
+            "similar nonsense. mithril#1081: the seam moved from WorldToOverlay to " +
+            "OverlaySceneContext._composedCal?.ToOverlay; the null path is driven by " +
+            "OverlayCalForScene = _ => null with no texture-frame record.");
     }
 
     /// <summary>Review iteration-1 B1: a throwing scene drawer must not
@@ -320,6 +341,61 @@ public sealed class OverlaySceneHookTests
         errorEntries.Should().Contain(e => ReferenceEquals(e.Exception, raised),
             "the original exception instance must be attached to the log entry, not just stringified — " +
             "the stack trace is the only thing that lets the user (or maintainer) find the bug.");
+    }
+
+    /// <summary>
+    /// mithril#1081 Task 11 — texture-frame composition integration fact.
+    /// <para>Skipped because <see cref="OverlayWindowService.DriveSceneForTest"/>
+    /// doesn't realize the overlay surface — <c>_window</c> is null in tests, so
+    /// <c>ResolveOverlaySurfaceSize</c> returns (0,0), and F2 in
+    /// <c>ResolveComposedOverlayCalibration</c> short-circuits to
+    /// <c>CalPath.None</c> before the texture-frame path can be exercised.
+    /// The decision-table coverage for the composition path lives in
+    /// <see cref="ResolveComposedOverlayCalibrationTests"/> (Task 8), which
+    /// exercises the logic directly without a live surface. That is the
+    /// substantive net; this test would be a duplicate of its integration seam
+    /// rather than an independent check.</para>
+    /// </summary>
+    [Fact(Skip =
+        "DriveSceneForTest doesn't realize the overlay surface; composed-from-texture " +
+        "path is exercised through ResolveComposedOverlayCalibrationTests (Task 8) " +
+        "which covers the decision table without a live surface.")]
+    public void Project_composes_texture_frame_when_only_AutoCal_record_exists()
+    {
+        var calibration = new FakeMapCalibrationService();
+        calibration.CalibratedAreas.Add("Map_A");
+        calibration.OverlayCalForScene = _ => null; // no overlay-frame record
+        calibration.TextureCalForScene = _ =>
+            new WorldToTextureCalibration(
+                OriginX: 0, OriginY: 0, Scale: 1.0,
+                RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0)
+            {
+                PixelSha256 = "test-sha",
+            };
+
+        var stubDims = new StubMapTextureDimensions((1000, 1000));
+        var areaState = new StubAreaState { CurrentArea = "Map_A" };
+        var service = BuildService(calibration, areaState,
+            new FixedOverlayZoomSource(1.0), dims: stubDims);
+
+        var projected = new List<OverlayPixel?>();
+        using var h = ((IOverlayWindow)service).RegisterScene(ctx =>
+        {
+            projected.Add(ctx.Project(100, 200));
+        });
+
+        service.DriveSceneForTest(null!, null!, "Map_A", 1.0);
+
+        projected.Single().Should().NotBeNull(
+            because: "Project must compose the texture-frame record onto the overlay " +
+            "surface via WorldToTextureCalibration.ProjectThroughOverlay with dims " +
+            "from IMapTextureDimensions. A null return here means #1081's composition " +
+            "path is broken or the overlay-surface size lookup returned 0.");
+    }
+
+    private sealed class StubMapTextureDimensions((int W, int H)? result) : IMapTextureDimensions
+    {
+        public (int Width, int Height)? TryGetSizeBySha(string? sha) => result;
     }
 
     private sealed class MutableZoomSource : IOverlayZoomSource

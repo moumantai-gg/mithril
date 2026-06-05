@@ -14,6 +14,10 @@
          BundledBaselineLoader + UserRefinementStore + SceneAssetCache pieces
          to verify the cascade end-to-end without bootstrapping a host. -->
     <InternalsVisibleTo Include="Legolas.Tests" />
+    <!-- mithril#1081: CanonicalAssetHashesLoader (internal) is consumed by
+         CanonicalAssetHashGate in Detection. The loader lives in core so it
+         can resolve the embedded resource from the correct assembly. -->
+    <InternalsVisibleTo Include="Mithril.MapCalibration.Detection" />
   </ItemGroup>
   <ItemGroup>
     <!-- Deliberately no ProjectReference to Mithril.Shared: this assembly is

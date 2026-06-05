@@ -9,7 +9,8 @@
       "originY": 2271.6816745475235,
       "referenceCount": 8,
       "residualPixels": 0.3030622255943075,
-      "source": "BundledBaseline"
+      "source": "BundledBaseline",
+      "pixelSha256": "c5c7143d0da639ecb9d4ab87d4b55948960ae2d396201d1489fe37b01bbdaea9"
     },
     "Map_AreaEltibule": {
       "scale": 0.7632337115580504,
@@ -18,7 +19,8 @@
       "originY": -202.47314358570964,
       "referenceCount": 5,
       "residualPixels": 0.650247611982931,
-      "source": "BundledBaseline"
+      "source": "BundledBaseline",
+      "pixelSha256": "c88c669d78af0d3b0017ed40378049ad0b3c8eb8f48ecaaf6189ce7e737b176a"
     },
     "Map_AreaKurMountains": {
       "scale": 0.5686213259799479,
@@ -27,7 +29,8 @@
       "originY": -141.52793011390565,
       "referenceCount": 8,
       "residualPixels": 0.7317759321517253,
-      "source": "BundledBaseline"
+      "source": "BundledBaseline",
+      "pixelSha256": "7a0da494843da414d196c9aa8259777773bdc484559023df3092460512d4ca55"
     }
   }
 }

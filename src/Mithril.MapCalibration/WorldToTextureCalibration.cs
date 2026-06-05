@@ -22,6 +22,15 @@ public readonly record struct WorldToTextureCalibration(
 {
     public int SchemaVersion { get; init; } = 1;
 
+    /// <summary>
+    /// SHA-256 (lowercase hex) of the base texture this calibration was solved
+    /// against. Mirrors <see cref="AreaCalibration.PixelSha256"/> — see that
+    /// doc. Read by the Legolas overlay (mithril#1081) to look up the
+    /// texture's native pixel dimensions via <see cref="IMapTextureDimensions"/>
+    /// when composing through <see cref="ProjectThroughOverlay(MapRect)"/>.
+    /// </summary>
+    public string? PixelSha256 { get; init; }
+
     public TexturePixel ToTexture(WorldCoord world, double currentZoom)
     {
         var (x, y) = AreaProjectionCore.Project(

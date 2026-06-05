@@ -97,4 +97,21 @@ public class WorldToTextureCalibrationTests
         viaBridge.X.Should().BeApproximately(expectedOverlay.X, 1e-9);
         viaBridge.Y.Should().BeApproximately(expectedOverlay.Y, 1e-9);
     }
+
+    [Fact]
+    public void PixelSha256_CarryThroughTheStruct()
+    {
+        // mithril#1081 — the texture identity travels with the typed projection
+        // struct, not just the AreaCalibration record. The overlay's per-frame
+        // compose reads the struct (via IMapCalibrationService.GetTextureCalibration)
+        // and uses its PixelSha256 to look up dims for ProjectThroughOverlay.
+        var cal = new WorldToTextureCalibration(
+            OriginX: 0, OriginY: 0, Scale: 1.0,
+            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0)
+        {
+            PixelSha256 = "abc123",
+        };
+
+        cal.PixelSha256.Should().Be("abc123");
+    }
 }

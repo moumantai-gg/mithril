@@ -1,4 +1,402 @@
 {
-  "schemaVersion": 1,
-  "byPgVersion": {}
+  "schemaVersion": 2,
+  "byPgVersion": {
+    "6000.3.11f1 (3000ef702840)": {
+      "Map_AnimalNexus": {
+        "sha": "6b9090e256e09ba18e8091d2c432feaa95a4d7b09d4f1eb4165f297a953f0a25",
+        "width": 512,
+        "height": 419
+      },
+      "Map_AreaCasino": {
+        "sha": "20de457dc78165fd98be5074d73a1c1684ce2f514fec234cb4893bf1a3a77b1a",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_AreaDesert1": {
+        "sha": "13fb8c910443787810d1424f02f095580c9a7e70c1ec714d5c8cee5848b32de9",
+        "width": 2048,
+        "height": 2048
+      },
+      "Map_AreaEltibule": {
+        "sha": "c88c669d78af0d3b0017ed40378049ad0b3c8eb8f48ecaaf6189ce7e737b176a",
+        "width": 2048,
+        "height": 2033
+      },
+      "Map_AreaFaeRealm1": {
+        "sha": "78bdf38ad25746be3ddb2e966f330e9e76f18611f313b33179373f54ebed5e70",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_AreaGazluk": {
+        "sha": "bd257b8928d54f21942665bcfafa45c8638480a0de9924b7f0ab65d02559bea3",
+        "width": 2037,
+        "height": 2048
+      },
+      "Map_AreaKurMountains": {
+        "sha": "7a0da494843da414d196c9aa8259777773bdc484559023df3092460512d4ca55",
+        "width": 2048,
+        "height": 2048
+      },
+      "Map_AreaNewbieIsland": {
+        "sha": "0eb4d7dd262220b37f3f739da0ae7da9b4b9cc2d8579bfca2f88c827e759ab8f",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_AreaRahu": {
+        "sha": "29598343f207a8f6027ee9d526c2371562608f4142eb7841c037895a036504ca",
+        "width": 1720,
+        "height": 1772
+      },
+      "Map_AreaSerbule": {
+        "sha": "c5c7143d0da639ecb9d4ab87d4b55948960ae2d396201d1489fe37b01bbdaea9",
+        "width": 1961,
+        "height": 2048
+      },
+      "Map_AreaSerbule2": {
+        "sha": "743b9315835bea547fb97a110cc9c14d1c16bda30906e428fb5ed5bb37c8a563",
+        "width": 2048,
+        "height": 1988
+      },
+      "Map_AreaStatehelm": {
+        "sha": "55932f23e95bd8c1e79ce4d3ab24fc7df56341f0a71110419c29c41c8f7297e9",
+        "width": 1150,
+        "height": 1150
+      },
+      "Map_AreaSunVale": {
+        "sha": "fc33f65f2448107e6bed970868e2e0c9e6a6bde759f3ab6ce6bf0fcbe84e4854",
+        "width": 2048,
+        "height": 2048
+      },
+      "Map_BoardedUpBasement": {
+        "sha": "5e5d3111c68de950d04b6b750b23bdb6270fee3920d691f13c7bd43ecccce06c",
+        "width": 205,
+        "height": 512
+      },
+      "Map_Borghild": {
+        "sha": "4369affe149ce42a9825386771e516a8add8730df0c6428b631819e5d322a9fc",
+        "width": 395,
+        "height": 512
+      },
+      "Map_BrainBugCave": {
+        "sha": "b752defeb4e6f94197f6ca5933df965543d3186bfb2bca7fcc5de1117fb7fccf",
+        "width": 512,
+        "height": 307
+      },
+      "Map_CarpalTunnels": {
+        "sha": "0ddb16ccd65c184ff3f1e3a24309803671c65b3a8e5ceaaa16a269e8bcebe084",
+        "width": 452,
+        "height": 512
+      },
+      "Map_CrystalCavern": {
+        "sha": "c72479d64ba84caa7a3d557db4018f99828516fce6b4fc72dfc971c44bfc79cc",
+        "width": 236,
+        "height": 512
+      },
+      "Map_DarkChapel": {
+        "sha": "1db036e95fb3e20fff1cc6700423364a60abc25da882c1b8e8c43304f6197d57",
+        "width": 590,
+        "height": 1024
+      },
+      "Map_EltibuleCrypt": {
+        "sha": "1161888649ca872a142059a104741e77e4895ced7cfb1a263a5668d3c12a4b6e",
+        "width": 256,
+        "height": 205
+      },
+      "Map_GoblinDungeon": {
+        "sha": "9f5baf35ef7bc694ae3f203d8a2d31e3c0597ec274a7f182c659901a7ea858b3",
+        "width": 398,
+        "height": 1024
+      },
+      "Map_GoblinDungeon_TopFloor": {
+        "sha": "b3503ce61374703ee2af576608548bf89553690d614ec9c5627341dd0c1ed87b",
+        "width": 800,
+        "height": 800
+      },
+      "Map_HogansKeepBasement": {
+        "sha": "932a778faa2be0e632db55ff383d93a2a37ce543bb3a1f6d23d2da17aca0334e",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_KhyruleksCrypt": {
+        "sha": "e3e0eb2fd736fe89be7d442310c3572941c6451e44a8d520a30108961eddd4b8",
+        "width": 525,
+        "height": 1024
+      },
+      "Map_KurCourtyard": {
+        "sha": "03098f771a5a3bf74358d46afb78b06c6a1deb9f2fbfbde165d7c20910e84eac",
+        "width": 1024,
+        "height": 507
+      },
+      "Map_KurTower": {
+        "sha": "85fe1bb9adfb8189f7d32c4ee35f8e37a3f95a72f0916d19b502b770d9ab75bb",
+        "width": 569,
+        "height": 1024
+      },
+      "Map_Labyrinth": {
+        "sha": "c49641927315c248e3e63280a5220419b7adb9f27662c1e0a2ebc28aa82b80ea",
+        "width": 1800,
+        "height": 1800
+      },
+      "Map_MyconianCave": {
+        "sha": "0e433dba04ab23ae79b165a1d4a99caa9a240ae03d844941f51564b0b49f5529",
+        "width": 541,
+        "height": 1024
+      },
+      "Map_NewPrestonbule": {
+        "sha": "e95a4d325c8ccced3cbcb45f67e0575e6487d9999b8b32dbe94ff4dbfbe0778a",
+        "width": 512,
+        "height": 512
+      },
+      "Map_NewbieIslandDungeon": {
+        "sha": "fc3a7b08aabc107200c47d56e133a42b262327c090ae7bd18f0b902dd574f5b5",
+        "width": 512,
+        "height": 512
+      },
+      "Map_NoNameCave": {
+        "sha": "3b4a753a0217bd6a0f67e666bd02434c14cd3e241d4dc98f412c47d3735c2a67",
+        "width": 358,
+        "height": 512
+      },
+      "Map_Povus": {
+        "sha": "bbe5a0709d2a423bc8dc9f3f609eca0611f7a8f89bcda879f12eadb5c3afbfb6",
+        "width": 1890,
+        "height": 2048
+      },
+      "Map_PovusCaves_AktaariCave": {
+        "sha": "ba3a67feffac9ba8c47141380aee8941814fb927290306103fb5c3b72201582d",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_PovusCaves_ElvenJudgement": {
+        "sha": "7f6ee2e7a2b1c2fe7b19bed5e94d9d02eccebe50db4d3e641ba2df460f63d3c5",
+        "width": 914,
+        "height": 1024
+      },
+      "Map_PovusCaves_ErrrukasCave": {
+        "sha": "f54ce9534e36851ce1d232c3d9679e64bbaf1477e296e990e5112e93c32838ca",
+        "width": 1500,
+        "height": 1500
+      },
+      "Map_PovusCaves_ForthragarianCaves": {
+        "sha": "1f640d5d87f591163b4c297de32e8068b2ab9655eb958cee84a79e637a6940f8",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_PovusCaves_Level1": {
+        "sha": "663a29e90391613aca637d1d557dab9c31ef9d9ded2b77cc5dc686ea500a415b",
+        "width": 2000,
+        "height": 1720
+      },
+      "Map_PovusCaves_Level2": {
+        "sha": "7102121a71d78c73831ba9a69589fcbca77541d67683ba7b56f12c01e69aa440",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_PovusCaves_Level3": {
+        "sha": "9f0d7d455842004598f3b837fc300055d917bef21a3c1cb5ed6db8f46a448bac",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_PovusCaves_Level4": {
+        "sha": "193bb672a6a47ad88aba1a47cb533d130a16aad9e94b783ea1d8b8a11f3a997e",
+        "width": 1500,
+        "height": 700
+      },
+      "Map_PovusCaves_NightmareCaves": {
+        "sha": "356a8d4573db3dfc6eca87a0b1d362c56c2bd0ecf75efded1d7cf59144e8d1ab",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_PuckHalls": {
+        "sha": "e52849ccdab27ed57775e2e437ce82e497d198a8a5f876b898c43ecdced0fec1",
+        "width": 439,
+        "height": 512
+      },
+      "Map_PvPArena": {
+        "sha": "f59d355cc84766ebd1ce1f5fab6b286b72a262b1c4b0eb8790ccd9240fd415d4",
+        "width": 512,
+        "height": 455
+      },
+      "Map_RahuSewer": {
+        "sha": "61492d8244cdc1b49a98fb4fa009ae60f82d1e9d685f240289f5d958730c8914",
+        "width": 2048,
+        "height": 2048
+      },
+      "Map_RanalonBase": {
+        "sha": "0937078beb8af7254fcebe511123a00414f5f572f2de5d682cc72eb2056a2e55",
+        "width": 1024,
+        "height": 838
+      },
+      "Map_SerbuleSewer": {
+        "sha": "2bda551638e51df57efd5ab5298fa000f94c8e2e5e5f6238e8a89ba14175ecba",
+        "width": 645,
+        "height": 1024
+      },
+      "Map_SnowbloodCave": {
+        "sha": "a764076c3c6da309e1ffda7592b7b567b1c263d52b4efab622a8024dafa4327f",
+        "width": 512,
+        "height": 427
+      },
+      "Map_SpiderCave": {
+        "sha": "c8e5add5c416a5eb5c4aa7c25e135f26bd6dbcfa5f662221e4772146abb37cdf",
+        "width": 512,
+        "height": 512
+      },
+      "Map_StatehelmCaves_SafeHouseA": {
+        "sha": "c33972711f94a7c658080d31f6bc6cea18b033ea9ab609c9266854db6d525b2c",
+        "width": 560,
+        "height": 560
+      },
+      "Map_SunValeCave1": {
+        "sha": "65d4806e8f9235d805626d8dc1f2d93db51261d9cd28bd72531cce34d06410ca",
+        "width": 512,
+        "height": 512
+      },
+      "Map_SunValeCave2": {
+        "sha": "4cc8508340a796eca24695bd23fde5cfff56a8e0f5fa7ac9d31671f30725bf75",
+        "width": 512,
+        "height": 512
+      },
+      "Map_SunValeCave3": {
+        "sha": "5318b672c029ee67b6e6df19c5130ec41026fd207f164708fdef0acaf1401b6b",
+        "width": 2000,
+        "height": 2000
+      },
+      "Map_TheWintertide": {
+        "sha": "8e554eb632b3e4ffcbea5678ea6e0db32eccd1c4f1c6371178ef61f850a6126f",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_TowerView": {
+        "sha": "0b3d6e7cf45ed95a2b7e692fd68fb279ec8434c8e7c7bb5876924996fc0cd8a4",
+        "width": 256,
+        "height": 512
+      },
+      "Map_Vidaria": {
+        "sha": "c809afe14817cd7f8f4d29910e0313e0fbdab4fe7d973afbdfdb2b85da4d03c5",
+        "width": 1890,
+        "height": 2048
+      },
+      "Map_WarCache_Drug-1": {
+        "sha": "cdb4529877b275082f344a7c43a75702a4c6e223ec43fb2dc9231c3c73776421",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Drug-2": {
+        "sha": "02514fdd86ffe719582f30a351df7175bbad633ca90621f28d59ab7e6803e535",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Drug-3": {
+        "sha": "e4cfe181cce708314f284b84c159bafae2582a74c564a2af347dce9f3c643a59",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Drug-4": {
+        "sha": "0559501636205989853625536b509ea6ac3687fe95167de78fc39bbc8ac1eaf2",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Flood-1": {
+        "sha": "90e1d4fa1c1fe7bf7b6f069e38e48b982ffa055f144e5ebf6247cc1abdd08511",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Flood-2A": {
+        "sha": "34efa8a18abd837e07b3f9341d2891f2201e500165f0245d7e89de7fe8a91ebc",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Flood-2B": {
+        "sha": "16de9f9bfd07ee2d346c387f14a26766351fa2f7e74e3c98bf4274f4b2db7a24",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Flood-2C": {
+        "sha": "dc95c76c6a73fae107e7f5580924dbc02342c068d4d86159021ed2f99a4e6478",
+        "width": 1000,
+        "height": 1000
+      },
+      "Map_WarCache_Mummy-1": {
+        "sha": "5f9155d15a1e75cd00c3a6ae84d902d042ddf1ec6b5c7c36de90b891e355b17a",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Mummy-2": {
+        "sha": "f99abee13a6bab4f4dabff891bc1c001463df1d6e0cdbb85f74e4edd294e8d4a",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Mummy-3": {
+        "sha": "5a6efabf032a58f339a4e44cf2ee1e5876c2d9b6deef7d581ee012cfd8952e5f",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Scorp-1": {
+        "sha": "056a6d671c19ff3de22c4695d7a60153122e9ead727a7737fcf67a8adfe7344f",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Scorp-2": {
+        "sha": "23f232d20e93197c72ba48f8a977c4cd26557635a71c91671a59977566accb81",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Scorp-3": {
+        "sha": "bd6805be66ce1817d6f042a0d4a5521da557884251baed2d5e98f9b24d2c2a81",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Scorp-4": {
+        "sha": "6837ee4a5a9d906e81fd3f7658352111007331e93902a0c1b388363e3ee38945",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Torn-1": {
+        "sha": "72665b57699b8af9bf87e94d7e6a7416ee2f591dc60e10ce716b52b7d9b5fff6",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Torn-2": {
+        "sha": "c131379463b14b7081e9cefcb44358fc1997a9d9ceba336f73e49be39a2f94ff",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Torn-3": {
+        "sha": "d4897596f61f70c1ab454b08f2e96fdc30aea440293175bfb94b10603d54350c",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Torn-4": {
+        "sha": "2af12ec1cf39ae4aab2fdcb8932933206f2faf225115349b21555f1a887ab94d",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WardenCave": {
+        "sha": "c6dc01ca79d47f261b504b6be76036c71d50f490b14bb229c4e58aee17f23356",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_WindyViewCave": {
+        "sha": "ab676a32141ef5c4f4eccb54dc6f414a3a24957b12185112ead197eb584ba06d",
+        "width": 1024,
+        "height": 646
+      },
+      "Map_WinterNexus": {
+        "sha": "ff3e789b9d3cb47e707ecfd1eebda876d314733ca7b8ba20a45b0446c4fc7e15",
+        "width": 512,
+        "height": 448
+      },
+      "Map_WolfCave": {
+        "sha": "41c7180cfe2709dc2fe6da33d65cfe2fdba77ca7e9ecfd83b27788409c3fa0df",
+        "width": 819,
+        "height": 1024
+      },
+      "Map_YetiCave": {
+        "sha": "4c39e0fbccced50de2bd0dc914979996f03374c050789cffceb6c51cc6a2a6fd",
+        "width": 333,
+        "height": 1024
+      }
+    }
+  }
 }

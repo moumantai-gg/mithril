@@ -98,8 +98,15 @@ public sealed class LegolasCalibrationMarkerSnapshotTests
         var snapshot = registry.CurrentAreaMarkers;
         snapshot.Should().HaveCount(1, "the registered marker must reach the snapshot.");
 
+        // mithril#1081: ProjectMarkers now takes a WorldToOverlayCalibration?
+        // directly. MirrorNorth=true reproduces the old IdentityCalibrationService
+        // mapping (world.X, world.Z) → OverlayPixel(world.X, world.Z) so
+        // byte-parity baselines are preserved.
+        var composed = new WorldToOverlayCalibration(
+            OriginX: 0, OriginY: 0, Scale: 1.0,
+            RotationRadians: 0, MirrorNorth: true, CalibrationZoom: 1.0);
         var projected = OverlayWindowService.ProjectMarkers(
-            snapshot, new MapSceneRef("AreaTest", null, "Map_AreaTest"), new IdentityCalibrationService(), currentZoom: 1.0);
+            snapshot, composed, currentZoom: 1.0);
         projected.Should().HaveCount(1, "the identity calibration projects the only marker.");
 
         var renderer = new MarkerSceneRenderer();
@@ -160,25 +167,4 @@ public sealed class LegolasCalibrationMarkerSnapshotTests
             path);
     }
 
-    private sealed class IdentityCalibrationService : IMapCalibrationService
-    {
-        public bool IsCalibrated(MapSceneRef scene) => true;
-        public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
-        public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) => null;
-        public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom)
-            => new OverlayPixel(world.X, world.Z);
-        public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom)
-            => new WorldCoord(pixel.X, 0, pixel.Y);
-        public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) => null;
-        public WorldToOverlayCalibration? GetOverlayCalibration(MapSceneRef scene) => null;
-        public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
-        public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations
-            => new Dictionary<string, AreaCalibration>();
-        public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
-        public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration) { }
-        public void ClearUserRefinement(MapSceneRef scene) { }
-        public void DeleteUserRefinement(MapSceneRef scene, CalibrationFrame frame) =>
-            throw new NotSupportedException("Test fake does not implement DeleteUserRefinement.");
-        public event EventHandler<MapSceneRef>? Changed { add { } remove { } }
-    }
 }

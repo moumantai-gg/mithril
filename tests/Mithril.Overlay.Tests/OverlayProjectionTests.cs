@@ -9,9 +9,16 @@ namespace Mithril.Overlay.Tests;
 /// <summary>
 /// Tests for the pure projection helper inside
 /// <see cref="OverlayWindowService"/>. Carved out as a static so it can be
-/// exercised without a D3D surface — the per-tick projection logic
-/// (call <see cref="IMapCalibrationService.WorldToOverlay"/>, skip nulls,
-/// keep style references) is unit-testable in isolation.
+/// exercised without a D3D surface — the per-tick projection logic (apply the
+/// bound <see cref="WorldToOverlayCalibration"/>, skip frame when null) is
+/// unit-testable in isolation.
+///
+/// mithril#1081: <c>ProjectMarkers</c> was reshaped to take a
+/// <see cref="WorldToOverlayCalibration?"/> directly instead of a
+/// <c>MapSceneRef</c> + <c>IMapCalibrationService</c>. The composed cal is
+/// resolved once per frame by <c>ResolveComposedOverlayCalibration</c>;
+/// this helper has no dependency on the service. Tests below pass a concrete
+/// cal (or null) instead of a fake service.
 /// </summary>
 public sealed class OverlayProjectionTests
 {
@@ -20,12 +27,25 @@ public sealed class OverlayProjectionTests
     private static MarkerSnapshot Snap(double x, double z, IMarkerStyle style)
         => new(new MarkerHandle(Guid.NewGuid()), new WorldCoord(x, 0, z), style);
 
+    /// <summary>
+    /// Identity cal: OriginX=0, OriginY=0, Scale=1.0, RotationRadians=0,
+    /// MirrorNorth=false, CalibrationZoom=1.0. At currentZoom=1.0:
+    /// effScale=1.0 → OverlayPixel(world.X, -world.Z).
+    /// </summary>
+    private static WorldToOverlayCalibration IdentityCal() =>
+        new(OriginX: 0, OriginY: 0, Scale: 1.0,
+            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0);
+
     [Fact]
-    public void Projects_each_marker_through_WorldToOverlay_when_area_is_calibrated()
+    public void Projects_each_marker_through_composed_cal()
     {
-        var calibration = new FakeMapCalibrationService();
-        calibration.CalibratedAreas.Add("A");
-        calibration.Projector = (_, world, _) => (OverlayPixel?)new OverlayPixel(world.X * 2, world.Z * 3);
+        // Scale=2.0, no rotation, no mirror. At currentZoom=1.0:
+        //   effScale = 2.0 * (1.0 / 1.0) = 2.0
+        //   OverlayPixel = (0 + 2*X, 0 - 2*Z)
+        // Snap(10, 20) → (20, -40); Snap(-5, 7) → (-10, -14)
+        var cal = new WorldToOverlayCalibration(
+            OriginX: 0, OriginY: 0, Scale: 2.0,
+            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0);
 
         var styleA = new TestStyle("a");
         var styleB = new TestStyle("b");
@@ -35,76 +55,64 @@ public sealed class OverlayProjectionTests
             Snap(-5.0, 7.0, styleB),
         };
 
-        var projected = OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("A", null, "A"), calibration, currentZoom: 1.0);
+        var projected = OverlayWindowService.ProjectMarkers(markers, cal, currentZoom: 1.0);
 
         projected.Should().HaveCount(2);
-        projected[0].Should().Be((new OverlayPixel(20, 60), (IMarkerStyle)styleA));
-        projected[1].Should().Be((new OverlayPixel(-10, 21), (IMarkerStyle)styleB));
+        projected[0].Should().Be((new OverlayPixel(20, -40), (IMarkerStyle)styleA));
+        projected[1].Should().Be((new OverlayPixel(-10, -14), (IMarkerStyle)styleB));
     }
 
     [Fact]
     public void Returns_empty_when_marker_list_is_empty()
     {
-        var calibration = new FakeMapCalibrationService();
-        calibration.CalibratedAreas.Add("A");
-
         OverlayWindowService
-            .ProjectMarkers(Array.Empty<MarkerSnapshot>(), new MapSceneRef("A", null, "A"), calibration, 1.0)
+            .ProjectMarkers(Array.Empty<MarkerSnapshot>(), IdentityCal(), 1.0)
             .Should().BeEmpty();
     }
 
     [Fact]
-    public void Skips_markers_whose_projection_returns_null()
+    public void Null_composedCal_yields_empty_projection_list()
     {
-        // Calibration says the area is calibrated, but the projector returns
-        // null for one specific marker — that marker is silently skipped,
-        // not dropped from the registry and not throwing.
-        var calibration = new FakeMapCalibrationService();
-        calibration.CalibratedAreas.Add("A");
-        calibration.Projector = (_, world, _) =>
-            world.X < 0 ? null : new OverlayPixel(world.X, world.Z);
-
+        // mithril#1081: a null composed cal (no usable calibration this frame —
+        // uncalibrated area, catalogue miss, null-sha, or surface unsized) must
+        // silently skip all markers. Per-scene miss telemetry fires at the
+        // OnSurfaceRender level, not here.
         var style = new TestStyle("s");
         var markers = new[]
         {
             Snap(1.0, 1.0, style),
-            Snap(-1.0, 1.0, style), // projector returns null
             Snap(2.0, 2.0, style),
         };
 
-        var projected = OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("A", null, "A"), calibration, 1.0);
-
-        projected.Should().HaveCount(2);
-        projected[0].Pixel.Should().Be(new OverlayPixel(1, 1));
-        projected[1].Pixel.Should().Be(new OverlayPixel(2, 2));
+        OverlayWindowService.ProjectMarkers(markers, composedCal: null, currentZoom: 1.0)
+            .Should().BeEmpty("null composed cal means no usable calibration this frame — all markers silently suppressed.");
     }
 
     [Fact]
     public void Uncalibrated_area_yields_an_empty_projection_list()
     {
-        var calibration = new FakeMapCalibrationService(); // nothing calibrated
+        // Passing null composedCal is the standard path for an uncalibrated area
+        // (ResolveComposedOverlayCalibration returns null when no calibration exists).
         var style = new TestStyle("s");
         var markers = new[]
         {
             Snap(1.0, 1.0, style),
         };
 
-        OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("AreaUncalibrated", null, "AreaUncalibrated"), calibration, 1.0)
+        OverlayWindowService.ProjectMarkers(markers, composedCal: null, currentZoom: 1.0)
             .Should().BeEmpty();
     }
 
     [Fact]
     public void Style_references_flow_through_projection_unmodified()
     {
-        var calibration = new FakeMapCalibrationService();
-        calibration.CalibratedAreas.Add("A");
         var style = new TestStyle("identity");
         var markers = new[]
         {
             Snap(0.0, 0.0, style),
         };
 
-        var projected = OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("A", null, "A"), calibration, 1.0);
+        var projected = OverlayWindowService.ProjectMarkers(markers, IdentityCal(), 1.0);
         projected.Single().Style.Should().BeSameAs(style);
     }
 }
