@@ -43,6 +43,22 @@ public static class MapCalibrationServiceCollectionExtensions
         services.AddSingleton<IMapCalibrationService>(sp =>
             Build(storageDirectory, sp.GetService<ILoggerFactory>()));
 
+        // mithril#1081 — content-addressed texture-dim resolver. Loads the same
+        // canonical-asset-hashes.json resource the hash gate reads, indexed by sha
+        // for O(1) lookup at the overlay render path.
+        services.AddSingleton<IMapTextureDimensions>(sp =>
+        {
+            var loggerFactory = sp.GetService<ILoggerFactory>();
+            var logger = loggerFactory?.CreateLogger("Mithril.MapCalibration.MapTextureDimensions");
+            var assembly = typeof(CatalogueMapTextureDimensions).Assembly;
+            using var stream = assembly.GetManifestResourceStream("Mithril.MapCalibration.BundledData.canonical-asset-hashes.json");
+            var catalogue = stream is not null
+                ? CanonicalAssetHashesLoader.TryLoad(stream, logger)
+                : null;
+            catalogue ??= new CanonicalAssetHashes(2, new Dictionary<string, Dictionary<string, CanonicalAssetHashEntry>>(StringComparer.Ordinal));
+            return new CatalogueMapTextureDimensions(catalogue);
+        });
+
         // Scene-asset cache (mithril#1041) — composite-key cache of observed /
         // seeded (ParentArea, SceneFriendlyName?) → MapAssetKey pairings. Cold-
         // start fallback for the resolution helper consumed by
