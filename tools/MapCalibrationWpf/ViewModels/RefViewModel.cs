@@ -13,12 +13,12 @@ public sealed partial class RefViewModel : ObservableObject
     public string Name { get; }
     public string Kind { get; }
     public WorldCoord World { get; }
-    public PixelPoint TexturePixel { get; }
+    public TexturePixel TexturePixel { get; }
 
     [ObservableProperty]
     private double? _residualPx;
 
-    public RefViewModel(string name, string kind, WorldCoord world, PixelPoint texturePixel)
+    public RefViewModel(string name, string kind, WorldCoord world, TexturePixel texturePixel)
     {
         Name = name;
         Kind = kind;
