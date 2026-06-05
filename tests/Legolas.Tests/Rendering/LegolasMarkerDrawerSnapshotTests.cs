@@ -118,9 +118,9 @@ public sealed class LegolasMarkerDrawerSnapshotTests
         RunSnapshotComparison(
             fixtureName: "survey_default",
             scene: BuildSceneWithSinglePin(activeIndex: null, treatment: null),
-            markers: new (PixelPoint, IMarkerStyle)[]
+            markers: new (OverlayPixel, IMarkerStyle)[]
             {
-                (new PixelPoint(120, 120), new LegolasSurveyMarkerStyle(
+                (new OverlayPixel(120, 120), new LegolasSurveyMarkerStyle(
                     Outer: SurveyOuterStyle(),
                     Center: SurveyCenterStyle(),
                     OuterDiameter: 24.0,
@@ -144,9 +144,9 @@ public sealed class LegolasMarkerDrawerSnapshotTests
         RunSnapshotComparison(
             fixtureName: "survey_active_" + treatment.ToString().ToLowerInvariant(),
             scene: BuildSceneWithSinglePin(activeIndex: 0, treatment: spec),
-            markers: new (PixelPoint, IMarkerStyle)[]
+            markers: new (OverlayPixel, IMarkerStyle)[]
             {
-                (new PixelPoint(120, 120), new LegolasSurveyMarkerStyle(
+                (new OverlayPixel(120, 120), new LegolasSurveyMarkerStyle(
                     Outer: SurveyOuterStyle(),
                     Center: SurveyCenterStyle(),
                     OuterDiameter: 24.0,
@@ -172,9 +172,9 @@ public sealed class LegolasMarkerDrawerSnapshotTests
         RunSnapshotComparison(
             fixtureName: "motherlode_pin",
             scene: BuildSceneWithMotherlodePin(includeGuidance: false),
-            markers: new (PixelPoint, IMarkerStyle)[]
+            markers: new (OverlayPixel, IMarkerStyle)[]
             {
-                (new PixelPoint(140, 110), new LegolasMotherlodeMarkerStyle(
+                (new OverlayPixel(140, 110), new LegolasMotherlodeMarkerStyle(
                     Outer: SurveyOuterStyle(),
                     Center: SurveyCenterStyle(),
                     OuterDiameter: 30.0)),
@@ -187,9 +187,9 @@ public sealed class LegolasMarkerDrawerSnapshotTests
         RunSnapshotComparison(
             fixtureName: "motherlode_guidance",
             scene: BuildSceneWithMotherlodeGuidance(),
-            markers: new (PixelPoint, IMarkerStyle)[]
+            markers: new (OverlayPixel, IMarkerStyle)[]
             {
-                (new PixelPoint(120, 120),
+                (new OverlayPixel(120, 120),
                  new LegolasMotherlodeGuidanceMarkerStyle(RadiusPixels: 60.0, StrokeColor: GoldStroke)),
             });
     }
@@ -200,9 +200,9 @@ public sealed class LegolasMarkerDrawerSnapshotTests
         RunSnapshotComparison(
             fixtureName: "player_anchor",
             scene: BuildSceneWithPlayerAnchor(),
-            markers: new (PixelPoint, IMarkerStyle)[]
+            markers: new (OverlayPixel, IMarkerStyle)[]
             {
-                (new PixelPoint(120, 120), new LegolasPlayerMarkerStyle(
+                (new OverlayPixel(120, 120), new LegolasPlayerMarkerStyle(
                     Outer: PlayerOuterStyle(),
                     Center: PlayerCenterStyle())),
             });
@@ -245,14 +245,17 @@ public sealed class LegolasMarkerDrawerSnapshotTests
         var scene = BuildMultiPinSurveyScene(pinPixels, activeIndex: 2, treatment: spec);
 
         // Marker list mirrors that order. Two plain markers, then the
-        // active one with the treatment.
-        var markers = new List<(PixelPoint, IMarkerStyle)>
+        // active one with the treatment. The Mithril.Overlay-facing marker
+        // tuple is OverlayPixel (#1076) but PinScene's PixelPoint pixels are
+        // still the byte-parity reference — convert at the boundary so both
+        // sides receive the same coordinates.
+        var markers = new List<(OverlayPixel, IMarkerStyle)>
         {
-            (pinPixels[0], new LegolasSurveyMarkerStyle(
+            (new OverlayPixel(pinPixels[0].X, pinPixels[0].Y), new LegolasSurveyMarkerStyle(
                 SurveyOuterStyle(), SurveyCenterStyle(), 24.0, ActiveTreatment: null)),
-            (pinPixels[1], new LegolasSurveyMarkerStyle(
+            (new OverlayPixel(pinPixels[1].X, pinPixels[1].Y), new LegolasSurveyMarkerStyle(
                 SurveyOuterStyle(), SurveyCenterStyle(), 24.0, ActiveTreatment: null)),
-            (pinPixels[2], new LegolasSurveyMarkerStyle(
+            (new OverlayPixel(pinPixels[2].X, pinPixels[2].Y), new LegolasSurveyMarkerStyle(
                 SurveyOuterStyle(), SurveyCenterStyle(), 24.0, ActiveTreatment: spec)),
         };
 
@@ -383,7 +386,7 @@ public sealed class LegolasMarkerDrawerSnapshotTests
     private static void RunSnapshotComparison(
         string fixtureName,
         PinScene scene,
-        IReadOnlyList<(PixelPoint, IMarkerStyle)> markers)
+        IReadOnlyList<(OverlayPixel, IMarkerStyle)> markers)
     {
         // R-C1 (review-iteration-2): real Skip, not a failed assertion. If
         // no D3D11 driver is available the runner reports "Skipped: <reason>"
@@ -496,7 +499,7 @@ public sealed class LegolasMarkerDrawerSnapshotTests
 
     private static byte[] RenderNewPipelinePng(
         HeadlessD2DRenderTarget rt,
-        IReadOnlyList<(PixelPoint, IMarkerStyle)> markers)
+        IReadOnlyList<(OverlayPixel, IMarkerStyle)> markers)
     {
         var sceneRenderer = new MarkerSceneRenderer();
         LegolasOverlayDrawerRegistrations.RegisterAll(sceneRenderer);

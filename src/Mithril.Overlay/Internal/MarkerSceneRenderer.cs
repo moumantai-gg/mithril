@@ -43,7 +43,7 @@ namespace Mithril.Overlay.Internal;
 internal sealed class MarkerSceneRenderer
 {
     /// <summary>Pure drawer: paint one marker at a pixel into the target.</summary>
-    public delegate void MarkerDrawer(IMarkerStyle style, PixelPoint pixel, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes);
+    public delegate void MarkerDrawer(IMarkerStyle style, OverlayPixel pixel, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes);
 
     private readonly ConcurrentDictionary<Type, MarkerDrawer> _drawers = new();
     private readonly ConcurrentDictionary<Type, byte> _missingDrawerLogged = new();
@@ -57,7 +57,7 @@ internal sealed class MarkerSceneRenderer
     /// <summary>Register a drawer for a concrete <see cref="IMarkerStyle"/>
     /// type. Subsequent registrations for the same type replace the
     /// previous drawer. Safe to call from any thread.</summary>
-    public void RegisterDrawer<TStyle>(Action<TStyle, PixelPoint, ID2D1RenderTarget, ID2D1Factory, D2DBrushCache> drawer)
+    public void RegisterDrawer<TStyle>(Action<TStyle, OverlayPixel, ID2D1RenderTarget, ID2D1Factory, D2DBrushCache> drawer)
         where TStyle : IMarkerStyle
     {
         ArgumentNullException.ThrowIfNull(drawer);
@@ -97,7 +97,7 @@ internal sealed class MarkerSceneRenderer
     /// skipped (with a trace log on first encounter per type, plus a
     /// <c>DispatchMisses</c> meter increment per skipped marker).</summary>
     public void Render(
-        IReadOnlyList<(PixelPoint Pixel, IMarkerStyle Style)> markers,
+        IReadOnlyList<(OverlayPixel Pixel, IMarkerStyle Style)> markers,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes)

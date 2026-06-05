@@ -19,13 +19,15 @@ internal static class LegolasPlayerMarkerDrawer
 {
     public static void Draw(
         LegolasPlayerMarkerStyle style,
-        PixelPoint pixel,
+        OverlayPixel pixel,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes)
     {
+        // #1076: Overlay-facing OverlayPixel; Core stays PixelPoint until PR 5.
+        var pos = new PixelPoint(pixel.X, pixel.Y);
         LegolasMarkerDrawerCore.DrawPin(
-            rt, factory, brushes, pixel,
+            rt, factory, brushes, pos,
             style.Outer, style.Center, style.Outer.Size);
     }
 }

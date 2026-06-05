@@ -27,21 +27,25 @@ internal static class LegolasSurveyMarkerDrawer
 {
     public static void Draw(
         LegolasSurveyMarkerStyle style,
-        PixelPoint pixel,
+        OverlayPixel pixel,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes)
     {
+        // #1076: the Mithril.Overlay-facing drawer signature is OverlayPixel,
+        // but LegolasMarkerDrawerCore still takes PixelPoint (Phase 5 migrates
+        // the Legolas internals). Convert at the boundary; same X/Y components.
+        var pos = new PixelPoint(pixel.X, pixel.Y);
         if (style.ActiveTreatment is { } spec)
         {
             LegolasMarkerDrawerCore.DrawActivePin(
-                rt, factory, brushes, pixel,
+                rt, factory, brushes, pos,
                 style.Outer, style.Center, style.OuterDiameter, spec);
         }
         else
         {
             LegolasMarkerDrawerCore.DrawPin(
-                rt, factory, brushes, pixel,
+                rt, factory, brushes, pos,
                 style.Outer, style.Center, style.OuterDiameter);
         }
     }

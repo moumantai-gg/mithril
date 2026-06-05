@@ -431,14 +431,14 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
     /// <summary>Pure projection helper &#8212; takes a snapshot + a calibration
     /// service and returns the projected pixel list. Test-friendly overload.</summary>
-    internal static IReadOnlyList<(PixelPoint Pixel, IMarkerStyle Style)> ProjectMarkers(
+    internal static IReadOnlyList<(OverlayPixel Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
         MapSceneRef scene,
         IMapCalibrationService calibration,
         double currentZoom)
         => ProjectMarkers(markers, scene, calibration, currentZoom, onMiss: null, snapshotCount: markers.Count);
 
-    private static IReadOnlyList<(PixelPoint Pixel, IMarkerStyle Style)> ProjectMarkers(
+    private static IReadOnlyList<(OverlayPixel Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
         MapSceneRef scene,
         IMapCalibrationService calibration,
@@ -447,13 +447,16 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         int snapshotCount)
     {
         if (markers.Count == 0)
-            return Array.Empty<(PixelPoint, IMarkerStyle)>();
+            return Array.Empty<(OverlayPixel, IMarkerStyle)>();
 
-        var result = new List<(PixelPoint, IMarkerStyle)>(markers.Count);
+        var result = new List<(OverlayPixel, IMarkerStyle)>(markers.Count);
         for (var i = 0; i < markers.Count; i++)
         {
             var snap = markers[i];
-            var pixel = calibration.WorldToWindow(scene, snap.World, currentZoom);
+            // #1076: WorldToOverlay (frame-explicit) replaces the obsolete
+            // WorldToWindow so the projected pixel is OverlayPixel-typed
+            // end-to-end into MarkerSceneRenderer.
+            var pixel = calibration.WorldToOverlay(scene, snap.World, currentZoom);
             if (pixel is null)
             {
                 if (onMiss is not null)

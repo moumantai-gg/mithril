@@ -29,22 +29,25 @@ internal static class LegolasCalibrationMarkerDrawer
     /// position from the marker registry.</summary>
     public static void Draw(
         LegolasCalibrationMarkerStyle style,
-        PixelPoint pixel,
+        OverlayPixel pixel,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         D2DBrushCache brushes)
     {
+        // #1076: Overlay-facing OverlayPixel; Core stays PixelPoint until PR 5.
+        var pos = new PixelPoint(pixel.X, pixel.Y);
+
         // Selection ring — the WPF template binds Visibility to IsSelected,
         // so we mirror that exactly here. Uses Outer.Size as the diameter,
         // matching the WPF <Path>'s NegativeHalfConverter + Size geometry.
         if (style.IsSelected)
         {
             LegolasMarkerDrawerCore.DrawPinLayer(
-                rt, factory, brushes, pixel, style.Outer.Size, style.Outer);
+                rt, factory, brushes, pos, style.Outer.Size, style.Outer);
         }
 
         // Centre dot — always-on. Uses Center.Size for diameter.
         LegolasMarkerDrawerCore.DrawPinLayer(
-            rt, factory, brushes, pixel, style.Center.Size, style.Center);
+            rt, factory, brushes, pos, style.Center.Size, style.Center);
     }
 }

@@ -21,20 +21,20 @@ public sealed class MarkerSceneRendererTests
     public void Registered_drawer_is_invoked_once_per_matching_marker()
     {
         var renderer = new MarkerSceneRenderer();
-        var calls = new List<PixelPoint>();
+        var calls = new List<OverlayPixel>();
         renderer.RegisterDrawer<StyleA>((style, pixel, rt, factory, brushes) => calls.Add(pixel));
 
-        var markers = new List<(PixelPoint, IMarkerStyle)>
+        var markers = new List<(OverlayPixel, IMarkerStyle)>
         {
-            (new PixelPoint(10, 20), new StyleA()),
-            (new PixelPoint(30, 40), new StyleA()),
+            (new OverlayPixel(10, 20), new StyleA()),
+            (new OverlayPixel(30, 40), new StyleA()),
         };
 
         // Passing nulls for D2D plumbing is fine — the registered drawer
         // never touches them.
         renderer.Render(markers, rt: null!, factory: null!, brushes: null!);
 
-        calls.Should().Equal(new PixelPoint(10, 20), new PixelPoint(30, 40));
+        calls.Should().Equal(new OverlayPixel(10, 20), new OverlayPixel(30, 40));
     }
 
     [Fact]
@@ -44,10 +44,10 @@ public sealed class MarkerSceneRendererTests
         var calls = 0;
         renderer.RegisterDrawer<StyleA>((s, p, rt, f, b) => calls++);
 
-        var markers = new List<(PixelPoint, IMarkerStyle)>
+        var markers = new List<(OverlayPixel, IMarkerStyle)>
         {
-            (new PixelPoint(0, 0), new StyleA()),
-            (new PixelPoint(1, 1), new StyleB()), // unregistered — must not throw
+            (new OverlayPixel(0, 0), new StyleA()),
+            (new OverlayPixel(1, 1), new StyleB()), // unregistered — must not throw
         };
 
         renderer.Render(markers, null!, null!, null!);
@@ -72,7 +72,7 @@ public sealed class MarkerSceneRendererTests
         renderer.RegisterDrawer<StyleA>((_, _, _, _, _) => call1++);
         renderer.RegisterDrawer<StyleA>((_, _, _, _, _) => call2++);
 
-        renderer.Render(new[] { (new PixelPoint(0, 0), (IMarkerStyle)new StyleA()) },
+        renderer.Render(new[] { (new OverlayPixel(0, 0), (IMarkerStyle)new StyleA()) },
             null!, null!, null!);
         call1.Should().Be(0);
         call2.Should().Be(1);
@@ -87,7 +87,7 @@ public sealed class MarkerSceneRendererTests
     public async Task Concurrent_RegisterDrawer_and_Render_do_not_throw_and_dispatch_progresses()
     {
         var renderer = new MarkerSceneRenderer();
-        var marker = new[] { (new PixelPoint(0, 0), (IMarkerStyle)new StyleA()) };
+        var marker = new[] { (new OverlayPixel(0, 0), (IMarkerStyle)new StyleA()) };
         var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
         var drawerInvocations = 0;
 

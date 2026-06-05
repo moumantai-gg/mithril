@@ -38,8 +38,8 @@ public sealed class OverlayProjectionTests
         var projected = OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("A", null, "A"), calibration, currentZoom: 1.0);
 
         projected.Should().HaveCount(2);
-        projected[0].Should().Be((new PixelPoint(20, 60), (IMarkerStyle)styleA));
-        projected[1].Should().Be((new PixelPoint(-10, 21), (IMarkerStyle)styleB));
+        projected[0].Should().Be((new OverlayPixel(20, 60), (IMarkerStyle)styleA));
+        projected[1].Should().Be((new OverlayPixel(-10, 21), (IMarkerStyle)styleB));
     }
 
     [Fact]
@@ -75,8 +75,8 @@ public sealed class OverlayProjectionTests
         var projected = OverlayWindowService.ProjectMarkers(markers, new MapSceneRef("A", null, "A"), calibration, 1.0);
 
         projected.Should().HaveCount(2);
-        projected[0].Pixel.Should().Be(new PixelPoint(1, 1));
-        projected[1].Pixel.Should().Be(new PixelPoint(2, 2));
+        projected[0].Pixel.Should().Be(new OverlayPixel(1, 1));
+        projected[1].Pixel.Should().Be(new OverlayPixel(2, 2));
     }
 
     [Fact]
