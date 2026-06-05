@@ -1,6 +1,3 @@
-// #1076 Phase 5a shim: this file is reserved for Phase 5b migration; the
-// global PixelPoint alias was retired in Phase 5a, so re-import it locally.
-using PixelPoint = Mithril.MapCalibration.PixelPoint;
 using Mithril.MapCalibration;
 using Mithril.Overlay;
 using Mithril.Overlay.Internal;
@@ -37,20 +34,17 @@ internal static class LegolasCalibrationMarkerDrawer
         ID2D1Factory factory,
         D2DBrushCache brushes)
     {
-        // #1076: Overlay-facing OverlayPixel; Core stays PixelPoint until PR 5.
-        var pos = new PixelPoint(pixel.X, pixel.Y);
-
         // Selection ring — the WPF template binds Visibility to IsSelected,
         // so we mirror that exactly here. Uses Outer.Size as the diameter,
         // matching the WPF <Path>'s NegativeHalfConverter + Size geometry.
         if (style.IsSelected)
         {
             LegolasMarkerDrawerCore.DrawPinLayer(
-                rt, factory, brushes, pos, style.Outer.Size, style.Outer);
+                rt, factory, brushes, pixel, style.Outer.Size, style.Outer);
         }
 
         // Centre dot — always-on. Uses Center.Size for diameter.
         LegolasMarkerDrawerCore.DrawPinLayer(
-            rt, factory, brushes, pos, style.Center.Size, style.Center);
+            rt, factory, brushes, pixel, style.Center.Size, style.Center);
     }
 }

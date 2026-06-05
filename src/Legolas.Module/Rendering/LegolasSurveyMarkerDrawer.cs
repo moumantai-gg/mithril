@@ -1,6 +1,3 @@
-// #1076 Phase 5a shim: this file is reserved for Phase 5b migration; the
-// global PixelPoint alias was retired in Phase 5a, so re-import it locally.
-using PixelPoint = Mithril.MapCalibration.PixelPoint;
 using Mithril.MapCalibration;
 using Mithril.Overlay;
 using Mithril.Overlay.Internal;
@@ -35,20 +32,16 @@ internal static class LegolasSurveyMarkerDrawer
         ID2D1Factory factory,
         D2DBrushCache brushes)
     {
-        // #1076: the Mithril.Overlay-facing drawer signature is OverlayPixel,
-        // but LegolasMarkerDrawerCore still takes PixelPoint (Phase 5 migrates
-        // the Legolas internals). Convert at the boundary; same X/Y components.
-        var pos = new PixelPoint(pixel.X, pixel.Y);
         if (style.ActiveTreatment is { } spec)
         {
             LegolasMarkerDrawerCore.DrawActivePin(
-                rt, factory, brushes, pos,
+                rt, factory, brushes, pixel,
                 style.Outer, style.Center, style.OuterDiameter, spec);
         }
         else
         {
             LegolasMarkerDrawerCore.DrawPin(
-                rt, factory, brushes, pos,
+                rt, factory, brushes, pixel,
                 style.Outer, style.Center, style.OuterDiameter);
         }
     }
