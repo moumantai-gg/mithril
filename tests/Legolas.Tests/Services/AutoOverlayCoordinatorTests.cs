@@ -23,7 +23,7 @@ public class AutoOverlayCoordinatorTests
     // #454: the FSM starts in Listening (an "active" state — no
     // AwaitingPosition bootstrap). A pin via Survey.CreateAbsolute.
     private static SurveyItemViewModel Pin(double px = 10, double py = 20) =>
-        new(Survey.CreateAbsolute("Diamond", new WorldCoord(px, 0, py), new PixelPoint(px, py), 0));
+        new(Survey.CreateAbsolute("Diamond", new WorldCoord(px, 0, py), new OverlayPixel(px, py), 0));
 
     [Fact]
     public void Initialize_no_change_when_inventory_hidden()

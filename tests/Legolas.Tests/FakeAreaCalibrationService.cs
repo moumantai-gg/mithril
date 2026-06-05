@@ -46,7 +46,7 @@ public sealed class FakeAreaCalibrationService : IAreaCalibrationService
 
     public void SelectScene(MapSceneRef scene) { }
     public AreaCalibration? CalibrateCurrentArea(
-        IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0) => null;
+        IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements, double calibrationZoom = 1.0) => null;
     public void ClearCurrentAreaCalibration() { }
     public void NoteSurvey(string name, MetreOffset offset) => SurveyObserved?.Invoke(this, new(name, offset));
 }

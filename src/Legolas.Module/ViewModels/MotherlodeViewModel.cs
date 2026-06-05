@@ -205,17 +205,17 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     {
         var snap = _coordinator.Snapshot();
         var ids = new List<Guid>();
-        var points = new List<PixelPoint>();   // world (X,Z); routing is similarity-invariant
+        var points = new List<OverlayPixel>();   // world (X,Z); routing is similarity-invariant
         foreach (var s in snap.Surveys)
         {
             if (s.Collected || s.SolvedWorld is not { } w) continue;
             ids.Add(s.Id);
-            points.Add(new PixelPoint(w.X, w.Z));
+            points.Add(new OverlayPixel(w.X, w.Z));
         }
         if (points.Count == 0) return;
 
         var start = snap.LastPlayerWorld is { } p
-            ? new PixelPoint(p.X, p.Z)
+            ? new OverlayPixel(p.X, p.Z)
             : points[0];
         var order = _optimizer.Optimize(start, points);
         _coordinator.ApplyRouteOrder(order.Select(i => ids[i]).ToList());

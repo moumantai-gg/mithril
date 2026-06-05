@@ -19,7 +19,7 @@ namespace Legolas.Tests.ViewModels;
 /// </summary>
 public class NudgePadViewModelTests
 {
-    private static PixelPoint Project(double x, double z) => new(100 + 2 * x, 100 - 2 * z);
+    private static OverlayPixel Project(double x, double z) => new(100 + 2 * x, 100 - 2 * z);
 
     private static (NudgePadViewModel pad, SessionState session, PinCalibrationCoordinator cal,
         FakeMapPinState pins) Build()
@@ -71,7 +71,7 @@ public class NudgePadViewModelTests
     public void Pad_is_available_for_the_manual_player_anchor()
     {
         var (pad, session, _, _) = Build();
-        session.SurveyPlayerPixel = new PixelPoint(100, 100);
+        session.SurveyPlayerPixel = new OverlayPixel(100, 100);
         session.SurveyPlayerIsManual = true;
 
         pad.IsAvailable.Should().BeTrue();
@@ -85,7 +85,7 @@ public class NudgePadViewModelTests
     private sealed class FakeCalib : IAreaCalibrationService
     {
         public AreaCalibration? CalibrateCurrentArea(
-            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
+            IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements, double calibrationZoom = 1.0)
             => new(1, 0, 0, 0, placements.Count, 0);
         public MapSceneRef? CurrentScene => new MapSceneRef("AreaTest", null, "Map_AreaTest");
         public string? CurrentAreaFriendlyName => "Test";

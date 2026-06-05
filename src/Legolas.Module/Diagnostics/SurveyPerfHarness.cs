@@ -1,3 +1,6 @@
+// #1076 Phase 5a: PixelPoint -> OverlayPixel rename landed here in 5a despite
+// this file's nominal Phase 5b ownership; mouse-event CanvasOverlayMapping
+// boundaries still deferred to 5b.
 using System.Windows;
 using Legolas.Domain;
 using Legolas.Flow;
@@ -200,7 +203,7 @@ public sealed class SurveyPerfHarness
         // settings layout hasn't hydrated yet — irrelevant for the synthetic
         // load, just need a valid origin.
         var (w, h) = CurrentMapSize();
-        var centre = new PixelPoint(w / 2, h / 2);
+        var centre = new OverlayPixel(w / 2, h / 2);
 
         // #454: pins are absolute now — inject them directly at pixel
         // positions (no anchor, no projector). Deterministic seed so two runs
@@ -212,7 +215,7 @@ public sealed class SurveyPerfHarness
         {
             var theta = rng.NextDouble() * 2 * Math.PI;
             var rPx = 60 + rng.NextDouble() * 180;
-            var pixel = new PixelPoint(
+            var pixel = new OverlayPixel(
                 centre.X + rPx * Math.Cos(theta),
                 centre.Y + rPx * Math.Sin(theta));
             var model = Survey.CreateAbsolute(

@@ -1,3 +1,6 @@
+// #1076 Phase 5a: PixelPoint -> OverlayPixel rename landed here in 5a despite
+// this file's nominal Phase 5b ownership; mouse-event CanvasOverlayMapping
+// boundaries still deferred to 5b.
 using System.Windows;
 using System.Windows.Input;
 using Mithril.Shared.Settings;
@@ -54,7 +57,7 @@ public partial class CalibrationOverlayView : Window
         if (e.OriginalSource is not FrameworkElement fe || !ReferenceEquals(fe, Viewport)) return;
 
         var p = Mouse.GetPosition(Viewport);
-        var pos = new PixelPoint(p.X, p.Y);
+        var pos = new OverlayPixel(p.X, p.Y);
 
         // Hit an existing pin → grab it and drag (mouse, not arrow keys —
         // bypasses the listbox/hotkey fight). Miss → click-to-place / arm.
@@ -76,7 +79,7 @@ public partial class CalibrationOverlayView : Window
     {
         if (!_dragging || DataContext is not CalibrationSessionViewModel vm) return;
         var p = Mouse.GetPosition(Viewport);
-        vm.DragSelectedTo(new PixelPoint(p.X, p.Y));
+        vm.DragSelectedTo(new OverlayPixel(p.X, p.Y));
     }
 
     private void Viewport_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)

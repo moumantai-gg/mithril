@@ -8,13 +8,13 @@ public class LandmarkCalibrationSolverTests
 {
     // Project the way CoordinateProjector does, given a ground-truth transform
     // and a world point treated as (East=X, North=Z).
-    private static PixelPoint Project(double scale, double rot, PixelPoint origin, double x, double z)
+    private static OverlayPixel Project(double scale, double rot, OverlayPixel origin, double x, double z)
     {
         var cos = Math.Cos(rot);
         var sin = Math.Sin(rot);
         var rotE = x * cos + z * sin;
         var rotN = -x * sin + z * cos;
-        return new PixelPoint(origin.X + scale * rotE, origin.Y - scale * rotN);
+        return new OverlayPixel(origin.X + scale * rotE, origin.Y - scale * rotN);
     }
 
     [Fact]
@@ -22,7 +22,7 @@ public class LandmarkCalibrationSolverTests
     {
         const double scale = 1.7;
         var rot = Math.PI / 5;
-        var origin = new PixelPoint(640, 360);
+        var origin = new OverlayPixel(640, 360);
 
         // Signed world coords (negative X/Z are real — Myconian/SunVale/etc.).
         var world = new[]
@@ -61,7 +61,7 @@ public class LandmarkCalibrationSolverTests
         // still drive residual to ~0.
         const double scale = 2.0;
         var rot = 0.4;
-        var origin = new PixelPoint(100, 200);
+        var origin = new OverlayPixel(100, 200);
 
         var world = new[]
         {
@@ -71,7 +71,7 @@ public class LandmarkCalibrationSolverTests
             (X: 4.0, Z: -9.0),
         };
 
-        PixelPoint Mirrored(double x, double z)
+        OverlayPixel Mirrored(double x, double z)
         {
             var cos = Math.Cos(rot);
             var sin = Math.Sin(rot);
@@ -79,7 +79,7 @@ public class LandmarkCalibrationSolverTests
             var north = -z; // reflection
             var rotE = east * cos + north * sin;
             var rotN = -east * sin + north * cos;
-            return new PixelPoint(origin.X + scale * rotE, origin.Y - scale * rotN);
+            return new OverlayPixel(origin.X + scale * rotE, origin.Y - scale * rotN);
         }
 
         var refs = world
@@ -128,7 +128,7 @@ public class LandmarkCalibrationSolverTests
     {
         const double scale = 1.0;
         const double rot = 0.0;
-        var origin = new PixelPoint(0, 0);
+        var origin = new OverlayPixel(0, 0);
         var world = new[] { (1000.0, 0.0), (0.0, 1000.0), (1000.0, 1000.0) };
 
         var refs = world

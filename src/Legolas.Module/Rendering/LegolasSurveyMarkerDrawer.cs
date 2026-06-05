@@ -1,3 +1,6 @@
+// #1076 Phase 5a shim: this file is reserved for Phase 5b migration; the
+// global PixelPoint alias was retired in Phase 5a, so re-import it locally.
+using PixelPoint = Mithril.MapCalibration.PixelPoint;
 using Mithril.MapCalibration;
 using Mithril.Overlay;
 using Mithril.Overlay.Internal;

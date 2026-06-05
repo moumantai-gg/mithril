@@ -103,7 +103,7 @@ public sealed partial class SessionState : ObservableObject
     // triangulation records the player position from a map click. Survey mode
     // never reads them; IsAnchorEditable (the Survey "drag the anchor" gate)
     // is retired.
-    [ObservableProperty] private PixelPoint _playerPosition = new(400, 300);
+    [ObservableProperty] private OverlayPixel _playerPosition = new(400, 300);
     [ObservableProperty] private bool _hasPlayerPosition;
 
     // #476: Survey's player-position GPS. Distinct from the Motherlode-only
@@ -121,7 +121,7 @@ public sealed partial class SessionState : ObservableObject
     // Source; MeasuredAt = when the user clicked), survives calibration
     // re-applies, and is superseded by the next *fresh* tracker fix
     // (zone-in / teleport) — a new fix is authoritative again.
-    [ObservableProperty] private PixelPoint? _surveyPlayerPixel;
+    [ObservableProperty] private OverlayPixel? _surveyPlayerPixel;
     [ObservableProperty] private DateTimeOffset? _surveyPlayerMeasuredAt;
     [ObservableProperty] private PositionSource? _surveyPlayerSource;
     [ObservableProperty] private bool _surveyPlayerIsManual;

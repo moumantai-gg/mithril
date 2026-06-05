@@ -6,25 +6,25 @@ public interface ICoordinateProjector
 {
     double Scale { get; }
     double RotationRadians { get; }
-    PixelPoint Origin { get; }
+    OverlayPixel Origin { get; }
 
     /// <summary>
     /// Projects a metre offset (east, north) to a pixel position using the current
     /// scale, rotation, and origin. Screen-y is assumed to increase downward;
     /// positive north therefore projects to decreasing y.
     /// </summary>
-    PixelPoint Project(MetreOffset offset);
+    OverlayPixel Project(MetreOffset offset);
 
     /// <summary>
     /// Sets the player/origin pixel position without touching scale or rotation.
     /// </summary>
-    void SetOrigin(PixelPoint origin);
+    void SetOrigin(OverlayPixel origin);
 
     /// <summary>
     /// Derives scale and rotation from a single click on a reported survey dot.
     /// Sets origin to the supplied player pixel.
     /// </summary>
-    void CalibrateFromClick(PixelPoint playerPixel, PixelPoint click, MetreOffset offset);
+    void CalibrateFromClick(OverlayPixel playerPixel, OverlayPixel click, MetreOffset offset);
 
     /// <summary>
     /// Refits scale and rotation from k&#8805;2 user corrections. Origin is held fixed
@@ -33,7 +33,7 @@ public interface ICoordinateProjector
     /// magnitudes; rotation: circular mean of bearing differences) \u2014 no iteration,
     /// no dependency, numerically stable.
     /// </summary>
-    void Refit(IReadOnlyList<(MetreOffset Offset, PixelPoint Pixel)> corrections);
+    void Refit(IReadOnlyList<(MetreOffset Offset, OverlayPixel Pixel)> corrections);
 
     /// <summary>
     /// Adopts a persisted per-area calibration's <b>scale and rotation only</b>

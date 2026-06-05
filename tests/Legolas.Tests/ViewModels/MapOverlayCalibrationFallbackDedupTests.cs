@@ -70,7 +70,7 @@ public class MapOverlayCalibrationFallbackDedupTests
         // (area, reason). Five markers proves the dedup works across
         // multiple Refresh calls inside one frame.
         for (var i = 0; i < 5; i++)
-            pinCoord.PlacedMarkers.Add(new CalibrationMarker(new PixelPoint(10 + i, 20), i));
+            pinCoord.PlacedMarkers.Add(new CalibrationMarker(new OverlayPixel(10 + i, 20), i));
 
         var traceEntries = loggerFactory.Entries
             .Where(e => e.Level == LogLevel.Trace
@@ -96,7 +96,7 @@ public class MapOverlayCalibrationFallbackDedupTests
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
         public AreaCalibration? CalibrateCurrentArea(
-            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0) => null;
+            IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements, double calibrationZoom = 1.0) => null;
         public event EventHandler? Changed { add { } remove { } }
         public void SelectScene(MapSceneRef scene) { }
         public void ClearCurrentAreaCalibration() { }

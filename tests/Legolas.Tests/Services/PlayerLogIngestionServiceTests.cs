@@ -353,7 +353,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
         public event EventHandler? Changed { add { } remove { } }
         public AreaCalibration? CalibrateCurrentArea(
-            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+            IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements,
             double calibrationZoom = 1.0) => null;
         public void ClearCurrentAreaCalibration() { }
         public List<(string Name, MetreOffset Offset)> NotedSurveys { get; } = new();

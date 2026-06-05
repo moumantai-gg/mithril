@@ -8,6 +8,6 @@ namespace Legolas.Rendering;
 /// geometry is approximate on the non-affine map — draw soft/dashed only.
 /// </summary>
 public sealed record MotherlodeGuidanceCircle(
-    PixelPoint Center,
+    OverlayPixel Center,
     double RadiusPixels,
     Color StrokeColor);

@@ -10,10 +10,10 @@ public class CoordinateProjectorTests
     public void Zero_rotation_projects_east_to_positive_x_and_north_to_negative_y()
     {
         var projector = new CoordinateProjector();
-        projector.SetOrigin(new PixelPoint(100, 100));
+        projector.SetOrigin(new OverlayPixel(100, 100));
         projector.CalibrateFromClick(
-            playerPixel: new PixelPoint(100, 100),
-            click: new PixelPoint(110, 100),
+            playerPixel: new OverlayPixel(100, 100),
+            click: new OverlayPixel(110, 100),
             offset: new MetreOffset(East: 5, North: 0));
 
         // scale should be 10/5 = 2 px/m, rotation ~ 0
@@ -29,7 +29,7 @@ public class CoordinateProjectorTests
     public void ApplyCalibration_adopts_scale_and_rotation_but_keeps_the_player_anchor_origin()
     {
         var projector = new CoordinateProjector();
-        projector.SetOrigin(new PixelPoint(640, 360)); // the player's anchor click
+        projector.SetOrigin(new OverlayPixel(640, 360)); // the player's anchor click
 
         projector.ApplyCalibration(new AreaCalibration(
             Scale: 2.5, RotationRadians: 0.7,
@@ -66,24 +66,24 @@ public class CoordinateProjectorTests
             new MetreOffset(20, 25),
         };
 
-        var origin = new PixelPoint(500, 400);
+        var origin = new OverlayPixel(500, 400);
         var truth = new CoordinateProjector();
         truth.SetOrigin(origin);
         // Seed scale and rotation via a synthetic calibration click at a known offset
         var syntheticCalibOffset = new MetreOffset(1, 0);
-        truth.CalibrateFromClick(origin, new PixelPoint(500 + 3 * Math.Cos(expectedRotation),
+        truth.CalibrateFromClick(origin, new OverlayPixel(500 + 3 * Math.Cos(expectedRotation),
                                                         400 + 3 * Math.Sin(expectedRotation)), syntheticCalibOffset);
         // That calibration sets rotation/scale based on the synthetic click; we verify later.
 
         // Build synthetic corrections from GROUND-TRUTH parameters directly.
-        var corrections = new List<(MetreOffset, PixelPoint)>();
+        var corrections = new List<(MetreOffset, OverlayPixel)>();
         foreach (var offset in offsets)
         {
             var cos = Math.Cos(expectedRotation);
             var sin = Math.Sin(expectedRotation);
             var rotE = offset.East * cos + offset.North * sin;
             var rotN = -offset.East * sin + offset.North * cos;
-            var pixel = new PixelPoint(origin.X + expectedScale * rotE,
+            var pixel = new OverlayPixel(origin.X + expectedScale * rotE,
                                         origin.Y - expectedScale * rotN);
             corrections.Add((offset, pixel));
         }
@@ -108,8 +108,8 @@ public class CoordinateProjectorTests
 
         const double expectedScale = 3.0;
         var expectedRotation = Math.PI / 6;
-        var trueOrigin = new PixelPoint(500, 400);
-        var biasedOrigin = new PixelPoint(508, 397); // user clicked 8px east, 3px north of where they actually are
+        var trueOrigin = new OverlayPixel(500, 400);
+        var biasedOrigin = new OverlayPixel(508, 397); // user clicked 8px east, 3px north of where they actually are
 
         var offsets = new[]
         {
@@ -120,14 +120,14 @@ public class CoordinateProjectorTests
             new MetreOffset(20, 25),
         };
 
-        var corrections = new List<(MetreOffset, PixelPoint)>();
+        var corrections = new List<(MetreOffset, OverlayPixel)>();
         foreach (var offset in offsets)
         {
             var cos = Math.Cos(expectedRotation);
             var sin = Math.Sin(expectedRotation);
             var rotE = offset.East * cos + offset.North * sin;
             var rotN = -offset.East * sin + offset.North * cos;
-            var pixel = new PixelPoint(trueOrigin.X + expectedScale * rotE,
+            var pixel = new OverlayPixel(trueOrigin.X + expectedScale * rotE,
                                         trueOrigin.Y - expectedScale * rotN);
             corrections.Add((offset, pixel));
         }
@@ -149,11 +149,11 @@ public class CoordinateProjectorTests
         // their centred metre vectors are zero, so Σ |z'|² = 0. Should silently
         // no-op rather than divide by zero.
         var projector = new CoordinateProjector();
-        projector.SetOrigin(new PixelPoint(100, 100));
+        projector.SetOrigin(new OverlayPixel(100, 100));
         var originalScale = projector.Scale;
         var originalRotation = projector.RotationRadians;
 
-        var pt = (new MetreOffset(5, 5), new PixelPoint(120, 80));
+        var pt = (new MetreOffset(5, 5), new OverlayPixel(120, 80));
         projector.Refit(new[] { pt, pt });
 
         projector.Scale.Should().Be(originalScale);
@@ -164,10 +164,10 @@ public class CoordinateProjectorTests
     public void Refit_is_noop_with_fewer_than_two_corrections()
     {
         var projector = new CoordinateProjector();
-        projector.SetOrigin(new PixelPoint(0, 0));
+        projector.SetOrigin(new OverlayPixel(0, 0));
         var originalScale = projector.Scale;
 
-        projector.Refit(new[] { (new MetreOffset(5, 0), new PixelPoint(10, 0)) });
+        projector.Refit(new[] { (new MetreOffset(5, 0), new OverlayPixel(10, 0)) });
 
         projector.Scale.Should().Be(originalScale);
     }
@@ -176,16 +176,16 @@ public class CoordinateProjectorTests
     public void Round_trip_projection_preserves_magnitude_with_unit_scale()
     {
         var projector = new CoordinateProjector();
-        projector.SetOrigin(new PixelPoint(0, 0));
+        projector.SetOrigin(new OverlayPixel(0, 0));
         projector.CalibrateFromClick(
-            PixelPoint.Zero,
-            new PixelPoint(0, -10),
+            OverlayPixel.Zero,
+            new OverlayPixel(0, -10),
             new MetreOffset(0, 10));
 
         projector.Scale.Should().BeApproximately(1.0, 1e-6);
         projector.RotationRadians.Should().BeApproximately(0.0, 1e-6);
 
         var projected = projector.Project(new MetreOffset(3, 4));
-        projected.DistanceTo(PixelPoint.Zero).Should().BeApproximately(5.0, 1e-6);
+        projected.DistanceTo(OverlayPixel.Zero).Should().BeApproximately(5.0, 1e-6);
     }
 }

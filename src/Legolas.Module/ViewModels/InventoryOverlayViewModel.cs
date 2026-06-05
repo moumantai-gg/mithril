@@ -117,7 +117,7 @@ public sealed partial class InventoryOverlayViewModel : ObservableObject
         var offset = new MetreOffset(Math.Sin(bearing) * distance, Math.Cos(bearing) * distance);
 
         // 3 px/m default scale until calibrated
-        var pixel = new PixelPoint(
+        var pixel = new OverlayPixel(
             _session.PlayerPosition.X + offset.East * 3,
             _session.PlayerPosition.Y - offset.North * 3);
 

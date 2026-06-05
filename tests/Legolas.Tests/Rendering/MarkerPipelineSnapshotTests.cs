@@ -1,3 +1,6 @@
+// #1076 Phase 5a: P.3 audit found all Legolas test PixelPoint sites are
+// overlay-frame, so this Rendering test file was migrated alongside the 5a
+// scope (its PinScene/drawer dependencies now take OverlayPixel).
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Rendering;
@@ -272,10 +275,10 @@ public sealed class MarkerPipelineSnapshotTests
     {
         public bool IsCalibrated(MapSceneRef scene) => true;
 
-        public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom)
-            => new PixelPoint(world.X, world.Z);
+        public Mithril.MapCalibration.PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom)
+            => new Mithril.MapCalibration.PixelPoint(world.X, world.Z);
 
-        public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom)
+        public WorldCoord? WindowToWorld(MapSceneRef scene, Mithril.MapCalibration.PixelPoint pixel, double currentZoom)
             => new WorldCoord(pixel.X, 0, pixel.Y);
 
         public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;

@@ -1,3 +1,6 @@
+// #1076 Phase 5a: PixelPoint -> OverlayPixel rename landed here in 5a despite
+// this file's nominal Phase 5b ownership; mouse-event CanvasOverlayMapping
+// boundaries still deferred to 5b.
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Input;
@@ -354,7 +357,7 @@ public sealed class OverlayController : IHostedService
         if (vp is null || vm is null) return;
 
         var canvasPos = e.GetPosition(vp);
-        var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
+        var clickPoint = new OverlayPixel(canvasPos.X, canvasPos.Y);
 
         // Pair-phase capture: try grab-for-drag first, fall back to pair.
         if (vm.IsCalibrationCapturing)
@@ -398,7 +401,7 @@ public sealed class OverlayController : IHostedService
 
         if (_draggingCalibrationMarker)
         {
-            vm.DragCalibrationMarkerTo(new PixelPoint(canvasPos.X, canvasPos.Y));
+            vm.DragCalibrationMarkerTo(new OverlayPixel(canvasPos.X, canvasPos.Y));
             return;
         }
         if (_draggingPinFromViewport is not null)
@@ -427,7 +430,7 @@ public sealed class OverlayController : IHostedService
             // Final commit through CorrectSurveyCommand — a local pixel
             // correction + route rebuild (no projector refit, #454).
             var canvasPos = e.GetPosition(vp);
-            var finalPixel = new PixelPoint(canvasPos.X, canvasPos.Y);
+            var finalPixel = new OverlayPixel(canvasPos.X, canvasPos.Y);
             vm.CorrectSurveyCommand.Execute(new CorrectionArgs(_draggingPinFromViewport, finalPixel));
             _draggingPinFromViewport = null;
         }
@@ -436,7 +439,7 @@ public sealed class OverlayController : IHostedService
     private void ApplyDraggedPinPosition(Point cursor)
     {
         if (_draggingPinFromViewport is null) return;
-        var newPixel = new PixelPoint(cursor.X, cursor.Y);
+        var newPixel = new OverlayPixel(cursor.X, cursor.Y);
         var updated = _draggingPinFromViewport.Model with { ManualOverride = newPixel };
         _draggingPinFromViewport.UpdateModel(updated);
     }
@@ -459,7 +462,7 @@ public sealed class OverlayController : IHostedService
     {
         var vp = _viewportRoot; var vm = _wiredMapVm;
         if (vp is null || vm is null) return false;
-        var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
+        var clickPoint = new OverlayPixel(canvasPos.X, canvasPos.Y);
 
         if (vm.IsCalibrationCapturing)
         {
@@ -495,7 +498,7 @@ public sealed class OverlayController : IHostedService
         }
         if (_draggingPinFromViewport is not null)
         {
-            var finalPixel = new PixelPoint(canvasPos.X, canvasPos.Y);
+            var finalPixel = new OverlayPixel(canvasPos.X, canvasPos.Y);
             vm.CorrectSurveyCommand.Execute(new CorrectionArgs(_draggingPinFromViewport, finalPixel));
             _draggingPinFromViewport = null;
         }

@@ -34,13 +34,13 @@ public class AreaCalibrationProjectWorldTests
             new WorldCoord(1666.00, 0, -322.68),
         };
 
-        PixelPoint Forward(WorldCoord w)
+        OverlayPixel Forward(WorldCoord w)
         {
             var east = w.X;
             var north = mirrorNorth ? -w.Z : w.Z;
             var rotE = east * Math.Cos(theta) + north * Math.Sin(theta);
             var rotN = -east * Math.Sin(theta) + north * Math.Cos(theta);
-            return new PixelPoint(ox + s * rotE, oy - s * rotN);
+            return new OverlayPixel(ox + s * rotE, oy - s * rotN);
         }
 
         var refs = world
@@ -74,8 +74,13 @@ public class AreaCalibrationProjectWorldTests
         var minus = new AreaCalibration(1.0, 0.0, 0, 0, 2, 0) { MirrorNorth = true };
         var w = new WorldCoord(10, 0, 7);
 
-        plus.WorldToWindow(w).Should().Be(new PixelPoint(10, -7));
-        minus.WorldToWindow(w).Should().Be(new PixelPoint(10, 7));
+        // #1076 5a: AreaCalibration.WorldToWindow still returns PixelPoint
+        // (the Mithril.MapCalibration core type), unchanged in 5a. Phase 6
+        // adds frame-typed overloads to the core; for now compare by raw X/Y.
+        var plusRes = plus.WorldToWindow(w);
+        var minusRes = minus.WorldToWindow(w);
+        (plusRes.X, plusRes.Y).Should().Be((10.0, -7.0));
+        (minusRes.X, minusRes.Y).Should().Be((10.0, 7.0));
     }
 
     // ---- #524: zoom-aware overload --------------------------------------

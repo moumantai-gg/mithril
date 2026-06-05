@@ -196,7 +196,10 @@ public sealed class PlayerLogIngestionService : BackgroundService
         }
 
         var name = CleanName(shortName);
-        var pixel = cal.WorldToWindow(world, _session.CurrentMapZoom);
+        // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame
+        // (the value is overlay-frame by the P.3 audit; Phase 6 typifies core).
+        var pxRaw = cal.WorldToWindow(world, _session.CurrentMapZoom);
+        var pixel = new OverlayPixel(pxRaw.X, pxRaw.Y);
 
         if (FindDuplicateAbsolute(world, _settings.MapTargetDedupRadiusMetres) is { } dup)
         {

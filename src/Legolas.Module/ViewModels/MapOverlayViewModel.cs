@@ -374,13 +374,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             var supersededByFresherAuto =
                 fromTrackerFix && tracker is { } ft && ft.MeasuredAt > p.ObservedAt;
             if (!supersededByFresherAuto)
+            {
+                // #1076 5a: WorldToWindow still returns PixelPoint; re-tag to
+                // overlay-frame at the boundary (value is overlay-frame per P.3).
+                var pwt = pinCal.WorldToWindow(p.World, EffectiveZoom(currentMapZoom, pinCal));
                 return new SurveyAnchorResolution(
-                    // #524: thread the in-game map zoom; zero/unset falls back
-                    // to the calibration's own zoom (zoomFactor → 1.0), keeping
-                    // pre-#524 callers byte-identical.
-                    pinCal.WorldToWindow(p.World, EffectiveZoom(currentMapZoom, pinCal)),
+                    new OverlayPixel(pwt.X, pwt.Y),
                     p.ObservedAt,
                     Source: null, IsManual: true, IsPinned: true);
+            }
             // else: a genuinely newer zone-in/teleport wins over the pin.
         }
 
@@ -391,8 +393,11 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         if (tracker is not { } fix || cal is not { } c)
             return SurveyAnchorResolution.Cleared;
 
+        // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame
+        // (value is overlay-frame per P.3 audit; Phase 6 typifies the core).
+        var fxp = c.WorldToWindow(new WorldCoord(fix.X, fix.Y, fix.Z), EffectiveZoom(currentMapZoom, c));
         return new SurveyAnchorResolution(
-            c.WorldToWindow(new WorldCoord(fix.X, fix.Y, fix.Z), EffectiveZoom(currentMapZoom, c)),
+            new OverlayPixel(fxp.X, fxp.Y),
             fix.MeasuredAt, fix.Source, IsManual: false, IsPinned: false);
     }
 
@@ -409,7 +414,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// that wins over the projected auto anchor until the next fresh tracker
     /// fix (zone-in / teleport) takes over again.
     /// </summary>
-    private void RecordManualPosition(PixelPoint where)
+    private void RecordManualPosition(OverlayPixel where)
     {
         _session.SurveyPlayerPixel = where;
         _session.SurveyPlayerMeasuredAt = DateTimeOffset.UtcNow;
@@ -714,15 +719,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
     /// <summary>Pair a calibration overlay-click with the currently-named
     /// (suggested/overridden) pin. No-op when not in the Pair phase.</summary>
-    public void PairCalibrationClick(PixelPoint pixel) => _pinCal?.PairClick(pixel);
+    public void PairCalibrationClick(OverlayPixel pixel) => _pinCal?.PairClick(pixel);
 
     /// <summary>Mouse-down hit-test against placed calibration markers
     /// (select-then-drag correction). False ⇒ the click should pair instead.</summary>
-    public bool TrySelectCalibrationMarkerAt(PixelPoint at, double radius) =>
+    public bool TrySelectCalibrationMarkerAt(OverlayPixel at, double radius) =>
         _pinCal?.TrySelectMarkerAt(at, radius) == true;
 
     /// <summary>Drag the selected calibration marker to an absolute pixel.</summary>
-    public void DragCalibrationMarkerTo(PixelPoint at) => _pinCal?.DragSelectedTo(at);
+    public void DragCalibrationMarkerTo(OverlayPixel at) => _pinCal?.DragSelectedTo(at);
 
     /// <summary>True iff a calibration marker is currently selected (so the
     /// nudge keys/pad target it ahead of survey pins / the manual anchor).</summary>
@@ -770,7 +775,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         {
             var p = selected.EffectivePixel.Value;
             CorrectSurveyCommand.Execute(
-                new CorrectionArgs(selected, new PixelPoint(p.X + dx * step, p.Y + dy * step)));
+                new CorrectionArgs(selected, new OverlayPixel(p.X + dx * step, p.Y + dy * step)));
             return;
         }
 
@@ -787,7 +792,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             && _session.SurveyPlayerPixel is { } anchor)
         {
             _session.SurveyPlayerPixel =
-                new PixelPoint(anchor.X + dx * step, anchor.Y + dy * step);
+                new OverlayPixel(anchor.X + dx * step, anchor.Y + dy * step);
             _session.SurveyPlayerIsManual = true;
         }
     }
@@ -1114,7 +1119,9 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 "No baseline calibration for area — calibration walkthrough requires a seed (review iter-1 B2).");
             return;
         }
-        if (cal.WindowToWorld(marker.Pixel, EffectiveZoom(_session.CurrentMapZoom, cal)) is not { } world)
+        // #1076 5a: WindowToWorld takes PixelPoint; marker.Pixel is OverlayPixel
+        // (overlay frame). Re-tag at the boundary; Phase 6 will type-thread it.
+        if (cal.WindowToWorld(new Mithril.MapCalibration.PixelPoint(marker.Pixel.X, marker.Pixel.Y), EffectiveZoom(_session.CurrentMapZoom, cal)) is not { } world)
         {
             LogCalibrationFallback(areaKey,
                 "WindowToWorld returned null for marker pixel — calibration shape rejected the point.");
@@ -1270,7 +1277,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
     public bool IsOverlayHintVisible => !string.IsNullOrEmpty(OverlayHint);
 
-    public PixelPoint PlayerPosition
+    public OverlayPixel PlayerPosition
     {
         get => _session.PlayerPosition;
         set => _session.PlayerPosition = value;
@@ -1284,7 +1291,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// same as pre-#476). Never presented as live: pair it with
     /// <see cref="PlayerAnchorStatus"/> so the staleness is honest.
     /// </summary>
-    public PixelPoint? PlayerMarkerPixel =>
+    public OverlayPixel? PlayerMarkerPixel =>
         _session.Mode == SessionMode.Motherlode
             ? (_session.HasPlayerPosition ? _session.PlayerPosition : null)
             : _session.SurveyPlayerPixel;
@@ -1301,21 +1308,25 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// solved coord is exact, the marker is approximate; surfaced as such in
     /// the wizard copy.
     /// </summary>
-    public IReadOnlyList<PixelPoint> MotherlodeMarkerPixels
+    public IReadOnlyList<OverlayPixel> MotherlodeMarkerPixels
     {
         get
         {
             if (_session.Mode != SessionMode.Motherlode
                 || _motherlode is null
                 || _areaCalibration?.CurrentCalibration is not { } cal)
-                return Array.Empty<PixelPoint>();
+                return Array.Empty<OverlayPixel>();
 
-            List<PixelPoint>? list = null;
+            List<OverlayPixel>? list = null;
             var zoom = _session.CurrentMapZoom;
             foreach (var s in _motherlode.Snapshot().Surveys)
                 if (!s.Collected && s.SolvedWorld is { } w)
-                    (list ??= new()).Add(cal.WorldToWindow(w, zoom));
-            return list ?? (IReadOnlyList<PixelPoint>)Array.Empty<PixelPoint>();
+                {
+                    // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame.
+                    var px = cal.WorldToWindow(w, zoom);
+                    (list ??= new()).Add(new OverlayPixel(px.X, px.Y));
+                }
+            return list ?? (IReadOnlyList<OverlayPixel>)Array.Empty<OverlayPixel>();
         }
     }
 
@@ -1336,7 +1347,9 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             if (next is null) return null;
 
             var zoom = _session.CurrentMapZoom;
-            var center = cal.WorldToWindow(next.SuggestedWorld, zoom);
+            // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame.
+            var centerPx = cal.WorldToWindow(next.SuggestedWorld, zoom);
+            var center = new OverlayPixel(centerPx.X, centerPx.Y);
             var zoomFactor = zoom > 1e-6 && cal.CalibrationZoom > 1e-6
                 ? zoom / cal.CalibrationZoom
                 : 1.0;
@@ -1426,7 +1439,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     }
 
     [ObservableProperty]
-    private IReadOnlyList<PixelPoint> _routePoints = Array.Empty<PixelPoint>();
+    private IReadOnlyList<OverlayPixel> _routePoints = Array.Empty<OverlayPixel>();
 
     /// <summary>
     /// Two-point polyline drawn on top of the static route line: from the
@@ -1439,7 +1452,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// target, or before the first collection in an uncalibrated area.
     /// </summary>
     [ObservableProperty]
-    private IReadOnlyList<PixelPoint> _activeSegmentPoints = Array.Empty<PixelPoint>();
+    private IReadOnlyList<OverlayPixel> _activeSegmentPoints = Array.Empty<OverlayPixel>();
 
     /// <summary>
     /// Record the player's position from a map click. #454 retired this for
@@ -1450,7 +1463,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// involvement any more.
     /// </summary>
     [RelayCommand]
-    public void SetPlayerPosition(PixelPoint where)
+    public void SetPlayerPosition(OverlayPixel where)
     {
         _session.PlayerPosition = where;
         _session.HasPlayerPosition = true;
@@ -1458,7 +1471,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    public void HandleMapClick(PixelPoint where)
+    public void HandleMapClick(OverlayPixel where)
     {
         // Motherlode: the click records the player position for triangulation.
         if (_session.Mode == SessionMode.Motherlode)
@@ -1500,7 +1513,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void OptimizeRoute()
     {
-        var points = new List<PixelPoint>();
+        var points = new List<OverlayPixel>();
         var indices = new List<int>();
         for (var i = 0; i < Surveys.Count; i++)
         {
@@ -1580,8 +1593,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     {
         if (!_session.ShowRouteLines)
         {
-            RoutePoints = Array.Empty<PixelPoint>();
-            ActiveSegmentPoints = Array.Empty<PixelPoint>();
+            RoutePoints = Array.Empty<OverlayPixel>();
+            ActiveSegmentPoints = Array.Empty<OverlayPixel>();
             return;
         }
 
@@ -1591,7 +1604,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             .ToList();
 
         // #454: no player anchor — the route is just the ordered pins.
-        var points = new List<PixelPoint>(ordered.Count);
+        var points = new List<OverlayPixel>(ordered.Count);
         foreach (var s in ordered) points.Add(s.EffectivePixel!.Value);
         RoutePoints = points;
 
@@ -1602,14 +1615,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     {
         if (!_session.ShowRouteLines)
         {
-            ActiveSegmentPoints = Array.Empty<PixelPoint>();
+            ActiveSegmentPoints = Array.Empty<OverlayPixel>();
             return;
         }
 
         var active = Surveys.FirstOrDefault(s => s.IsActiveTarget);
         if (active is null || !active.EffectivePixel.HasValue)
         {
-            ActiveSegmentPoints = Array.Empty<PixelPoint>();
+            ActiveSegmentPoints = Array.Empty<OverlayPixel>();
             return;
         }
 
@@ -1625,14 +1638,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             .OrderByDescending(s => s.RouteOrder!.Value)
             .FirstOrDefault();
 
-        PixelPoint? start = lastCollected?.EffectivePixel ?? _session.SurveyPlayerPixel;
+        OverlayPixel? start = lastCollected?.EffectivePixel ?? _session.SurveyPlayerPixel;
         ActiveSegmentPoints = start is { } s0
             ? new[] { s0, active.EffectivePixel.Value }
-            : Array.Empty<PixelPoint>();
+            : Array.Empty<OverlayPixel>();
     }
 }
 
-public sealed record CorrectionArgs(SurveyItemViewModel Survey, PixelPoint NewPixel);
+public sealed record CorrectionArgs(SurveyItemViewModel Survey, OverlayPixel NewPixel);
 
 /// <summary>
 /// Outcome of <see cref="MapOverlayViewModel.ResolveSurveyAnchor"/> — the
@@ -1641,7 +1654,7 @@ public sealed record CorrectionArgs(SurveyItemViewModel Survey, PixelPoint NewPi
 /// resolution (not this) means "leave the current anchor unchanged".
 /// </summary>
 public readonly record struct SurveyAnchorResolution(
-    PixelPoint? Pixel,
+    OverlayPixel? Pixel,
     DateTimeOffset? MeasuredAt,
     PositionSource? Source,
     bool IsManual,

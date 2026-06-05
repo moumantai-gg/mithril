@@ -2,6 +2,7 @@ using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
 
 namespace Legolas.Tests.ViewModels;
@@ -54,8 +55,8 @@ public class MapOverlayCalibrationValidationTests
         session.IsMapVisible.Should().BeTrue("the overlay must be up for the ghosts to be visible");
         map.CalibrationGhosts.Should().HaveCount(2);
         map.CalibrationGhosts[0].Name.Should().Be("Statue");
-        map.CalibrationGhosts[0].Pixel.Should().Be(calibration.WorldToWindow(new WorldCoord(10, 0, 5)));
-        map.CalibrationGhosts[1].Pixel.Should().Be(calibration.WorldToWindow(new WorldCoord(-4, 0, 12)));
+        map.CalibrationGhosts[0].Pixel.Should().Be(calibration.WorldToWindow(new WorldCoord(10, 0, 5)).AsOverlay());
+        map.CalibrationGhosts[1].Pixel.Should().Be(calibration.WorldToWindow(new WorldCoord(-4, 0, 12)).AsOverlay());
         map.CalibrationValidationStatus.Should().Contain("2 known").And.Contain("not accuracy");
     }
 
@@ -152,7 +153,7 @@ public class MapOverlayCalibrationValidationTests
 
         map.CalibrationGhosts.Should().HaveCount(1);
         map.CalibrationGhosts[0].Pixel.Should().NotBe(before);
-        map.CalibrationGhosts[0].Pixel.Should().Be(Cal(4.0).WorldToWindow(new WorldCoord(10, 0, 5)));
+        map.CalibrationGhosts[0].Pixel.Should().Be(Cal(4.0).WorldToWindow(new WorldCoord(10, 0, 5)).AsOverlay());
     }
 
     [Fact]

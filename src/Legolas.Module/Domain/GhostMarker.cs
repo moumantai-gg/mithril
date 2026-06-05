@@ -14,4 +14,4 @@ namespace Legolas.Domain;
 /// over the D2D surface (the live-overlay calibration-marker idiom); shared
 /// VM↔view record.
 /// </summary>
-public readonly record struct GhostMarker(string Name, PixelPoint Pixel, bool ShowLabel);
+public readonly record struct GhostMarker(string Name, OverlayPixel Pixel, bool ShowLabel);

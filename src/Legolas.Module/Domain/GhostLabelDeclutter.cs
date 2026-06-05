@@ -55,7 +55,10 @@ public static class GhostLabelDeclutter
 
         foreach (var r in references)
         {
-            var p = calibration.WorldToWindow(r.World, effectiveZoom);
+            // #1076 5a: WorldToWindow returns PixelPoint; re-tag to overlay-frame
+            // (the value is overlay-frame by the P.3 audit; Phase 6 typifies core).
+            var pRaw = calibration.WorldToWindow(r.World, effectiveZoom);
+            var p = new OverlayPixel(pRaw.X, pRaw.Y);
             var name = r.Name ?? string.Empty;
             var box = new Rect(
                 p.X + LabelAnchorDx,

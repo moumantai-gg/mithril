@@ -73,7 +73,7 @@ public interface IAreaCalibrationService
     /// shared service.</para>
     /// </summary>
     AreaCalibration? CalibrateCurrentArea(
-        IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+        IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements,
         double calibrationZoom = 1.0);
 
     /// <summary>Drop the current area's persisted calibration (forces a recalibrate).</summary>
@@ -207,7 +207,7 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     }
 
     public AreaCalibration? CalibrateCurrentArea(
-        IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
+        IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements,
         double calibrationZoom = 1.0)
     {
         if (CurrentScene is not { } scene || placements is null || placements.Count < 2)

@@ -50,58 +50,58 @@ public class ManualAnchorNudgeTests
     public void Manual_anchor_nudge_moves_only_SurveyPlayerPixel_and_keeps_the_flag()
     {
         var (session, map, _) = BuildSut();
-        session.PlayerPosition = new PixelPoint(7, 7); // Motherlode anchor
-        session.SurveyPlayerPixel = new PixelPoint(100, 100);
+        session.PlayerPosition = new OverlayPixel(7, 7); // Motherlode anchor
+        session.SurveyPlayerPixel = new OverlayPixel(100, 100);
         session.SurveyPlayerIsManual = true;
 
         map.Nudge(1, -1, step: 5);
 
-        session.SurveyPlayerPixel.Should().Be(new PixelPoint(105, 95));
+        session.SurveyPlayerPixel.Should().Be(new OverlayPixel(105, 95));
         session.SurveyPlayerIsManual.Should().BeTrue();
-        session.PlayerPosition.Should().Be(new PixelPoint(7, 7), "Motherlode anchor is untouched");
+        session.PlayerPosition.Should().Be(new OverlayPixel(7, 7), "Motherlode anchor is untouched");
     }
 
     [Fact]
     public void Auto_tracker_anchor_is_not_nudgeable()
     {
         var (session, map, _) = BuildSut();
-        session.SurveyPlayerPixel = new PixelPoint(50, 50);
+        session.SurveyPlayerPixel = new OverlayPixel(50, 50);
         session.SurveyPlayerIsManual = false; // projected fix, not manual
 
         map.Nudge(1, 0, step: 5);
 
-        session.SurveyPlayerPixel.Should().Be(new PixelPoint(50, 50), "a data-sourced fix is read-only");
+        session.SurveyPlayerPixel.Should().Be(new OverlayPixel(50, 50), "a data-sourced fix is read-only");
     }
 
     [Fact]
     public void A_fresh_tracker_fix_after_a_nudge_still_supersedes()
     {
         var (session, map, bus) = BuildSut();
-        session.SurveyPlayerPixel = new PixelPoint(100, 100);
+        session.SurveyPlayerPixel = new OverlayPixel(100, 100);
         session.SurveyPlayerIsManual = true;
         map.Nudge(2, 0, step: 5); // → (110, 100)
 
         bus.Publish(new PlayerPositionChanged(33, 0, 11, PositionSource.Movement, default));
 
         session.SurveyPlayerIsManual.Should().BeFalse("a zone-in/teleport wins");
-        session.SurveyPlayerPixel.Should().Be(new PixelPoint(33, -11), "reprojected from the fresh fix");
+        session.SurveyPlayerPixel.Should().Be(new OverlayPixel(33, -11), "reprojected from the fresh fix");
     }
 
     [Fact]
     public void A_selected_survey_still_wins_over_the_manual_anchor()
     {
         var (session, map, _) = BuildSut();
-        session.SurveyPlayerPixel = new PixelPoint(100, 100);
+        session.SurveyPlayerPixel = new OverlayPixel(100, 100);
         session.SurveyPlayerIsManual = true;
 
         var survey = new SurveyItemViewModel(
-            Survey.CreateAbsolute("Diamond", new WorldCoord(10, 0, 20), new PixelPoint(10, 20), 0));
+            Survey.CreateAbsolute("Diamond", new WorldCoord(10, 0, 20), new OverlayPixel(10, 20), 0));
         session.Surveys.Add(survey);
         session.SelectedSurvey = survey;
 
         map.Nudge(1, 0, step: 4);
 
-        survey.EffectivePixel.Should().Be(new PixelPoint(14, 20), "the selected survey takes precedence");
-        session.SurveyPlayerPixel.Should().Be(new PixelPoint(100, 100), "the manual anchor is untouched");
+        survey.EffectivePixel.Should().Be(new OverlayPixel(14, 20), "the selected survey takes precedence");
+        session.SurveyPlayerPixel.Should().Be(new OverlayPixel(100, 100), "the manual anchor is untouched");
     }
 }

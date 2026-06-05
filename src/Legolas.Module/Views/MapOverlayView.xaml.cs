@@ -1,3 +1,6 @@
+// #1076 Phase 5a: PixelPoint -> OverlayPixel rename landed here in 5a despite
+// this file's nominal Phase 5b ownership; mouse-event CanvasOverlayMapping
+// boundaries still deferred to 5b.
 using System.Windows;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -136,7 +139,7 @@ public partial class MapOverlayView : Window
         _brushCache.Bind(e.RenderTarget);
 
         var wedges = new List<WedgeArc>(vm.Surveys.Count);
-        var pins = new List<PixelPoint>(vm.Surveys.Count);
+        var pins = new List<OverlayPixel>(vm.Surveys.Count);
         var selected = vm.Session.SelectedSurvey;
         var listening = vm.IsListening;
         int? activeIndex = null;
@@ -293,7 +296,7 @@ public partial class MapOverlayView : Window
         if (!ReferenceEquals(fe, Viewport)) return;
 
         var canvasPos = Mouse.GetPosition(Viewport);
-        var clickPoint = new PixelPoint(canvasPos.X, canvasPos.Y);
+        var clickPoint = new OverlayPixel(canvasPos.X, canvasPos.Y);
 
         // #460/#477A: in the guided walkthrough's Pair phase the overlay
         // captures clicks. A click first tries to grab a placed marker for
@@ -338,7 +341,7 @@ public partial class MapOverlayView : Window
 
         if (_draggingCalibrationMarker)
         {
-            vm.DragCalibrationMarkerTo(new PixelPoint(canvasPos.X, canvasPos.Y));
+            vm.DragCalibrationMarkerTo(new OverlayPixel(canvasPos.X, canvasPos.Y));
             return;
         }
 
@@ -366,7 +369,7 @@ public partial class MapOverlayView : Window
             // Final commit through CorrectSurveyCommand — a local pixel
             // correction + route rebuild (no projector refit any more, #454).
             var canvasPos = Mouse.GetPosition(Viewport);
-            var finalPixel = new PixelPoint(canvasPos.X, canvasPos.Y);
+            var finalPixel = new OverlayPixel(canvasPos.X, canvasPos.Y);
             vm.CorrectSurveyCommand.Execute(new CorrectionArgs(_draggingPinFromViewport, finalPixel));
             _draggingPinFromViewport = null;
         }
@@ -375,7 +378,7 @@ public partial class MapOverlayView : Window
     private void ApplyDraggedPinPosition(Point cursor)
     {
         if (_draggingPinFromViewport is null) return;
-        var newPixel = new PixelPoint(cursor.X, cursor.Y);
+        var newPixel = new OverlayPixel(cursor.X, cursor.Y);
         var updated = _draggingPinFromViewport.Model with { ManualOverride = newPixel };
         _draggingPinFromViewport.UpdateModel(updated);
     }

@@ -9,8 +9,8 @@ namespace Legolas.Services;
 public sealed class NearestNeighbourTwoOptOptimizer : IRouteOptimizer
 {
     public IReadOnlyList<int> Optimize(
-        PixelPoint start,
-        IReadOnlyList<PixelPoint> points,
+        OverlayPixel start,
+        IReadOnlyList<OverlayPixel> points,
         CancellationToken cancellationToken = default)
     {
         var n = points.Count;

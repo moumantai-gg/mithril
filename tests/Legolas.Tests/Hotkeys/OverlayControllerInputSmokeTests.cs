@@ -129,7 +129,7 @@ public sealed class OverlayControllerInputSmokeTests
     private static SurveyItemViewModel SeedSurvey(SessionState session, string name, (double X, double Z) world)
     {
         var w = new WorldCoord(world.X, 0, world.Z);
-        var pixel = new PixelPoint(world.X, world.Z);
+        var pixel = new OverlayPixel(world.X, world.Z);
         var model = Survey.CreateAbsolute(name, w, pixel, gridIndex: 0);
         var vm = new SurveyItemViewModel(model);
         session.Surveys.Add(vm);

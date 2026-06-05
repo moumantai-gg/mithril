@@ -1,3 +1,8 @@
+// #1076 Phase 5a: PinScene's pixel fields became OverlayPixel; this file's
+// private D2D helpers were migrated to take OverlayPixel directly. Originally
+// tagged for Phase 5b but minimum-touch keep-it-building forced the rename
+// to land here in 5a — the helpers are frame-blind D2D rasterisation, so
+// the rename is cosmetic; mouse-event boundaries still live in 5b.
 using System.Numerics;
 using Legolas.Domain;
 using Legolas.ViewModels;
@@ -194,7 +199,7 @@ internal sealed class LegolasOverlaySceneDrawer
     {
         var vm = _vm;
         var wedges = new List<WedgeArc>(vm.Surveys.Count);
-        var pins = new List<PixelPoint>(vm.Surveys.Count);
+        var pins = new List<OverlayPixel>(vm.Surveys.Count);
         var selected = vm.Session.SelectedSurvey;
         var listening = vm.IsListening;
         int? activeIndex = null;
@@ -368,7 +373,7 @@ internal sealed class LegolasOverlaySceneDrawer
 
     private static void DrawPolyline(
         ID2D1RenderTarget rt,
-        IReadOnlyList<PixelPoint> points,
+        IReadOnlyList<OverlayPixel> points,
         ID2D1SolidColorBrush brush,
         float thickness,
         ID2D1StrokeStyle? style)
@@ -419,7 +424,7 @@ internal sealed class LegolasOverlaySceneDrawer
 
     private static void DrawPin(
         ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes,
-        PixelPoint pos, PinLayerStyle outer, PinLayerStyle center, double diameter)
+        OverlayPixel pos, PinLayerStyle outer, PinLayerStyle center, double diameter)
     {
         DrawPinLayer(rt, factory, brushes, pos, diameter, outer);
         DrawPinLayer(rt, factory, brushes, pos, center.Size, center);
@@ -427,7 +432,7 @@ internal sealed class LegolasOverlaySceneDrawer
 
     private static void DrawActivePin(
         ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes,
-        PixelPoint pos, PinScene scene, ActivePinTreatmentSpec spec)
+        OverlayPixel pos, PinScene scene, ActivePinTreatmentSpec spec)
     {
         switch (spec.Treatment)
         {
@@ -457,7 +462,7 @@ internal sealed class LegolasOverlaySceneDrawer
 
     private static void DrawHalo(
         ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes,
-        PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
+        OverlayPixel pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         var haloDiameter = pinDiameter + 2 * spec.HaloPaddingPx;
         var haloStyle = new PinLayerStyle(
@@ -472,7 +477,7 @@ internal sealed class LegolasOverlaySceneDrawer
 
     private static void DrawGlow(
         ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes,
-        PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
+        OverlayPixel pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         if (spec.GlowBlurRadius <= 0) return;
         const int rings = 4;
@@ -500,7 +505,7 @@ internal sealed class LegolasOverlaySceneDrawer
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
         IOverlayBrushes brushes,
-        PixelPoint center,
+        OverlayPixel center,
         double diameter,
         PinLayerStyle style)
     {

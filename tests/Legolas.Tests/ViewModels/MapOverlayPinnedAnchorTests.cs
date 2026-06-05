@@ -67,7 +67,7 @@ public class MapOverlayPinnedAnchorTests
 
         session.SurveyPlayerIsPinned.Should().BeTrue();
         session.SurveyPlayerIsManual.Should().BeTrue();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(40, 0, -25)));
+        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(40, 0, -25)).AsOverlay());
         map.PlayerAnchorStatus.Should().StartWith("You — pinned");
     }
 
@@ -80,7 +80,7 @@ public class MapOverlayPinnedAnchorTests
         pinState.Add(new MapPinEntry(10, 10, "@me", 0, 0));
 
         session.SurveyPlayerIsPinned.Should().BeTrue();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(10, 0, 10)));
+        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(10, 0, 10)).AsOverlay());
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public class MapOverlayPinnedAnchorTests
         pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
 
         session.SurveyPlayerIsPinned.Should().BeTrue();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(40, 0, -25)));
+        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(40, 0, -25)).AsOverlay());
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public class MapOverlayPinnedAnchorTests
 
         session.SurveyPlayerIsPinned.Should().BeFalse();
         session.SurveyPlayerIsManual.Should().BeFalse();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(7, 0, 8)));
+        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(7, 0, 8)).AsOverlay());
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public class MapOverlayPinnedAnchorTests
 
         session.SurveyPlayerIsPinned.Should().BeFalse();
         session.SurveyPlayerIsManual.Should().BeFalse();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(7, 0, 8)));
+        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(7, 0, 8)).AsOverlay());
     }
 
     [Fact]

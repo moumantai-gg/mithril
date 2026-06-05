@@ -40,7 +40,7 @@ public class PinCalibrationCoordinatorTests
 
     // A well-conditioned scale-only transform: pixel = (100 + 2X, 100 - 2Z),
     // i.e. AreaCalibration{scale=2, origin=(100,100), no rotation, north=+Z}.
-    private static PixelPoint Project(double x, double z) => new(100 + 2 * x, 100 - 2 * z);
+    private static OverlayPixel Project(double x, double z) => new(100 + 2 * x, 100 - 2 * z);
 
     // Pair every remaining pin at its own perfect projection, in whatever
     // spread order the coordinator suggests (the no-correction baseline).
@@ -183,9 +183,9 @@ public class PinCalibrationCoordinatorTests
         coord.Arm();
         coord.TogglePhase(); // 1 pin → entered in Drop; move to Pair
         coord.OverridePin = p;
-        coord.PairClick(new PixelPoint(1, 1));
+        coord.PairClick(new OverlayPixel(1, 1));
         coord.OverridePin = p; // same pin again
-        coord.PairClick(new PixelPoint(9, 9));
+        coord.PairClick(new OverlayPixel(9, 9));
         coord.PairedCount.Should().Be(1);
     }
 
@@ -205,23 +205,23 @@ public class PinCalibrationCoordinatorTests
         var other = coord.PlacedMarkers[1];
         var otherPixel = other.Pixel;
 
-        coord.TrySelectMarkerAt(new PixelPoint(121, 81), radius: 14).Should().BeTrue();
+        coord.TrySelectMarkerAt(new OverlayPixel(121, 81), radius: 14).Should().BeTrue();
         coord.SelectedMarker!.PairIndex.Should().Be(0);
         coord.SelectedMarker.Pixel.Should().Be(Project(10, 10));
 
-        coord.DragSelectedTo(new PixelPoint(500, 500));
-        coord.PlacedMarkers[0].Pixel.Should().Be(new PixelPoint(500, 500));
+        coord.DragSelectedTo(new OverlayPixel(500, 500));
+        coord.PlacedMarkers[0].Pixel.Should().Be(new OverlayPixel(500, 500));
         other.Pixel.Should().Be(otherPixel, "other markers are untouched");
 
         coord.NudgeSelected(3, -2);
-        coord.PlacedMarkers[0].Pixel.Should().Be(new PixelPoint(503, 498));
+        coord.PlacedMarkers[0].Pixel.Should().Be(new OverlayPixel(503, 498));
 
         // The world half is never mutated — Confirm proves the pairs carry the
         // dragged pixel against the ORIGINAL world coords.
         coord.Confirm(); // residual high after the drag → gated; force anyway
         coord.ConfirmAnyway();
         calib.LastPairs!.Should().Contain(p =>
-            p.Item1 == new WorldCoord(10, 0, 10) && p.Item2 == new PixelPoint(503, 498));
+            p.Item1 == new WorldCoord(10, 0, 10) && p.Item2 == new OverlayPixel(503, 498));
         calib.LastPairs!.Should().Contain(p =>
             p.Item1 == new WorldCoord(50, 0, 60) && p.Item2 == Project(50, 60));
     }
@@ -236,7 +236,7 @@ public class PinCalibrationCoordinatorTests
             FakeMapPinState.Pin(90, 20));
         coord.Arm();
         coord.PairClick(Project(10, 10));
-        coord.TrySelectMarkerAt(new PixelPoint(9999, 9999), radius: 14).Should().BeFalse();
+        coord.TrySelectMarkerAt(new OverlayPixel(9999, 9999), radius: 14).Should().BeFalse();
     }
 
     // ---- Non-persisting residual preview ----
@@ -288,7 +288,7 @@ public class PinCalibrationCoordinatorTests
         coord.PairClick(Project(10, 10));
         coord.PairClick(Project(50, 60));
         // One badly misplaced click → a large residual.
-        coord.PairClick(new PixelPoint(Project(90, 20).X + 400, Project(90, 20).Y));
+        coord.PairClick(new OverlayPixel(Project(90, 20).X + 400, Project(90, 20).Y));
 
         coord.IsResidualGood.Should().BeFalse();
         coord.Confirm().Should().BeNull("gated on a good residual");
@@ -388,14 +388,14 @@ public class PinCalibrationCoordinatorTests
 
     private sealed class FakeCalib : IAreaCalibrationService
     {
-        public List<(WorldCoord, PixelPoint)>? LastPairs { get; private set; }
+        public List<(WorldCoord, OverlayPixel)>? LastPairs { get; private set; }
         public double LastCalibrationZoom { get; private set; }
         public int ChangedCount { get; private set; }
         /// <summary>If set, CalibrateCurrentArea throws this instead of solving. Round-4 review #2.</summary>
         public Exception? ThrowOnCalibrate { get; set; }
 
         public AreaCalibration? CalibrateCurrentArea(
-            IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
+            IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements, double calibrationZoom = 1.0)
         {
             if (ThrowOnCalibrate is { } ex) throw ex;
             LastPairs = placements.Select(p => (p.World, p.Pixel)).ToList();

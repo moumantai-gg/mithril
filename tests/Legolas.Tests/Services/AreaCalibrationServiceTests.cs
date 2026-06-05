@@ -130,12 +130,12 @@ public class AreaCalibrationServiceTests
         // Identity-ish transform: pixel == world ground plane (scale 1, rot 0).
         // Four placements so ReferenceCount ≥ MinReferences (4) and the solved
         // calibration lands in the eligible set under the residual-ordered picker.
-        var placements = new (WorldCoord, PixelPoint)[]
+        var placements = new (WorldCoord, OverlayPixel)[]
         {
-            (new WorldCoord(0, 0, 0), new PixelPoint(0, 0)),
-            (new WorldCoord(100, 0, 0), new PixelPoint(100, 0)),
-            (new WorldCoord(0, 0, 100), new PixelPoint(0, -100)), // north → up
-            (new WorldCoord(50, 0, 50), new PixelPoint(50, -50)),
+            (new WorldCoord(0, 0, 0), new OverlayPixel(0, 0)),
+            (new WorldCoord(100, 0, 0), new OverlayPixel(100, 0)),
+            (new WorldCoord(0, 0, 100), new OverlayPixel(0, -100)), // north → up
+            (new WorldCoord(50, 0, 50), new OverlayPixel(50, -50)),
         };
 
         var cal = svc.CalibrateCurrentArea(placements, calibrationZoom: 0.39);
@@ -164,16 +164,16 @@ public class AreaCalibrationServiceTests
         var scene = SceneFor(area);
 
         // No current area yet.
-        svc.CalibrateCurrentArea(new (WorldCoord, PixelPoint)[]
+        svc.CalibrateCurrentArea(new (WorldCoord, OverlayPixel)[]
         {
-            (new WorldCoord(0, 0, 0), new PixelPoint(0, 0)),
-            (new WorldCoord(1, 0, 1), new PixelPoint(1, 1)),
+            (new WorldCoord(0, 0, 0), new OverlayPixel(0, 0)),
+            (new WorldCoord(1, 0, 1), new OverlayPixel(1, 1)),
         }).Should().BeNull();
 
         svc.SelectScene(scene);
-        svc.CalibrateCurrentArea(new (WorldCoord, PixelPoint)[]
+        svc.CalibrateCurrentArea(new (WorldCoord, OverlayPixel)[]
         {
-            (new WorldCoord(0, 0, 0), new PixelPoint(0, 0)),
+            (new WorldCoord(0, 0, 0), new OverlayPixel(0, 0)),
         }).Should().BeNull();
 
         mapCal.GetCalibration(scene).Should().BeNull();
@@ -278,9 +278,9 @@ public class AreaCalibrationServiceTests
 
         var placements = new[]
         {
-            (new WorldCoord(0, 0, 0), new PixelPoint(0, 0)),
-            (new WorldCoord(100, 0, 0), new PixelPoint(100, 0)),
-            (new WorldCoord(0, 0, 100), new PixelPoint(0, -100)),
+            (new WorldCoord(0, 0, 0), new OverlayPixel(0, 0)),
+            (new WorldCoord(100, 0, 0), new OverlayPixel(100, 0)),
+            (new WorldCoord(0, 0, 100), new OverlayPixel(0, -100)),
         };
 
         FluentActions.Invoking(() => svc.CalibrateCurrentArea(placements))
@@ -367,8 +367,8 @@ public class AreaCalibrationServiceTests
         public event EventHandler<MapSceneRef>? Changed { add { } remove { } }
         public bool IsCalibrated(MapSceneRef scene) => false;
         public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
-        public PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
-        public WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom) => null;
+        public Mithril.MapCalibration.PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
+        public WorldCoord? WindowToWorld(MapSceneRef scene, Mithril.MapCalibration.PixelPoint pixel, double currentZoom) => null;
         public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
         public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) => null;
         public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
@@ -394,11 +394,11 @@ public class AreaCalibrationServiceTests
         public AreaCalibration? LastApplied { get; private set; }
         public double Scale => 1;
         public double RotationRadians => 0;
-        public PixelPoint Origin => PixelPoint.Zero;
-        public PixelPoint Project(MetreOffset offset) => PixelPoint.Zero;
-        public void SetOrigin(PixelPoint origin) { }
-        public void CalibrateFromClick(PixelPoint playerPixel, PixelPoint click, MetreOffset offset) { }
-        public void Refit(IReadOnlyList<(MetreOffset Offset, PixelPoint Pixel)> corrections) { }
+        public OverlayPixel Origin => OverlayPixel.Zero;
+        public OverlayPixel Project(MetreOffset offset) => OverlayPixel.Zero;
+        public void SetOrigin(OverlayPixel origin) { }
+        public void CalibrateFromClick(OverlayPixel playerPixel, OverlayPixel click, MetreOffset offset) { }
+        public void Refit(IReadOnlyList<(MetreOffset Offset, OverlayPixel Pixel)> corrections) { }
         public void ApplyCalibration(AreaCalibration calibration) => LastApplied = calibration;
     }
 

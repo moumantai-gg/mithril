@@ -33,7 +33,7 @@ public class SurveyAnchorResolutionTests
         r!.Value.IsPinned.Should().BeTrue();
         r.Value.IsManual.Should().BeTrue();
         r.Value.Source.Should().BeNull();
-        r.Value.Pixel.Should().Be(new PixelPoint(120, 190));   // 100+2*10, 200-2*5
+        r.Value.Pixel.Should().Be(new OverlayPixel(120, 190));   // 100+2*10, 200-2*5
         r.Value.MeasuredAt.Should().Be(T0.AddMinutes(5));
     }
 
@@ -47,7 +47,7 @@ public class SurveyAnchorResolutionTests
         r!.Value.IsPinned.Should().BeFalse();
         r.Value.IsManual.Should().BeFalse();
         r.Value.Source.Should().Be(PositionSource.Spawn);
-        r.Value.Pixel.Should().Be(new PixelPoint(106, 192));   // tracker projected
+        r.Value.Pixel.Should().Be(new OverlayPixel(106, 192));   // tracker projected
     }
 
     [Fact]
@@ -58,7 +58,7 @@ public class SurveyAnchorResolutionTests
             fromTrackerFix: true, currentIsManual: true, currentIsPinned: true);
 
         r!.Value.IsPinned.Should().BeTrue();
-        r.Value.Pixel.Should().Be(new PixelPoint(120, 190));
+        r.Value.Pixel.Should().Be(new OverlayPixel(120, 190));
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public class SurveyAnchorResolutionTests
             fromTrackerFix: true, currentIsManual: true, currentIsPinned: false);
 
         r!.Value.IsManual.Should().BeFalse();
-        r.Value.Pixel.Should().Be(new PixelPoint(102, 198));
+        r.Value.Pixel.Should().Be(new OverlayPixel(102, 198));
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public class SurveyAnchorResolutionTests
 
         r!.Value.IsPinned.Should().BeFalse();
         r.Value.IsManual.Should().BeFalse();
-        r.Value.Pixel.Should().Be(new PixelPoint(104, 196));
+        r.Value.Pixel.Should().Be(new OverlayPixel(104, 196));
     }
 
     [Fact]

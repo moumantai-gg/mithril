@@ -18,8 +18,8 @@ public class SurveyPlayerGpsTests
 {
     private sealed class CapturingOptimizer : IRouteOptimizer
     {
-        public PixelPoint? LastStart { get; private set; }
-        public IReadOnlyList<int> Optimize(PixelPoint start, IReadOnlyList<PixelPoint> points,
+        public OverlayPixel? LastStart { get; private set; }
+        public IReadOnlyList<int> Optimize(OverlayPixel start, IReadOnlyList<OverlayPixel> points,
             CancellationToken cancellationToken = default)
         {
             LastStart = start;
@@ -31,6 +31,15 @@ public class SurveyPlayerGpsTests
     private static readonly AreaCalibration Calib = new(
         Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
         ReferenceCount: 3, ResidualPixels: 0.5);
+
+    // #1076 5a: AreaCalibration.WorldToWindow still returns PixelPoint
+    // (the Mithril.MapCalibration core type), unchanged in 5a. Re-tag at the
+    // boundary for test assertions; Phase 6 typifies the core method.
+    private static OverlayPixel CalibToOverlay(WorldCoord w)
+    {
+        var p = Calib.WorldToWindow(w);
+        return new OverlayPixel(p.X, p.Y);
+    }
 
     private static (SessionState session, MapOverlayViewModel map,
         FakePositionState posState, TestDomainEventBus bus, FakeAreaCalibrationService areaCal, CapturingOptimizer opt)
@@ -62,7 +71,7 @@ public class SurveyPlayerGpsTests
         double x, double y, int routeOrder)
     {
         var s = Survey.Create(name, new MetreOffset(x, y), gridIndex: routeOrder)
-            with { ManualOverride = new PixelPoint(x, y), RouteOrder = routeOrder };
+            with { ManualOverride = new OverlayPixel(x, y), RouteOrder = routeOrder };
         var vm = new SurveyItemViewModel(s);
         session.Surveys.Add(vm);
         return vm;
@@ -74,7 +83,7 @@ public class SurveyPlayerGpsTests
     public void OptimizeRoute_starts_from_projected_player_pixel_when_calibrated()
     {
         var (session, map, _, _, _, opt) = BuildSut(calibrated: true, px: 40, pz: -25);
-        var expected = Calib.WorldToWindow(new WorldCoord(40, 0, -25));
+        var expected = CalibToOverlay(new WorldCoord(40, 0, -25));
         SeedSurveyAt(session, "A", 200, 200, 0);
         SeedSurveyAt(session, "B", 300, 300, 1);
 
@@ -104,7 +113,7 @@ public class SurveyPlayerGpsTests
     {
         var calibrated = BuildSut(calibrated: true, px: 12, pz: -8);
         calibrated.map.PlayerMarkerPixel.Should()
-            .Be(Calib.WorldToWindow(new WorldCoord(12, 0, -8)));
+            .Be(CalibToOverlay(new WorldCoord(12, 0, -8)));
 
         var uncalibrated = BuildSut(calibrated: false);
         uncalibrated.map.PlayerMarkerPixel.Should()
@@ -119,20 +128,20 @@ public class SurveyPlayerGpsTests
 
         map.PlayerMarkerPixel.Should().BeNull("Motherlode marker needs a recorded click");
 
-        session.PlayerPosition = new PixelPoint(77, 88);
+        session.PlayerPosition = new OverlayPixel(77, 88);
         session.HasPlayerPosition = true;
-        map.PlayerMarkerPixel.Should().Be(new PixelPoint(77, 88));
+        map.PlayerMarkerPixel.Should().Be(new OverlayPixel(77, 88));
     }
 
     [Fact]
     public void Live_fix_updates_the_anchor_on_zone_or_teleport()
     {
         var (session, _, _, bus, _, _) = BuildSut(calibrated: true, px: 5, pz: -5);
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(5, 0, -5)));
+        session.SurveyPlayerPixel.Should().Be(CalibToOverlay(new WorldCoord(5, 0, -5)));
 
         bus.Publish(new PlayerPositionChanged(60, 0, -70, PositionSource.Movement, default));
 
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(60, 0, -70)));
+        session.SurveyPlayerPixel.Should().Be(CalibToOverlay(new WorldCoord(60, 0, -70)));
         session.SurveyPlayerSource.Should().Be(PositionSource.Movement);
     }
 
@@ -146,7 +155,7 @@ public class SurveyPlayerGpsTests
 
         areaCal.SetCalibration(Calib);
 
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(9, 0, -3)));
+        session.SurveyPlayerPixel.Should().Be(CalibToOverlay(new WorldCoord(9, 0, -3)));
     }
 
     // ─── Initial guidance segment ────────────────────────────────────────
@@ -155,13 +164,13 @@ public class SurveyPlayerGpsTests
     public void Initial_segment_runs_from_player_pixel_before_first_collection()
     {
         var (session, map, _, _, _, _) = BuildSut(calibrated: true, px: 10, pz: -10);
-        var start = Calib.WorldToWindow(new WorldCoord(10, 0, -10));
+        var start = CalibToOverlay(new WorldCoord(10, 0, -10));
         SeedSurveyAt(session, "First", 200, 200, 0);
         SeedSurveyAt(session, "Second", 300, 300, 1);
 
         map.ActiveSegmentPoints.Count.Should().Be(2);
         map.ActiveSegmentPoints[0].Should().Be(start);
-        map.ActiveSegmentPoints[1].Should().Be(new PixelPoint(200, 200));
+        map.ActiveSegmentPoints[1].Should().Be(new OverlayPixel(200, 200));
     }
 
     [Fact]
@@ -211,11 +220,11 @@ public class SurveyPlayerGpsTests
     public void Map_click_records_a_manual_override_only_while_setting_position()
     {
         var (session, map, _, _, _, _) = BuildSut(calibrated: true, px: 1, pz: -1);
-        var auto = Calib.WorldToWindow(new WorldCoord(1, 0, -1));
+        var auto = CalibToOverlay(new WorldCoord(1, 0, -1));
         session.SurveyPlayerPixel.Should().Be(auto);
 
         // A click outside the detour does nothing in Survey mode.
-        map.HandleMapClick(new PixelPoint(500, 600));
+        map.HandleMapClick(new OverlayPixel(500, 600));
         session.SurveyPlayerPixel.Should().Be(auto);
         session.SurveyPlayerIsManual.Should().BeFalse();
 
@@ -223,12 +232,12 @@ public class SurveyPlayerGpsTests
         map.IsSettingPosition.Should().BeTrue();
         map.OverlayHint.Should().NotBeEmpty("the detour coaches the click");
 
-        map.HandleMapClick(new PixelPoint(500, 600));
+        map.HandleMapClick(new OverlayPixel(500, 600));
 
-        session.SurveyPlayerPixel.Should().Be(new PixelPoint(500, 600));
+        session.SurveyPlayerPixel.Should().Be(new OverlayPixel(500, 600));
         session.SurveyPlayerIsManual.Should().BeTrue();
         session.SurveyPlayerSource.Should().BeNull("a manual pixel has no log source");
-        map.PlayerMarkerPixel.Should().Be(new PixelPoint(500, 600));
+        map.PlayerMarkerPixel.Should().Be(new OverlayPixel(500, 600));
         map.PlayerAnchorStatus.Should().Be("You — set manually");
         map.IsSettingPosition.Should().BeFalse("the click confirms and returns");
     }
@@ -239,19 +248,19 @@ public class SurveyPlayerGpsTests
         var (session, map, _, bus, areaCal, _) = BuildSut(calibrated: true, px: 2, pz: -2);
 
         map.SetPositionCommand.Execute(null);
-        map.HandleMapClick(new PixelPoint(123, 456));
+        map.HandleMapClick(new OverlayPixel(123, 456));
         session.SurveyPlayerIsManual.Should().BeTrue();
 
         // Calibration re-applied on the same area (e.g. recalibrate): the
         // manual pixel is calibration-independent, so it stays.
         areaCal.SetCalibration(Calib);
-        session.SurveyPlayerPixel.Should().Be(new PixelPoint(123, 456));
+        session.SurveyPlayerPixel.Should().Be(new OverlayPixel(123, 456));
         session.SurveyPlayerIsManual.Should().BeTrue();
 
         // A fresh tracker fix (zone-in / teleport) is authoritative again.
         bus.Publish(new PlayerPositionChanged(80, 0, -90, PositionSource.Movement, default));
         session.SurveyPlayerIsManual.Should().BeFalse();
-        session.SurveyPlayerPixel.Should().Be(Calib.WorldToWindow(new WorldCoord(80, 0, -90)));
+        session.SurveyPlayerPixel.Should().Be(CalibToOverlay(new WorldCoord(80, 0, -90)));
     }
 
     [Fact]
@@ -263,14 +272,14 @@ public class SurveyPlayerGpsTests
         session.SurveyPlayerPixel.Should().BeNull();
 
         map.SetPositionCommand.Execute(null);
-        map.HandleMapClick(new PixelPoint(42, 99));
+        map.HandleMapClick(new OverlayPixel(42, 99));
 
-        session.SurveyPlayerPixel.Should().Be(new PixelPoint(42, 99));
+        session.SurveyPlayerPixel.Should().Be(new OverlayPixel(42, 99));
         session.SurveyPlayerIsManual.Should().BeTrue();
 
         SeedSurveyAt(session, "A", 300, 300, 0);
         map.OptimizeRouteCommand.Execute(null);
-        opt.LastStart.Should().Be(new PixelPoint(42, 99),
+        opt.LastStart.Should().Be(new OverlayPixel(42, 99),
             "the manual anchor seeds the route start even with no calibration");
     }
 
@@ -278,7 +287,7 @@ public class SurveyPlayerGpsTests
     public void Cancel_leaves_the_anchor_unchanged()
     {
         var (session, map, _, _, _, _) = BuildSut(calibrated: true, px: 3, pz: -4);
-        var auto = Calib.WorldToWindow(new WorldCoord(3, 0, -4));
+        var auto = CalibToOverlay(new WorldCoord(3, 0, -4));
 
         map.SetPositionCommand.Execute(null);
         map.IsSettingPosition.Should().BeTrue();
