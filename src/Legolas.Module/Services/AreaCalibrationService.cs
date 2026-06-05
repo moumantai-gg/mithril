@@ -214,7 +214,7 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
             return null;
 
         var refs = placements
-            .Select(p => new LandmarkCalibrationSolver.Reference(p.World.X, p.World.Z, p.Pixel))
+            .Select(p => new LandmarkCalibrationSolver.Reference(p.World.X, p.World.Z, p.Pixel.X, p.Pixel.Y))
             .ToList();
 
         var solved = LandmarkCalibrationSolver.Solve(refs);

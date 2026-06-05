@@ -260,11 +260,16 @@ public class PinCalibrationCoordinatorTests
 
         // Equals a direct solve of the same (world↔pixel) pairs. Residual is
         // order-independent, so the suggestion order doesn't matter.
+        static LandmarkCalibrationSolver.Reference Ref(double x, double z)
+        {
+            var px = Project(x, z);
+            return new LandmarkCalibrationSolver.Reference(x, z, px.X, px.Y);
+        }
         var refs = new[]
         {
-            new LandmarkCalibrationSolver.Reference(10, 10, Project(10, 10)),
-            new LandmarkCalibrationSolver.Reference(50, 60, Project(50, 60)),
-            new LandmarkCalibrationSolver.Reference(90, 20, Project(90, 20)),
+            Ref(10, 10),
+            Ref(50, 60),
+            Ref(90, 20),
         };
         var direct = LandmarkCalibrationSolver.Solve(refs)!.ResidualPixels;
         coord.PreviewResidual!.Value.Should().BeApproximately(direct, 1e-6);

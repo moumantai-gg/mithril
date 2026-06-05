@@ -24,7 +24,7 @@ namespace Mithril.MapCalibration;
 /// </summary>
 public static class LandmarkCalibrationSolver
 {
-    public readonly record struct Reference(double WorldX, double WorldZ, PixelPoint Pixel);
+    public readonly record struct Reference(double WorldX, double WorldZ, double PixelX, double PixelY);
 
     /// <summary>
     /// Solves for the area calibration. Returns null when fewer than 2
@@ -60,8 +60,8 @@ public static class LandmarkCalibrationSolver
             var north = mirrorNorth ? -r.WorldZ : r.WorldZ;
             zSumRe += east;
             zSumIm += -north;
-            wSumRe += r.Pixel.X;
-            wSumIm += r.Pixel.Y;
+            wSumRe += r.PixelX;
+            wSumIm += r.PixelY;
         }
         var zMeanRe = zSumRe / n;
         var zMeanIm = zSumIm / n;
@@ -76,8 +76,8 @@ public static class LandmarkCalibrationSolver
             var north = mirrorNorth ? -r.WorldZ : r.WorldZ;
             var zRe = east - zMeanRe;
             var zIm = -north - zMeanIm;
-            var wRe = r.Pixel.X - wMeanRe;
-            var wIm = r.Pixel.Y - wMeanIm;
+            var wRe = r.PixelX - wMeanRe;
+            var wIm = r.PixelY - wMeanIm;
             var mag2 = zRe * zRe + zIm * zIm;
             if (mag2 < 1e-9) continue;
             numRe += wRe * zRe + wIm * zIm;
@@ -111,8 +111,8 @@ public static class LandmarkCalibrationSolver
             var rotN = -east * sin + north * cos;
             var px = originX + scale * rotE;
             var py = originY - scale * rotN;
-            var dx = px - r.Pixel.X;
-            var dy = py - r.Pixel.Y;
+            var dx = px - r.PixelX;
+            var dy = py - r.PixelY;
             sumSq += dx * dx + dy * dy;
         }
         var residual = Math.Sqrt(sumSq / n);

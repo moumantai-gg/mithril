@@ -34,8 +34,11 @@ public class LandmarkCalibrationSolverTests
         };
 
         var refs = world
-            .Select(p => new LandmarkCalibrationSolver.Reference(
-                p.X, p.Z, Project(scale, rot, origin, p.X, p.Z)))
+            .Select(p =>
+            {
+                var px = Project(scale, rot, origin, p.X, p.Z);
+                return new LandmarkCalibrationSolver.Reference(p.X, p.Z, px.X, px.Y);
+            })
             .ToList();
 
         var cal = LandmarkCalibrationSolver.Solve(refs);
@@ -80,7 +83,11 @@ public class LandmarkCalibrationSolverTests
         }
 
         var refs = world
-            .Select(p => new LandmarkCalibrationSolver.Reference(p.X, p.Z, Mirrored(p.X, p.Z)))
+            .Select(p =>
+            {
+                var px = Mirrored(p.X, p.Z);
+                return new LandmarkCalibrationSolver.Reference(p.X, p.Z, px.X, px.Y);
+            })
             .ToList();
 
         var cal = LandmarkCalibrationSolver.Solve(refs);
@@ -95,7 +102,7 @@ public class LandmarkCalibrationSolverTests
     {
         LandmarkCalibrationSolver.Solve(new[]
         {
-            new LandmarkCalibrationSolver.Reference(1, 2, new PixelPoint(3, 4)),
+            new LandmarkCalibrationSolver.Reference(1, 2, 3, 4),
         }).Should().BeNull();
 
         LandmarkCalibrationSolver.Solve(Array.Empty<LandmarkCalibrationSolver.Reference>())
@@ -109,8 +116,8 @@ public class LandmarkCalibrationSolverTests
         // (same threshold as CoordinateProjector.Refit).
         var refs = new[]
         {
-            new LandmarkCalibrationSolver.Reference(50, 50, new PixelPoint(10, 10)),
-            new LandmarkCalibrationSolver.Reference(50, 50, new PixelPoint(99, 99)),
+            new LandmarkCalibrationSolver.Reference(50, 50, 10, 10),
+            new LandmarkCalibrationSolver.Reference(50, 50, 99, 99),
         };
 
         LandmarkCalibrationSolver.Solve(refs).Should().BeNull();
@@ -125,11 +132,14 @@ public class LandmarkCalibrationSolverTests
         var world = new[] { (1000.0, 0.0), (0.0, 1000.0), (1000.0, 1000.0) };
 
         var refs = world
-            .Select(p => new LandmarkCalibrationSolver.Reference(
-                p.Item1, p.Item2, Project(scale, rot, origin, p.Item1, p.Item2)))
+            .Select(p =>
+            {
+                var px = Project(scale, rot, origin, p.Item1, p.Item2);
+                return new LandmarkCalibrationSolver.Reference(p.Item1, p.Item2, px.X, px.Y);
+            })
             .ToList();
         // Nudge one reference's clicked pixel well off true.
-        refs[2] = refs[2] with { Pixel = new PixelPoint(refs[2].Pixel.X + 60, refs[2].Pixel.Y - 80) };
+        refs[2] = refs[2] with { PixelX = refs[2].PixelX + 60, PixelY = refs[2].PixelY - 80 };
 
         var cal = LandmarkCalibrationSolver.Solve(refs);
 

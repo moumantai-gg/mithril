@@ -44,7 +44,11 @@ public class AreaCalibrationProjectWorldTests
         }
 
         var refs = world
-            .Select(w => new LandmarkCalibrationSolver.Reference(w.X, w.Z, Forward(w)))
+            .Select(w =>
+            {
+                var px = Forward(w);
+                return new LandmarkCalibrationSolver.Reference(w.X, w.Z, px.X, px.Y);
+            })
             .ToList();
 
         var cal = LandmarkCalibrationSolver.Solve(refs);

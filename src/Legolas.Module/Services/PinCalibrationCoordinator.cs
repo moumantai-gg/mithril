@@ -541,7 +541,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     {
         if (_pairs.Count < 3) { PreviewResidual = null; return; }
         var refs = _pairs
-            .Select(p => new LandmarkCalibrationSolver.Reference(p.Pin.X, p.Pin.Z, p.Pixel))
+            .Select(p => new LandmarkCalibrationSolver.Reference(p.Pin.X, p.Pin.Z, p.Pixel.X, p.Pixel.Y))
             .ToList();
         PreviewResidual = LandmarkCalibrationSolver.Solve(refs)?.ResidualPixels;
     }

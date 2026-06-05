@@ -139,8 +139,8 @@ public static class TypeAwareRansacSolver
             if (r1.World.X == r2.World.X && r1.World.Z == r2.World.Z) continue;
 
             var seed = LandmarkCalibrationSolver.Solve([
-                new LandmarkCalibrationSolver.Reference(r1.World.X, r1.World.Z, new PixelPoint(e1.Tx, e1.Ty)),
-                new LandmarkCalibrationSolver.Reference(r2.World.X, r2.World.Z, new PixelPoint(e2.Tx, e2.Ty)),
+                new LandmarkCalibrationSolver.Reference(r1.World.X, r1.World.Z, e1.Tx, e1.Ty),
+                new LandmarkCalibrationSolver.Reference(r2.World.X, r2.World.Z, e2.Tx, e2.Ty),
             ]);
             if (seed is null) continue;
 
@@ -208,7 +208,7 @@ public static class TypeAwareRansacSolver
             // residual over those inliers — a "wrong" seed can collect inliers by
             // chance, but the refit over mis-paired points yields a high residual.
             var refitRefs = inliers
-                .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
+                .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, a.PixelX, a.PixelY))
                 .ToList();
             var refit = LandmarkCalibrationSolver.Solve(refitRefs);
             if (refit is null) continue;
@@ -267,7 +267,7 @@ public static class TypeAwareRansacSolver
     private static AreaCalibration? SolveOver(IEnumerable<AssignedReference> refs)
     {
         var input = refs
-            .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
+            .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, a.PixelX, a.PixelY))
             .ToList();
         return LandmarkCalibrationSolver.Solve(input);
     }
