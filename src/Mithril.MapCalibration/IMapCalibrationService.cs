@@ -40,6 +40,7 @@ public interface IMapCalibrationService
     /// when the scene is uncalibrated (consumer chooses how to degrade &#8212;
     /// chip, hide, fallback text).
     /// </summary>
+    [Obsolete("Use WorldToTexture or WorldToOverlay; frame-explicit API since #1076.", error: false)]
     PixelPoint? WorldToWindow(MapSceneRef scene, WorldCoord world, double currentZoom);
 
     /// <summary>
@@ -47,6 +48,7 @@ public interface IMapCalibrationService
     /// uncalibrated. Required by Gwaihir's "click the map to drop a pin" UX
     /// (#830 §3a).
     /// </summary>
+    [Obsolete("Use TextureToWorld or OverlayToWorld; frame-explicit API since #1076.", error: false)]
     WorldCoord? WindowToWorld(MapSceneRef scene, PixelPoint pixel, double currentZoom);
 
     /// <summary>

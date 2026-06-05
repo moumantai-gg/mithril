@@ -5,6 +5,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsNotAsErrors>CS1591</WarningsNotAsErrors>
+    <!-- TODO(#1076): remove this NoWarn in PR 7 once all consumers migrate off
+         WorldToWindow/WindowToWorld onto the frame-explicit WorldToTexture /
+         WorldToOverlay. The [Obsolete] shims land in PR 2 (Task 2.5); PRs 3-5
+         chew through the consumer surface; PR 7 deletes the shims + this line. -->
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 
