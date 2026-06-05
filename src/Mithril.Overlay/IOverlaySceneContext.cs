@@ -83,5 +83,5 @@ public interface IOverlaySceneContext
     /// world-space geometry on a non-null projection; pixel-native bits
     /// (route polyline pixels, calibration placement pins captured by
     /// pixel) skip the projection entirely.</summary>
-    PixelPoint? Project(double worldX, double worldZ);
+    OverlayPixel? Project(double worldX, double worldZ);
 }

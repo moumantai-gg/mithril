@@ -162,6 +162,6 @@ public sealed class LegolasOverlaySceneDrawerPlacementPinTests
         public ID2D1Factory Factory => null!;
         public string CurrentAreaKey => "AreaUncalibrated";
         public MapSceneRef CurrentScene => new MapSceneRef("AreaUncalibrated", null, "Map_AreaUncalibrated");
-        public PixelPoint? Project(double worldX, double worldZ) => new PixelPoint(worldX, worldZ);
+        public OverlayPixel? Project(double worldX, double worldZ) => new OverlayPixel(worldX, worldZ);
     }
 }

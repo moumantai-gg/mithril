@@ -694,14 +694,18 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
         public MapSceneRef CurrentScene => _scene;
 
-        public PixelPoint? Project(double worldX, double worldZ)
+        public OverlayPixel? Project(double worldX, double worldZ)
         {
             // Calibrated-area gate is enforced before drawers fire, so we
-            // can call WorldToWindow directly. A null return here means the
+            // can call WorldToOverlay directly. A null return here means the
             // calibration service couldn't project this specific point
             // (e.g. NaN inputs); the drawer treats that as "skip this pin"
             // — same shape as the marker renderer's null-skip branch.
-            return _owner._calibration.WorldToWindow(
+            //
+            // #1076: switched from WorldToWindow (obsolete, returns
+            // PixelPoint?) to WorldToOverlay (returns OverlayPixel?) so the
+            // overlay frame stays frame-typed end-to-end.
+            return _owner._calibration.WorldToOverlay(
                 _scene, new WorldCoord(worldX, 0, worldZ), _currentZoom);
         }
     }

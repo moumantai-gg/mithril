@@ -117,6 +117,6 @@ public sealed class LegolasOverlaySceneDrawerGhostTests
             "Factory must not be touched in the ghost-pass test.");
         public string CurrentAreaKey => "AreaTest";
         public MapSceneRef CurrentScene => new MapSceneRef("AreaTest", null, "Map_AreaTest");
-        public PixelPoint? Project(double worldX, double worldZ) => new PixelPoint(worldX, worldZ);
+        public OverlayPixel? Project(double worldX, double worldZ) => new OverlayPixel(worldX, worldZ);
     }
 }
