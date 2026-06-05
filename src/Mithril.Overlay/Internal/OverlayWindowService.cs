@@ -396,6 +396,25 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             }
         }
 
+        // mithril#1081 — composed cal resolution can fail with isCalibrated=true
+        // (texture-frame cal exists but sha is null, catalogue misses, or surface unsized).
+        // Increment the per-scene miss counter and log once-per-scene at Trace to
+        // distinguish the four sub-reasons so a user inspecting boot.log can act
+        // (re-run AutoCalibrate / wait for catalogue refresh / etc).
+        if (isCalibrated && composedCal is null && resolvedScene is { } missedScene)
+        {
+            var assetKey = missedScene.MapAssetKey;
+            MithrilMeters.Overlay.ProjectionMisses.Add(1,
+                new KeyValuePair<string, object?>("area", areaKey));
+            if (_projectionMissAreasLogged.TryAdd(assetKey, 0))
+            {
+                var reason = ClassifyComposedMissReason(missedScene);
+                _logger?.LogTrace(
+                    "OverlayWindowService: cal.path=none for calibrated scene {AssetKey} (reason={Reason}); marker projection skipped this frame and subsequent frames until the condition resolves.",
+                    assetKey, reason);
+            }
+        }
+
         // Marker projection + render — calibrated areas only. WorldToOverlay
         // returns null without a calibration, so there is nothing meaningful
         // to project here when uncalibrated (the scene drawers above already
@@ -579,6 +598,25 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         var surface = window.OverlaySurface;
         if (surface is null) return (0, 0);
         return (surface.ActualWidth, surface.ActualHeight);
+    }
+
+    /// <summary>
+    /// mithril#1081 — re-derives the reason a composed overlay calibration
+    /// could not be built for a scene that <see cref="IMapCalibrationService.IsCalibrated"/>
+    /// reports as calibrated. Called at most once per scene per session (gated by
+    /// <see cref="_projectionMissAreasLogged"/>). Cheap: all lookups are O(1).
+    /// </summary>
+    private string ClassifyComposedMissReason(MapSceneRef scene)
+    {
+        if (_calibration.GetOverlayCalibration(scene) is not null)
+            return "unexpected (overlay-frame cal present)";
+        var texCal = _calibration.GetTextureCalibration(scene);
+        if (texCal is null) return "no usable calibration";
+        if (string.IsNullOrWhiteSpace(texCal.Value.PixelSha256)) return "null_sha (pre-#1081 record)";
+        var (w, h) = ResolveOverlaySurfaceSize();
+        if (w <= 0 || h <= 0) return "unsized_surface";
+        if (_textureDimensions.TryGetSizeBySha(texCal.Value.PixelSha256) is null) return "catalogue_miss";
+        return "unknown";
     }
 
     /// <summary>Surface the renderer to test code &#8212; production
