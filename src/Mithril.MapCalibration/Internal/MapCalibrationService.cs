@@ -124,6 +124,70 @@ internal sealed class MapCalibrationService : IMapCalibrationService
         return sources;
     }
 
+    /// <summary>
+    /// #1076 typed-frame view: every candidate AreaCalibration for the scene
+    /// that infers to TEXTURE frame (see <see cref="InferFrameFromSource"/>),
+    /// wrapped as <see cref="WorldToTextureCalibration"/>. Underlying storage
+    /// is unchanged — this is a derived projection of <see cref="GetAllSources"/>
+    /// for the texture-frame consumers (drift check, AutoCal).
+    /// </summary>
+    internal IReadOnlyList<WorldToTextureCalibration> GetTextureRecords(MapSceneRef scene)
+    {
+        var all = GetAllSources(scene);
+        if (all.Count == 0) return Array.Empty<WorldToTextureCalibration>();
+        var result = new List<WorldToTextureCalibration>(all.Count);
+        foreach (var cal in all)
+        {
+            if (InferFrameFromSource(cal.Source) == CalibrationFrameKind.Texture)
+                result.Add(ToTextureCalibration(cal));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// #1076 typed-frame view: every candidate AreaCalibration for the scene
+    /// that infers to OVERLAY frame, wrapped as <see cref="WorldToOverlayCalibration"/>.
+    /// Used by Legolas overlay rendering.
+    /// </summary>
+    internal IReadOnlyList<WorldToOverlayCalibration> GetOverlayRecords(MapSceneRef scene)
+    {
+        var all = GetAllSources(scene);
+        if (all.Count == 0) return Array.Empty<WorldToOverlayCalibration>();
+        var result = new List<WorldToOverlayCalibration>(all.Count);
+        foreach (var cal in all)
+        {
+            if (InferFrameFromSource(cal.Source) == CalibrationFrameKind.Overlay)
+                result.Add(ToOverlayCalibration(cal));
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// #1076 source→frame inference. Spec §7.2 (revised after P.1/P.1b):
+    /// AutoCapture + BundledBaseline + CommunitySync → Texture frame;
+    /// UserRefinement → Overlay (the in-the-wild Schema-1 default since AutoCal
+    /// has never shipped to users — every persisted UserRefinement record is
+    /// Legolas-wizard-produced overlay-frame).
+    /// </summary>
+    private static CalibrationFrameKind InferFrameFromSource(CalibrationSource source) => source switch
+    {
+        CalibrationSource.AutoCapture     => CalibrationFrameKind.Texture,
+        CalibrationSource.BundledBaseline => CalibrationFrameKind.Texture,
+        CalibrationSource.CommunitySync   => CalibrationFrameKind.Texture,
+        CalibrationSource.UserRefinement  => CalibrationFrameKind.Overlay,
+        _ => CalibrationFrameKind.Overlay, // unknown → safest default; spec §13 P.1b
+    };
+
+    private static WorldToTextureCalibration ToTextureCalibration(AreaCalibration legacy) =>
+        new(legacy.OriginX, legacy.OriginY, legacy.Scale, legacy.RotationRadians,
+            legacy.MirrorNorth, legacy.CalibrationZoom);
+
+    private static WorldToOverlayCalibration ToOverlayCalibration(AreaCalibration legacy) =>
+        new(legacy.OriginX, legacy.OriginY, legacy.Scale, legacy.RotationRadians,
+            legacy.MirrorNorth, legacy.CalibrationZoom);
+
+    private enum CalibrationFrameKind { Texture, Overlay }
+
     public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration)
     {
         if (string.IsNullOrWhiteSpace(scene.MapAssetKey))
