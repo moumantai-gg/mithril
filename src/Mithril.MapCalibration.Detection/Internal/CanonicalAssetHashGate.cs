@@ -1,9 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration;
+using Mithril.MapCalibration.Internal;
 
 namespace Mithril.MapCalibration.Detection.Internal;
 
@@ -102,22 +101,17 @@ internal sealed class CanonicalAssetHashGate
 
     private static CanonicalAssetHashes? ReadCatalogue(ILogger? logger)
     {
-        var assembly = typeof(CanonicalAssetHashGate).Assembly;
+        // The resource is embedded in Mithril.MapCalibration (core), not in this
+        // Detection assembly. Use the loader type — which lives in core — to
+        // resolve the correct assembly.
+        var assembly = typeof(CanonicalAssetHashesLoader).Assembly;
         using var stream = assembly.GetManifestResourceStream(CatalogueResource);
         if (stream is null)
         {
             logger?.LogWarning("Canonical-asset-hash catalogue {Resource} not found — gate accepts all (safe-degrade).", CatalogueResource);
             return null;
         }
-        try
-        {
-            return JsonSerializer.Deserialize(stream, DetectionJsonContext.Default.CanonicalAssetHashes);
-        }
-        catch (JsonException ex)
-        {
-            logger?.LogWarning(ex, "Canonical-asset-hash catalogue {Resource} failed to parse — gate accepts all (safe-degrade).", CatalogueResource);
-            return null;
-        }
+        return CanonicalAssetHashesLoader.TryLoad(stream, logger);
     }
 }
 
