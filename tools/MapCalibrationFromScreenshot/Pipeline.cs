@@ -171,12 +171,17 @@ internal static class Pipeline
     {
         Console.WriteLine($"[solve] residualPixels={cal.ResidualPixels:0.00}  scale={cal.Scale:0.0000} px/unit  rotation={cal.RotationRadians:0.000} rad  origin=({cal.OriginX:0.0},{cal.OriginY:0.0})  mirrorNorth={cal.MirrorNorth}");
         Console.WriteLine($"[solve] {cal.ReferenceCount} references used (per-inlier residual = distance from projected to detected pixel):");
+        // #1076 Phase 7.5: project through a texture-frame view of the solved
+        // calibration; per-inlier residuals are texture-pixel.
+        var calTex = new WorldToTextureCalibration(
+            cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
+            cal.MirrorNorth, cal.CalibrationZoom);
         foreach (var r in refs)
         {
             // Per-inlier residual — reveals whether the RMS is dominated by a
             // single outlier (suggesting iterative RANSAC would help) or evenly
             // distributed across all inliers (suggesting PG's non-affine ceiling).
-            var projected = cal.WorldToWindow(new Mithril.MapCalibration.WorldCoord(r.WorldX, 0, r.WorldZ));
+            var projected = calTex.ToTexture(new Mithril.MapCalibration.WorldCoord(r.WorldX, 0, r.WorldZ));
             var dx = projected.X - r.PixelX;
             var dy = projected.Y - r.PixelY;
             var dist = Math.Sqrt(dx * dx + dy * dy);
