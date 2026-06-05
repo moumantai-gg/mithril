@@ -24,4 +24,14 @@ public sealed record LocateMetrics(
     double Ty,
     double ResidualPixels,
     LocateProvenance Provenance = LocateProvenance.OrbRansac,
-    double? Confidence = null);
+    double? Confidence = null)
+{
+    /// <summary>
+    /// The located map rect's origin within the captured frame, as a typed
+    /// <see cref="CapturedFramePixel"/>. Synonymous with
+    /// (<see cref="Tx"/>, <see cref="Ty"/>) but compile-time-tagged so a caller
+    /// can't accidentally feed it into texture- or crop-frame arithmetic
+    /// (mithril#1076).
+    /// </summary>
+    public CapturedFramePixel LocatedRectOrigin => new(Tx, Ty);
+}
