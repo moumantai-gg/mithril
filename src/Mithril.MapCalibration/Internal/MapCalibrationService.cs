@@ -43,8 +43,12 @@ internal sealed class MapCalibrationService : IMapCalibrationService
     {
         if (string.IsNullOrWhiteSpace(scene.MapAssetKey)) return null;
 
-        var candidates = new List<AreaCalibration>(capacity: 2);
-        if (_userStore.TryGet(scene.MapAssetKey, out var user)) candidates.Add(user);
+        var candidates = new List<AreaCalibration>(capacity: 3);
+        if (_userStore.TryGetAny(scene.MapAssetKey, out var slots))
+        {
+            if (slots.Texture is not null) candidates.Add(slots.Texture);
+            if (slots.Overlay is not null) candidates.Add(slots.Overlay);
+        }
         if (_baseline.TryGetValue(scene.MapAssetKey, out var baseline)) candidates.Add(baseline);
         // CommunitySync slot reserved.
 
@@ -143,7 +147,7 @@ internal sealed class MapCalibrationService : IMapCalibrationService
         // Source. Stamping Source AND Frame at save sites (AutoCalibrationEngine and
         // AreaCalibrationService) keeps disk records self-describing.
         var candidates = new List<AreaCalibration>(capacity: 2);
-        if (_userStore.TryGet(scene.MapAssetKey, out var user) && user.Frame == frame) candidates.Add(user);
+        if (_userStore.TryGet(scene.MapAssetKey, frame, out var user)) candidates.Add(user);
         if (_baseline.TryGetValue(scene.MapAssetKey, out var baseline) && baseline.Frame == frame) candidates.Add(baseline);
 
         if (candidates.Count == 0) return null;
@@ -179,8 +183,15 @@ internal sealed class MapCalibrationService : IMapCalibrationService
     {
         if (string.IsNullOrWhiteSpace(scene.MapAssetKey)) return Array.Empty<AreaCalibration>();
 
-        var sources = new List<AreaCalibration>(capacity: 2);
-        if (_userStore.TryGet(scene.MapAssetKey, out var user)) sources.Add(user);
+        // mithril#1082: GetAllSources can now return up to 3 entries — both
+        // user-store slots (texture + overlay) plus the bundled baseline. All
+        // call sites iterate (FirstOrDefault / OrderBy) without count assumptions.
+        var sources = new List<AreaCalibration>(capacity: 3);
+        if (_userStore.TryGetAny(scene.MapAssetKey, out var slots))
+        {
+            if (slots.Texture is not null) sources.Add(slots.Texture);
+            if (slots.Overlay is not null) sources.Add(slots.Overlay);
+        }
         if (_baseline.TryGetValue(scene.MapAssetKey, out var baseline)) sources.Add(baseline);
         // CommunitySync slot reserved here; not yet wired.
         return sources;

@@ -226,7 +226,8 @@ public sealed class MapCalibrationServiceTests : IDisposable
         }
 
         // Same-session read returns the original value, not the rolled-back attempt.
-        store.TryGet("Map_AreaEltibule", out var current).Should().BeTrue();
+        // MakeCal returns a default-Frame=Texture record, so look up the Texture slot.
+        store.TryGet("Map_AreaEltibule", CalibrationFrame.Texture, out var current).Should().BeTrue();
         current.Scale.Should().Be(1.0);
     }
 

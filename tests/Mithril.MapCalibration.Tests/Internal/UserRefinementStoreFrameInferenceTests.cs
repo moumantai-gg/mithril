@@ -64,8 +64,12 @@ public sealed class UserRefinementStoreFrameInferenceTests : IDisposable
 
         var store = new UserRefinementStore(_dir);
 
-        store.TryGet("Map_AreaSerbule", out var cal).Should().BeTrue();
-        cal.Frame.Should().Be(expected);
+        // mithril#1082: TryGetAny returns the scene's typed slots; the inferred
+        // Frame is observable as which slot the record landed in.
+        store.TryGetAny("Map_AreaSerbule", out var slots).Should().BeTrue();
+        var cal = slots.Get(expected);
+        cal.Should().NotBeNull();
+        cal!.Frame.Should().Be(expected);
     }
 
     [Fact]
@@ -85,8 +89,10 @@ public sealed class UserRefinementStoreFrameInferenceTests : IDisposable
         // restamping. Verify the Overlay-with-warn outcome rather than the Source value.
         var store = new UserRefinementStore(_dir, logger);
 
-        store.TryGet("Map_AreaSerbule", out var cal).Should().BeTrue();
-        cal.Frame.Should().Be(CalibrationFrame.Overlay);
+        store.TryGetAny("Map_AreaSerbule", out var slots).Should().BeTrue();
+        slots.Overlay.Should().NotBeNull();
+        slots.Overlay!.Frame.Should().Be(CalibrationFrame.Overlay);
+        slots.Texture.Should().BeNull();
         logger.Warnings.Should().Contain(w => w.Contains("CommunitySync", StringComparison.Ordinal));
     }
 
@@ -104,10 +110,11 @@ public sealed class UserRefinementStoreFrameInferenceTests : IDisposable
         // The whole entry may degrade to "skipped" if the enum NAME doesn't parse
         // (UseStringEnumConverter throws on unknown names) — that path is already
         // covered by the per-entry resilient parse + skip+warn. If the entry DOES
-        // survive (e.g. a future build relaxes the parse), Frame must be Overlay.
-        if (store.TryGet("Map_AreaSerbule", out var cal))
+        // survive (e.g. a future build relaxes the parse), the record lands in
+        // the Overlay slot per the unknown-source inference rule.
+        if (store.TryGetAny("Map_AreaSerbule", out var slots))
         {
-            cal.Frame.Should().Be(CalibrationFrame.Overlay);
+            slots.Overlay?.Frame.Should().Be(CalibrationFrame.Overlay);
         }
 
         // Either way, a warn must have been logged: either the per-entry unparseable
@@ -138,7 +145,7 @@ public sealed class UserRefinementStoreFrameInferenceTests : IDisposable
 
         var store = new UserRefinementStore(_dir);
 
-        store.TryGet("Map_AreaSerbule", out var cal).Should().BeTrue();
+        store.TryGet("Map_AreaSerbule", CalibrationFrame.Overlay, out var cal).Should().BeTrue();
         cal.Frame.Should().Be(CalibrationFrame.Overlay);
     }
 

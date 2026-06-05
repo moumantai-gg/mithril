@@ -24,6 +24,8 @@ namespace Mithril.MapCalibration.Internal;
 [JsonSerializable(typeof(BundledBaselineFile))]
 [JsonSerializable(typeof(UserRefinementFile))]
 [JsonSerializable(typeof(Dictionary<string, AreaCalibration>))]
+[JsonSerializable(typeof(Dictionary<string, SceneRefinements>))]
+[JsonSerializable(typeof(SceneRefinements))]
 [JsonSerializable(typeof(AreaCalibration))]
 [JsonSerializable(typeof(SceneAssetCacheFile))]
 [JsonSerializable(typeof(SceneAssetCacheFileEntry))]
@@ -35,7 +37,14 @@ internal sealed record BundledBaselineFile(
     int SchemaVersion,
     Dictionary<string, AreaCalibration> Anchors);
 
-/// <summary>On-disk shape for the per-user refinement store JSON file.</summary>
+/// <summary>
+/// On-disk shape for the per-user refinement store JSON file. Schema-3
+/// (mithril#1082): values are <see cref="SceneRefinements"/> typed-slot
+/// containers, one per scene, with optional <c>texture</c> / <c>overlay</c>
+/// inner records. Schema-1 (legacy bare keys) and Schema-2 (single
+/// <see cref="AreaCalibration"/> per scene) shapes are migrated to Schema-3 on
+/// load by <see cref="UserRefinementStore.Load"/>.
+/// </summary>
 internal sealed record UserRefinementFile(
     int SchemaVersion,
-    Dictionary<string, AreaCalibration> Calibrations);
+    Dictionary<string, SceneRefinements> Calibrations);
