@@ -133,23 +133,6 @@ public sealed partial class SessionState : ObservableObject
     // pixel-click manual — IsManual && !IsPinned — keeps its #476 stickiness).
     [ObservableProperty] private bool _surveyPlayerIsPinned;
 
-    // #524: the in-game map zoom (PG's "Zoom level: X.XX" readout). Used by
-    // WorldToOverlayCalibration.ToOverlay(world, currentZoom) so a calibration
-    // solved at one zoom can place pins at another. Ephemeral — defaults to PG's max
-    // (2.00) on every Mithril restart, matching the accuracy-optimal stamp the
-    // user is expected to use when calibrating. Range mirrors PG's slider hard
-    // stops [0.13, 2.00]; the clamp keeps direct VM mutation honest even though
-    // the bound slider already enforces the range visually. Lives on
-    // SessionState (not LegolasSettings) so it stays a cross-mode shared
-    // observable both Survey and Motherlode read.
-    [ObservableProperty] private double _currentMapZoom = 2.0;
-
-    partial void OnCurrentMapZoomChanged(double value)
-    {
-        if (value < 0.13) CurrentMapZoom = 0.13;
-        else if (value > 2.0) CurrentMapZoom = 2.0;
-    }
-
     [ObservableProperty] private string _lastLogEvent = "(waiting)";
     [ObservableProperty] private bool _showBearingWedges = true;
     [ObservableProperty] private bool _showRouteLines = true;
