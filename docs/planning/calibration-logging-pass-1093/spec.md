@@ -69,6 +69,8 @@ public static readonly ActivitySource LegolasCalibration = new("Mithril.Legolas.
 
 ### 4.3 `Meter` + instruments
 
+**Layering note (discovered during Task 1):** `Mithril.MapCalibration.csproj` deliberately doesn't reference `Mithril.Shared` (the long-standing pattern Arda follows too). The picker (`MapCalibrationService.PickByFrame`) therefore can't emit through `MithrilMeters.LegolasCalibration.PickerOutcomes` directly. Instead, the `PickerOutcomes` instrument is declared in [`Mithril.MapCalibration.Diagnostics.MapCalibrationDiagnostics.LegolasCalibrationPickerMeter`](../../../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) with the **same `Meter` name** (`"Mithril.Legolas.Calibration"`) and the **same instrument name** (`"mithril.legolas.calibration.picker.outcomes"`). `MeterListener`s subscribing by name see both producers transparently. The consumer-side instruments below (`ProjectionSkipped`, `GhostDrawerTransitions`, `GhostsRebuildMs`) stay in `Mithril.Shared` because their producers live in `Legolas.Module` which DOES reference `Mithril.Shared`.
+
 In [`MithrilMeters`](../../../src/Mithril.Shared/Diagnostics/Telemetry/MithrilMeters.cs):
 
 ```csharp
@@ -76,10 +78,7 @@ public static class LegolasCalibration
 {
     public static readonly Meter Meter = new("Mithril.Legolas.Calibration");
 
-    /// <summary>Every PickByFrame call. Tags: frame ∈ {texture, overlay},
-    /// outcome ∈ {hit, miss, fallback_below_floor}.</summary>
-    public static readonly Counter<long> PickerOutcomes =
-        Meter.CreateCounter<long>("mithril.legolas.calibration.picker.outcomes");
+    // PickerOutcomes lives in MapCalibrationDiagnostics due to layering (see note above).
 
     /// <summary>VM-side projection paths skipped because CurrentOverlayCalibration
     /// returned null. Tags: consumer ∈ {ghosts, motherlode_markers, motherlode_guidance,

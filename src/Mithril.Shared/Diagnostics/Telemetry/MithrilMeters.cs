@@ -108,10 +108,12 @@ public static class MithrilMeters
     {
         public static readonly Meter Meter = new("Mithril.Legolas.Calibration");
 
-        /// <summary>Every <c>PickByFrame</c> call. Tags: <c>frame</c> ∈ {texture, overlay},
-        /// <c>outcome</c> ∈ {hit, miss, fallback_below_floor}.</summary>
-        public static readonly Counter<long> PickerOutcomes =
-            Meter.CreateCounter<long>("mithril.legolas.calibration.picker.outcomes");
+        // Picker telemetry (`mithril.legolas.calibration.picker.outcomes`) lives in
+        // Mithril.MapCalibration.Diagnostics.MapCalibrationDiagnostics.LegolasCalibrationPickerMeter
+        // because Mithril.MapCalibration.csproj deliberately doesn't reference
+        // Mithril.Shared (long-standing layering). The mirror Meter uses the SAME
+        // name, so listeners filtering on "Mithril.Legolas.Calibration" receive
+        // picker measurements uniformly with the consumer-side counters below.
 
         /// <summary>VM-side projection paths skipped because <c>CurrentOverlayCalibration</c>
         /// returned null. Tags: <c>consumer</c> ∈ {ghosts, motherlode_markers, motherlode_guidance,
