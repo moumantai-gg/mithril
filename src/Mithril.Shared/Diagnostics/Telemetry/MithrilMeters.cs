@@ -100,6 +100,34 @@ public static class MithrilMeters
             Meter.CreateCounter<long>("mithril.overlay.scene.exceptions");
     }
 
+    /// <summary>Legolas calibration consumer chain — picker, projection skips,
+    /// drawer transitions, ghosts-rebuild timing (#1093). Sibling-not-child of the
+    /// MapCalibration capture pipeline: consumer-side projection runs on the UI
+    /// thread asynchronously to the engine's solve attempt.</summary>
+    public static class LegolasCalibration
+    {
+        public static readonly Meter Meter = new("Mithril.Legolas.Calibration");
+
+        /// <summary>Every <c>PickByFrame</c> call. Tags: <c>frame</c> ∈ {texture, overlay},
+        /// <c>outcome</c> ∈ {hit, miss, fallback_below_floor}.</summary>
+        public static readonly Counter<long> PickerOutcomes =
+            Meter.CreateCounter<long>("mithril.legolas.calibration.picker.outcomes");
+
+        /// <summary>VM-side projection paths skipped because <c>CurrentOverlayCalibration</c>
+        /// returned null. Tags: <c>consumer</c> ∈ {ghosts, motherlode_markers, motherlode_guidance,
+        /// survey_pin, survey_anchor, wizard_landmarks}; <c>area</c> (scene MapAssetKey).</summary>
+        public static readonly Counter<long> ProjectionSkipped =
+            Meter.CreateCounter<long>("mithril.legolas.calibration.projection.skipped");
+
+        /// <summary>Drawer ghost-pass state transitions. Tags: <c>from</c>, <c>to</c> ∈ {hidden, empty, drawing, brush_null}.</summary>
+        public static readonly Counter<long> GhostDrawerTransitions =
+            Meter.CreateCounter<long>("mithril.legolas.calibration.ghost_drawer.transitions");
+
+        /// <summary><c>RebuildCalibrationGhosts</c> wall-clock. Tags: <c>area</c>, <c>refs_count</c>, <c>ghosts_built</c>.</summary>
+        public static readonly Histogram<double> GhostsRebuildMs =
+            Meter.CreateHistogram<double>("mithril.legolas.calibration.ghosts.rebuild_ms", unit: "ms");
+    }
+
     // GameState per-service counters and subscriber-count gauges are deferred from PR B
     // (see #818 acceptance criteria); add a `GameState` static here when the follow-up
     // lands rather than shipping an empty placeholder.

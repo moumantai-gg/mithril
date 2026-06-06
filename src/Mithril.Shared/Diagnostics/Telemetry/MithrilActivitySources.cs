@@ -35,6 +35,12 @@ public static class MithrilActivitySources
     /// <summary>Map auto-calibration capture pipeline: per-attempt capture → refine → solve timing (#914).</summary>
     public static readonly ActivitySource MapCalibration = new("Mithril.MapCalibration.Capture");
 
+    /// <summary>Legolas calibration consumer chain — AreaCalibrationService lifecycle +
+    /// VM projection paths (#1093). Sibling-not-child of MapCalibration: consumer-side
+    /// projection runs on the UI thread asynchronously to the engine's solve attempt,
+    /// so consumer spans don't nest under calibration.attempt.</summary>
+    public static readonly ActivitySource LegolasCalibration = new("Mithril.Legolas.Calibration");
+
     // Arda pipeline sources live in Arda.Abstractions.Diagnostics.ArdaActivitySources
     // because Arda projects can't take a dependency on Mithril.Shared. Both catalogs
     // share the "Mithril." prefix below so listeners receive both uniformly.
