@@ -72,6 +72,7 @@ public sealed class LiveMapViewService : ILiveMapViewService
     private async Task RunProbe(string mapAssetKey, CancellationToken ct)
     {
         _status[mapAssetKey] = LiveMapViewStatus.Detecting;
+        RaiseChanged(mapAssetKey);
 
         var status = LiveMapViewStatus.FailedLowConfidence;
         MapViewFix? fix = null;

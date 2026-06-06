@@ -29,7 +29,8 @@ public sealed class LiveMapViewServiceTests
 
         svc.GetCurrent("Map_AreaSerbule").Should().Be(fix);
         svc.GetStatus("Map_AreaSerbule").Should().Be(LiveMapViewStatus.Detected);
-        raised.Should().ContainSingle().Which.Should().Be("Map_AreaSerbule");
+        raised.Should().HaveCount(2);
+        raised.Should().AllBeEquivalentTo("Map_AreaSerbule");
     }
 
     [Fact]
