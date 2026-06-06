@@ -4,6 +4,8 @@ using System.Windows;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
 
+// IOverlayCaptureSource was moved to Mithril.MapCalibration.Detection (#1095);
+// this implementation still lives in Mithril.Overlay (platform coupling).
 namespace Mithril.Overlay.Internal;
 
 /// <summary>
