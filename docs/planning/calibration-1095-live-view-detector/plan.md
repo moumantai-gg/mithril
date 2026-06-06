@@ -4,21 +4,19 @@
 
 **Goal:** Split marker projection into a durable layer-1 (`world → texture_px` via the cal record, no zoom factor) and a lightweight layer-2 (`texture_px → overlay_px` via an on-demand screenshot × base-texture probe). Delete `CalibrationZoom` from all three carriers, the zoom slider, `SessionState.CurrentMapZoom`, and `IOverlayZoomSource`. End users never type or drag a zoom value.
 
-**Architecture:** Two-phase shipping. Phase 1 builds the new infrastructure additively (no behavior change). Phase 2 is the cutover — drop `CalibrationZoom` everywhere, swap consumers to layer-1 + layer-2 composition, delete the slider, wire trigger sites. Each phase is one PR with one review at the end. Within a phase, tasks are sequenced so each commit compiles and existing tests stay green.
+**Architecture:** Two logical phases shipped in **one PR**. Phase 1 commits build new infrastructure additively (no behavior change). Phase 2 commits do the cutover — drop `CalibrationZoom` everywhere, swap consumers to layer-1 + layer-2 composition, delete the slider, wire trigger sites. Within each phase, tasks are sequenced so each commit compiles and existing tests stay green. The phase boundary is just a logical checkpoint inside the same branch.
 
 **Tech Stack:** .NET 10, C# latest, xUnit + FluentAssertions, WPF, MahApps Lucide icon pack. Direct2D rendering via `Vortice.Direct2D1`. Mithril module conventions per [CLAUDE.md](../../CLAUDE.md).
 
 **Spec:** [spec.md](spec.md). Issue: [#1095](https://github.com/moumantai-gg/mithril/issues/1095).
 
-**Review cadence:** One code-review per PR (Phase 1 PR → review → merge → Phase 2 PR → review → merge). No per-task reviews. Inside a phase, commits run TDD-fast but stay on the feature branch until the PR opens.
+**Review cadence:** **One code-review for the whole PR.** Branch stays on `claude/strange-wilbur-d81f9a` (the existing worktree branch). Tasks commit TDD-fast; PR opens at the end of Phase 2 with one review covering both phases. The phase commit history is informative for the reviewer (additive then cutover) without forcing two review rounds.
 
 ---
 
-## Phase 1 PR — new infrastructure (additive)
+## Phase 1 — new infrastructure (additive commits)
 
-PR-1 adds new types and a screen-capture seam. The slider, `IOverlayZoomSource`, and `CalibrationZoom` all keep working. Nothing in the runtime engine changes behavior. Detector + service are wired into DI but only invoked by tests until Phase 2.
-
-**PR title:** `feat(calibration): live-view detector infrastructure (refs #1095)`
+Phase 1 commits add new types and a screen-capture seam. The slider, `IOverlayZoomSource`, and `CalibrationZoom` all keep working. Nothing in the runtime engine changes behavior. Detector + service are wired into DI but only invoked by tests until Phase 2 starts.
 
 ### Task P1.1: MapViewFix record struct
 
@@ -1149,51 +1147,29 @@ git commit -m "feat(calibration): DI for IMapViewProbe + IOverlayCaptureSource +
 
 ---
 
-### Task P1.9: Open Phase 1 PR
+### Task P1.9: Phase 1 checkpoint
 
-- [ ] **Step 1: Push the branch + open the PR**
+- [ ] **Step 1: Verify Phase 1 is fully green**
 
-```bash
-git push -u origin claude/strange-wilbur-d81f9a
-gh pr create --title "feat(calibration): live-view detector infrastructure (Phase 1 of #1095)" --body "$(cat <<'EOF'
-## Summary
+Run: `dotnet build Mithril.slnx --no-restore`
+Run: `dotnet test Mithril.slnx --no-restore`
+Expected: clean build, all tests pass.
 
-Phase 1 of [#1095](https://github.com/moumantai-gg/mithril/issues/1095) — adds new infrastructure for the live-view detector without changing runtime behavior.
+- [ ] **Step 2: Confirm no behavior change**
 
-- `MapViewFix` record struct (pan, viewScale, confidence, timestamp).
-- `IMapViewProbe` + `CrossCorrelationMapViewProbe` (FFT-accelerated screenshot × base-texture probe).
-- `IOverlayCaptureSource` + `OverlayWindowCaptureSource` (screen-region capture).
-- `ILiveMapViewService` + `LiveMapViewService` (per-area fix holder + refresh orchestrator with dedup + UI-thread marshaling).
-- DI wiring for all three.
+Quick manual sanity: launch the shell via `scripts/start.ps1`. The map overlay should behave identically to `main` — slider still drives projection, no detector calls fire (detector is constructible via DI but no runtime path invokes `RefreshAsync` yet).
 
-Spec: [docs/planning/calibration-1095-live-view-detector/spec.md](../tree/claude/strange-wilbur-d81f9a/docs/planning/calibration-1095-live-view-detector/spec.md).
+- [ ] **Step 3: Continue to Phase 2 on the same branch**
 
-**No behavior change in this PR** — none of the new types have runtime callers yet. The zoom slider, `IOverlayZoomSource`, and `CalibrationZoom` still work as before. Phase 2 PR does the cutover.
-
-## Test plan
-
-- [ ] `dotnet test Mithril.slnx` — full suite green
-- [ ] Manual: shell builds, runs, and behaves identically to `main` (slider still drives projection; no detector calls fire)
-EOF
-)"
-```
-
-- [ ] **Step 2: Pause for code review** — wait for review + approval before merging Phase 1, then continue with Phase 2 tasks.
+No PR opens here — proceed directly to Phase 2 tasks. The phase boundary is informative for the reviewer (the commit history will read as "additive infrastructure" → "cutover"), not a synchronization point.
 
 ---
 
-## Phase 2 PR — cutover
+## Phase 2 — cutover (still on the same branch)
 
-PR-2 deletes `CalibrationZoom` from all carriers, simplifies the projection math, deletes `IOverlayZoomSource` + slider + `SessionState.CurrentMapZoom`, swaps consumers to layer-1 + layer-2 composition, wires trigger sites, and ships the user-facing change.
+Phase 2 commits delete `CalibrationZoom` from all carriers, simplify the projection math, delete `IOverlayZoomSource` + slider + `SessionState.CurrentMapZoom`, swap consumers to layer-1 + layer-2 composition, wire trigger sites, and ship the user-facing change.
 
-**Branch off Phase 1 once merged.** Create a new feature branch from `main`:
-
-```bash
-git checkout main && git pull
-git checkout -b claude/calibration-1095-cutover
-```
-
-**PR title:** `feat(calibration): cutover to layer-1 + layer-2 projection model (closes #1095)`
+**No new branch — keep committing on `claude/strange-wilbur-d81f9a`.**
 
 ### Task P2.1: Drop CalibrationZoom from projection math + cal record + structs
 
@@ -1677,7 +1653,7 @@ git commit -m "feat(calibration): log + ignore legacy CalibrationZoom on AreaCal
 
 ---
 
-### Task P2.7: Manual E2E + follow-up issues + open PR
+### Task P2.7: Manual E2E + follow-up issues + open the single PR
 
 - [ ] **Step 1: Manual E2E smoke**
 
@@ -1735,26 +1711,21 @@ EOF
 
 Note for future: when the Phase 2 PR merges, edit `docs/planning/INDEX.md` to flip the row from `active` to `shipped` with the merged-PR link.
 
-- [ ] **Step 4: Push + open Phase 2 PR**
+- [ ] **Step 4: Push + open the single PR (covers Phase 1 + Phase 2)**
 
 ```bash
-git push -u origin claude/calibration-1095-cutover
-gh pr create --title "feat(calibration): cutover to layer-1 + layer-2 projection model (closes #1095)" --body "$(cat <<'EOF'
+git push -u origin claude/strange-wilbur-d81f9a
+gh pr create --title "feat(calibration): live-view detector + projection cutover (closes #1095)" --body "$(cat <<'EOF'
 ## Summary
 
-Phase 2 of [#1095](https://github.com/moumantai-gg/mithril/issues/1095) — cutover to the layer-1 + layer-2 projection model. Builds on Phase 1's infrastructure (already merged).
+Implements [#1095](https://github.com/moumantai-gg/mithril/issues/1095) — splits marker projection into a durable layer-1 (`world → texture_px` via the cal, no zoom factor) and a lightweight layer-2 (`texture_px → overlay_px` via on-demand screenshot × base-texture probe). End users never type or drag a zoom value again.
 
-**Math.** `CalibrationZoom` removed from `AreaCalibration` (record), `WorldToTextureCalibration` (struct field), `WorldToOverlayCalibration` (struct field). `AreaProjectionCore.Project` / `Unproject` simplified — no `zoomFactor`, no `currentZoom`, no `calibrationZoom`.
+**Commit history reads as two phases:**
+- **Phase 1 — additive infrastructure** (no behavior change): `MapViewFix` + `IMapViewProbe` + `CrossCorrelationMapViewProbe` (FFT cross-correlation) + `IOverlayCaptureSource` + `OverlayWindowCaptureSource` + `ILiveMapViewService` + impl + DI wiring. Reviewer can build + run after the last Phase-1 commit and observe identical behavior to `main`.
+- **Phase 2 — cutover**: `CalibrationZoom` removed from `AreaCalibration`, `WorldToTextureCalibration`, `WorldToOverlayCalibration`. `AreaProjectionCore` simplified (no zoom factor). `WorldToOverlayCalibration.ToLiveOverlay(world, fix)` composes the canonical projection with a `MapViewFix`. `SessionState.CurrentMapZoom` + zoom slider + `IsZoomMismatchWarningVisible` + `IOverlayZoomSource` + `FixedOverlayZoomSource` + `LegolasOverlayZoomSource` — all deleted. Trigger sites (validate toggle, motherlode overlay, survey overlay, new `RedetectMapViewHotkey`) fire `LiveMapViewService.RefreshAsync`. Status badge replaces the slider. Legacy `calibrationZoom` JSON field silently ignored on load with a one-shot Info log per cal.
 
-**Layer-2 composition.** `WorldToOverlayCalibration.ToLiveOverlay(world, fix)` composes the canonical projection with a `MapViewFix` from the live-view detector. Consumed by `RebuildCalibrationGhosts`, `MotherlodeMarkerPixels` / `MotherlodeGuidanceOverlay`, `HandleMapTarget`, `OverlayWindowService`'s projection driver.
-
-**Slider deleted.** `SessionState.CurrentMapZoom`, the slider XAML in `MapOverlayView` + `WizardView`, `IsZoomMismatchWarningVisible` + related properties — all gone. `IOverlayZoomSource` + `FixedOverlayZoomSource` + `LegolasOverlayZoomSource` deleted.
-
-**Detection triggers.** Toggle validation, motherlode overlay enable, survey overlay enable, and a new `RedetectMapViewHotkey` all fire `LiveMapViewService.RefreshAsync(currentArea)`. Status badge surfaces detection outcome.
-
-**Migration.** Legacy `calibrationZoom` JSON fields on `AreaCalibration` records are silently ignored on load with a one-shot Info log per cal.
-
-Spec: [docs/planning/calibration-1095-live-view-detector/spec.md](../tree/claude/calibration-1095-live-view-detector/docs/planning/calibration-1095-live-view-detector/spec.md).
+Spec: [docs/planning/calibration-1095-live-view-detector/spec.md](../tree/claude/strange-wilbur-d81f9a/docs/planning/calibration-1095-live-view-detector/spec.md).
+Plan: [docs/planning/calibration-1095-live-view-detector/plan.md](../tree/claude/strange-wilbur-d81f9a/docs/planning/calibration-1095-live-view-detector/plan.md).
 Follow-ups filed: #N (periodic detection), #N+1 (log-signal verification), #N+2 (wizard in Texture frame), #N+3 (Overlay→Texture cal migrator).
 
 ## Test plan
@@ -1772,14 +1743,14 @@ EOF
 )"
 ```
 
-- [ ] **Step 5: Pause for code review** — wait for review + approval before merging Phase 2.
+- [ ] **Step 5: Pause for code review** — wait for review + approval before merging.
 
 ---
 
 ## Post-merge
 
-After both PRs merge:
+After the PR merges:
 
-- [ ] Flip the `docs/planning/INDEX.md` row for `calibration-1095-live-view-detector` from `active` to `shipped`, linking the Phase 1 + Phase 2 PR URLs.
+- [ ] Flip the `docs/planning/INDEX.md` row for `calibration-1095-live-view-detector` from `active` to `shipped`, linking the merged PR URL.
 - [ ] Verify the follow-up issues link to the spec and have correct labels.
-- [ ] Close [#1095](https://github.com/moumantai-gg/mithril/issues/1095) (the Phase 2 PR's "closes #1095" should auto-close on merge).
+- [ ] [#1095](https://github.com/moumantai-gg/mithril/issues/1095) auto-closes on merge via the PR body's "closes" reference.
