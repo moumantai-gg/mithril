@@ -1,5 +1,7 @@
 using Legolas.Domain;
+using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration;
+using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 
@@ -132,17 +134,20 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     private readonly IReferenceDataService _refData;
     private readonly ICoordinateProjector _projector;
     private readonly IMapCalibrationService _mapCal;
+    private readonly ILogger? _logger;
 
     private IReadOnlyList<CalibrationReference> _currentRefs = Array.Empty<CalibrationReference>();
 
     public AreaCalibrationService(
         IReferenceDataService refData,
         ICoordinateProjector projector,
-        IMapCalibrationService mapCal)
+        IMapCalibrationService mapCal,
+        ILogger? logger = null)
     {
         _refData = refData;
         _projector = projector;
         _mapCal = mapCal;
+        _logger = logger;
 
         // Re-apply the projector when the active calibration changes from a
         // source we don't own (e.g. a community-sync update lands for the
@@ -176,15 +181,37 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     {
         if (string.IsNullOrWhiteSpace(scene.ParentAreaKey)) return;
 
+        using var act = MithrilActivitySources.LegolasCalibration.StartActivity("calibration.area.select_scene");
+        act?.SetTag("scene.asset_key", scene.MapAssetKey);
+        act?.SetTag("scene.parent_area_key", scene.ParentAreaKey);
+
         CurrentScene = scene;
         CurrentAreaFriendlyName = _refData.Areas.TryGetValue(scene.ParentAreaKey, out var entry)
             ? entry.FriendlyName
             : scene.ParentAreaKey;
         _currentRefs = BuildReferences(scene.ParentAreaKey);
 
-        if (_mapCal.GetCalibration(scene) is { } calibration)
+        act?.SetTag("refs_count", _currentRefs.Count);
+
+        var calibration = _mapCal.GetCalibration(scene);
+        if (calibration is { } cal)
         {
-            _projector.ApplyCalibration(calibration);
+            _projector.ApplyCalibration(cal);
+            act?.SetTag("cal.applied", true);
+            act?.SetTag("cal.source", cal.Source.ToString());
+            act?.SetTag("cal.residual_px", cal.ResidualPixels);
+            _logger?.LogInformation(
+                "SelectScene → {MapAssetKey} (parent={ParentArea}, friendly={SceneFriendlyName}): {RefCount} refs, cal {CalState} (source={Source}, residual={Residual:0.00}px, frame={Frame}).",
+                scene.MapAssetKey, scene.ParentAreaKey, CurrentAreaFriendlyName, _currentRefs.Count,
+                "applied", cal.Source, cal.ResidualPixels, cal.Frame);
+        }
+        else
+        {
+            act?.SetTag("cal.applied", false);
+            _logger?.LogInformation(
+                "SelectScene → {MapAssetKey} (parent={ParentArea}, friendly={SceneFriendlyName}): {RefCount} refs, cal {CalState}.",
+                scene.MapAssetKey, scene.ParentAreaKey, CurrentAreaFriendlyName, _currentRefs.Count,
+                "none");
         }
 
         Changed?.Invoke(this, EventArgs.Empty);
@@ -212,10 +239,25 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         // by ParentAreaKey. The pre-#1041 path compared the engine-emitted
         // Map_<X> against the bare CurrentAreaKey and dropped every event.
         if (CurrentScene is not { } current) return;
-        if (!string.Equals(payload.MapAssetKey, current.MapAssetKey, StringComparison.Ordinal)) return;
+        if (!string.Equals(payload.MapAssetKey, current.MapAssetKey, StringComparison.Ordinal))
+        {
+            _logger?.LogTrace(
+                "OnMapCalChanged({PayloadKey}): dropped, current scene is {CurrentKey}.",
+                payload.MapAssetKey, current.MapAssetKey);
+            return;
+        }
         if (_mapCal.GetCalibration(current) is { } calibration)
         {
             _projector.ApplyCalibration(calibration);
+            _logger?.LogTrace(
+                "OnMapCalChanged({MapAssetKey}): re-applied cal (source={Source}, residual={Residual:0.00}px, frame={Frame}).",
+                current.MapAssetKey, calibration.Source, calibration.ResidualPixels, calibration.Frame);
+        }
+        else
+        {
+            _logger?.LogTrace(
+                "OnMapCalChanged({MapAssetKey}): matched but no cal returned (cleared?).",
+                current.MapAssetKey);
         }
         Changed?.Invoke(this, EventArgs.Empty);
     }
@@ -224,15 +266,34 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements,
         double calibrationZoom = 1.0)
     {
+        using var act = MithrilActivitySources.LegolasCalibration.StartActivity("calibration.area.calibrate_current");
+        var placementCount = placements?.Count ?? 0;
+        act?.SetTag("placements", placementCount);
+
         if (CurrentScene is not { } scene || placements is null || placements.Count < 2)
+        {
+            act?.SetTag("outcome", "refused");
+            _logger?.LogInformation(
+                "CalibrateCurrentArea: refused — no current scene or <2 placements ({PlacementCount} given).",
+                placementCount);
             return null;
+        }
+
+        act?.SetTag("scene.asset_key", scene.MapAssetKey);
 
         var refs = placements
             .Select(p => new LandmarkCalibrationSolver.Reference(p.World.X, p.World.Z, p.Pixel.X, p.Pixel.Y))
             .ToList();
 
         var solved = LandmarkCalibrationSolver.Solve(refs);
-        if (solved is null) return null;
+        if (solved is null)
+        {
+            act?.SetTag("outcome", "no_fit");
+            _logger?.LogWarning(
+                "CalibrateCurrentArea({MapAssetKey}): solver returned no fit for {PlacementCount} placements.",
+                scene.MapAssetKey, placementCount);
+            return null;
+        }
         // Stamp the zoom the user solved at (solver is zoom-agnostic — it just
         // fits the clicked pixels). > 0 guard so a bad value can't poison the
         // later currentZoom/CalibrationZoom division.
@@ -254,6 +315,13 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         // (D6) — the model justification for treating manual fits as special
         // was ruled out (legolas_calibration_findings).
         _mapCal.SaveUserRefinement(scene, calibration);
+
+        act?.SetTag("outcome", "solved");
+        act?.SetTag("cal.residual_px", calibration.ResidualPixels);
+        _logger?.LogInformation(
+            "CalibrateCurrentArea({MapAssetKey}): solved {PlacementCount} placements at zoom={Zoom}; residual={Residual:0.00}px frame=Overlay refs={Refs}.",
+            scene.MapAssetKey, placementCount, calibration.CalibrationZoom,
+            calibration.ResidualPixels, calibration.ReferenceCount);
 
         // SaveUserRefinement raises IMapCalibrationService.Changed; our
         // OnMapCalChanged handler reads GetCalibration (which respects stacking
@@ -286,6 +354,9 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         // ClearUserRefinement raises mapCal.Changed → OnMapCalChanged
         // re-broadcasts our Changed; do not raise Changed directly to avoid
         // double-delivery.
+        _logger?.LogInformation(
+            "ClearCurrentAreaCalibration({MapAssetKey}): user requested clear; re-broadcast via mapCal.Changed.",
+            scene.MapAssetKey);
         _mapCal.ClearUserRefinement(scene);
     }
 

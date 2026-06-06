@@ -69,7 +69,8 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IAreaCalibrationService>(sp => new AreaCalibrationService(
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             sp.GetRequiredService<ICoordinateProjector>(),
-            sp.GetRequiredService<Mithril.MapCalibration.IMapCalibrationService>()));
+            sp.GetRequiredService<Mithril.MapCalibration.IMapCalibrationService>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Legolas.Calibration")));
         services.AddSingleton<PinCalibrationCoordinator>(sp =>
             new PinCalibrationCoordinator(
                 sp.GetRequiredService<IAreaCalibrationService>(),

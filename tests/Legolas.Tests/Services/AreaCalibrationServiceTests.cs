@@ -2,6 +2,7 @@ using System.IO;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Services;
+using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration;
 using Mithril.MapCalibration.DependencyInjection;
 using Mithril.Reference.Models.Items;
@@ -16,12 +17,12 @@ namespace Legolas.Tests.Services;
 public class AreaCalibrationServiceTests
 {
     private static (AreaCalibrationService svc, FakeProjector proj, IMapCalibrationService mapCal)
-        Build(FakeRefData refData)
+        Build(FakeRefData refData, ILogger? logger = null)
     {
         var proj = new FakeProjector();
         var mapCalDir = Path.Combine(Path.GetTempPath(), "mithril-mapcal-tests", Guid.NewGuid().ToString("N"));
         var mapCal = MapCalibrationServiceCollectionExtensions.Build(mapCalDir);
-        var svc = new AreaCalibrationService(refData, proj, mapCal);
+        var svc = new AreaCalibrationService(refData, proj, mapCal, logger);
         return (svc, proj, mapCal);
     }
 
@@ -352,7 +353,136 @@ public class AreaCalibrationServiceTests
         changedFired.Should().BeGreaterThan(0, "OnMapCalChanged must re-broadcast IAreaCalibrationService.Changed for UI subscribers");
     }
 
+    // ---- #1093 logging shape tests ---------------------------------------
+
+    [Fact]
+    public void SelectScene_emits_information_log_with_ref_count_and_cal_state()
+    {
+        // mithril#1093 Task 2: SelectScene logs an Information line with the
+        // template shape — assert the "applied" branch lands the source/residual
+        // tail with the right named properties.
+        var refData = new FakeRefData
+        {
+            AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
+        };
+        var logger = new CapturingLogger();
+        var (svc, _, mapCal) = Build(refData, logger);
+        var persisted = new AreaCalibration(3.0, 0.5, 11, 22, 5, 0.3);
+        Seed(mapCal, "AreaEltibule", persisted);
+
+        svc.SelectScene(SceneFor("AreaEltibule"));
+
+        logger.Entries.Should().Contain(e =>
+            e.Level == LogLevel.Information
+            && e.Message.Contains("SelectScene")
+            && e.Message.Contains("Map_AreaEltibule")
+            && e.Message.Contains("cal applied"));
+    }
+
+    [Fact]
+    public void CalibrateCurrentArea_refused_when_placements_less_than_two()
+    {
+        // mithril#1093 Task 2: refused branch logs Information with "refused"
+        // and the placement count given.
+        const string area = "AreaTestVille";
+        var refData = new FakeRefData
+        {
+            AreasByKey = { [area] = new AreaEntry(area, "Testville", "") },
+        };
+        var logger = new CapturingLogger();
+        var (svc, _, _) = Build(refData, logger);
+        svc.SelectScene(SceneFor(area));
+        logger.Entries.Clear(); // discard the SelectScene log
+
+        var result = svc.CalibrateCurrentArea(new (WorldCoord, OverlayPixel)[]
+        {
+            (new WorldCoord(0, 0, 0), new OverlayPixel(0, 0)),
+        });
+
+        result.Should().BeNull();
+        logger.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Information
+            && e.Message.Contains("refused")
+            && e.Message.Contains("1"));
+    }
+
+    [Fact]
+    public void OnMapCalChanged_dropped_when_payload_key_differs()
+    {
+        // mithril#1093 Task 2: payload with a MapAssetKey that doesn't match the
+        // current scene drops out at the equality guard. Trace log records the
+        // drop and the projector is NOT re-applied.
+        var refData = new FakeRefData
+        {
+            AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
+        };
+        var logger = new CapturingLogger();
+        var proj = new FakeProjector();
+        var mapCal = new ManualChangedMapCalibrationService();
+        var svc = new AreaCalibrationService(refData, proj, mapCal, logger);
+
+        // Set current scene to A. SelectScene runs ApplyCalibration only if a
+        // calibration exists; ManualChangedMapCalibrationService returns null, so
+        // proj.LastApplied stays null after SelectScene.
+        svc.SelectScene(SceneFor("AreaEltibule"));
+        proj.LastApplied.Should().BeNull();
+        logger.Entries.Clear();
+
+        // Raise Changed with a different payload key.
+        mapCal.RaiseChanged(SceneFor("AreaSerbule"));
+
+        proj.LastApplied.Should().BeNull("dropped event must not touch the projector");
+        logger.Entries.Should().ContainSingle(e =>
+            e.Level == LogLevel.Trace
+            && e.Message.Contains("OnMapCalChanged")
+            && e.Message.Contains("dropped")
+            && e.Message.Contains("Map_AreaSerbule")
+            && e.Message.Contains("Map_AreaEltibule"));
+    }
+
     // ---- fakes ------------------------------------------------------------
+
+    /// <summary>
+    /// Minimal ILogger that records (level, formatted message) tuples for
+    /// shape assertions. Mirrors the pattern in
+    /// <c>MapCalibrationServicePickerTelemetryTests.CapturingLogger</c>.
+    /// </summary>
+    private sealed class CapturingLogger : ILogger
+    {
+        public readonly List<(LogLevel Level, string Message)> Entries = new();
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception)));
+        private sealed class NullScope : IDisposable { public static readonly NullScope Instance = new(); public void Dispose() { } }
+    }
+
+    /// <summary>
+    /// IMapCalibrationService with a manually-raisable Changed event so we can
+    /// drive OnMapCalChanged with arbitrary payloads — including payload keys
+    /// that don't match the current scene (the "dropped" branch).
+    /// </summary>
+    private sealed class ManualChangedMapCalibrationService : IMapCalibrationService
+    {
+        public event EventHandler<MapSceneRef>? Changed;
+        public void RaiseChanged(MapSceneRef payload) => Changed?.Invoke(this, payload);
+
+        public bool IsCalibrated(MapSceneRef scene) => false;
+        public AreaCalibration? GetCalibration(MapSceneRef scene) => null;
+        public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
+        public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) => null;
+        public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
+        public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom) => null;
+        public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) => null;
+        public WorldToOverlayCalibration? GetOverlayCalibration(MapSceneRef scene) => null;
+        public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations { get; } =
+            new Dictionary<string, AreaCalibration>(StringComparer.Ordinal);
+        public IReadOnlyList<AreaCalibration> GetAllSources(MapSceneRef scene) => Array.Empty<AreaCalibration>();
+        public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration) { }
+        public void ClearUserRefinement(MapSceneRef scene) { }
+        public void DeleteUserRefinement(MapSceneRef scene, CalibrationFrame frame) { }
+    }
+
 
     /// <summary>
     /// IMapCalibrationService that throws IOException on every write — used to
