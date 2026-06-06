@@ -174,7 +174,9 @@ public sealed class LegolasModule : IMithrilModule
                 // tests using the simpler ctors still build.
                 sp.GetService<Mithril.Overlay.IWorldOverlayMarkers>(),
                 sp.GetService<IAreaState>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()));
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>(),
+                // #1095: live-view service for layer-2 composition + status badge.
+                sp.GetService<Mithril.MapCalibration.ILiveMapViewService>()));
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
         services.AddSingleton<NudgePadViewModel>();
@@ -262,6 +264,7 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, NudgePinRightFineCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleCalibrationPhaseCommand>();
         services.AddSingleton<IHotkeyCommand, ConfirmCalibrationCommand>();
+        services.AddSingleton<IHotkeyCommand, RedetectMapViewHotkey>();
 
         // Arda-driven ingestion services (replaces former L1 driver +
         // IPlayerWorld.Bus subscriptions). Both subscribe eagerly during

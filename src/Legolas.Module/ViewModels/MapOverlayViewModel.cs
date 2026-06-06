@@ -156,6 +156,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             {
                 RefreshAllSurveyMarkers();
             }
+            // #1095: when the map overlay becomes visible (survey overlay
+            // enable), trigger a live-view probe so pins render at the
+            // correct position from the first frame without a manual hotkey.
+            if (e.PropertyName is nameof(SessionState.IsMapVisible)
+                && _session.IsMapVisible)
+            {
+                TriggerLiveViewRefresh();
+            }
             if (e.PropertyName is nameof(SessionState.PlayerPosition))
             {
                 OnPropertyChanged(nameof(PlayerPosition));
@@ -203,6 +211,11 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(IsPlayerAnchorStatusVisible));
                 NotifyMotherlodeGuidanceChanged();
                 RebuildAllWedges();
+                // #1095: switching to Motherlode enables the map dot — trigger
+                // a fresh live-view probe so the dot renders at the correct
+                // overlay position without a manual hotkey.
+                if (_session.Mode == SessionMode.Motherlode)
+                    TriggerLiveViewRefresh();
             }
         };
 
@@ -583,6 +596,9 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             ShowCalibrationGhosts = true;
             _session.IsMapVisible = true;
             RebuildCalibrationGhosts();
+            // #1095: trigger a fresh live-view probe so the ghosts render
+            // against the current pan/zoom without requiring a manual hotkey.
+            TriggerLiveViewRefresh();
             action = "shown_and_rebuilt";
         }
         else
@@ -722,6 +738,52 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CalibrationGhosts));
         OnPropertyChanged(nameof(MotherlodeMarkerPixels));
         OnPropertyChanged(nameof(MotherlodeGuidanceOverlay));
+        OnPropertyChanged(nameof(LiveViewStatusText));
+    }
+
+    /// <summary>
+    /// Short live-view status for the overlay header badge. Shows the most
+    /// recently measured fix age + view scale, or a human-readable failure /
+    /// not-measured reason. Empty when no area is current (uncalibrated or
+    /// before the first area-change event).
+    ///
+    /// <para>Updated by <see cref="OnLiveViewChanged"/> after each probe
+    /// completes, so the badge reflects the actual status without polling.</para>
+    /// </summary>
+    public string LiveViewStatusText
+    {
+        get
+        {
+            var area = _areaCalibration?.CurrentScene?.MapAssetKey;
+            if (string.IsNullOrEmpty(area) || _liveView is null) return string.Empty;
+            var status = _liveView.GetStatus(area);
+            var fix = _liveView.GetCurrent(area);
+            return status switch
+            {
+                LiveMapViewStatus.Detected when fix is { } f =>
+                    $"View: detected ({f.MeasuredAt.LocalDateTime:HH:mm:ss}) — {f.ViewScale:0.00}×",
+                LiveMapViewStatus.Detecting => "View: detecting…",
+                LiveMapViewStatus.FailedNoBaseTexture => "View: failed — no base texture for this area",
+                LiveMapViewStatus.FailedNoCapture => "View: failed — overlay not capturable",
+                LiveMapViewStatus.FailedLowConfidence => "View: failed — couldn't match base texture",
+                _ => "View: not measured — use the re-detect hotkey with the map open",
+            };
+        }
+    }
+
+    /// <summary>
+    /// Fire-and-forget refresh of the live view for the current area.
+    /// Wired at every user-gesture that "enables" marker rendering: toggle
+    /// validation on, switch to Motherlode mode (map dot needs a fix), and
+    /// show the map overlay. If no area or service is present the call is a
+    /// no-op. Errors are captured inside <see cref="ILiveMapViewService"/>
+    /// itself (the status badge surfaces them).
+    /// </summary>
+    private void TriggerLiveViewRefresh()
+    {
+        var area = _areaCalibration?.CurrentScene?.MapAssetKey;
+        if (string.IsNullOrEmpty(area) || _liveView is null) return;
+        _ = _liveView.RefreshAsync(area);
     }
 
     /// <summary>#460/#477A: true while the guided calibration walkthrough is in

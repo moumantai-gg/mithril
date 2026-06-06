@@ -47,63 +47,18 @@
                         <TextBlock Text="{Binding PlayerAnchorStatus}" Foreground="#FFCCCCCC"
                                    Visibility="{Binding IsPlayerAnchorStatusVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
                     </StackPanel>
-                    <!-- #524: zoom strip lives in the title bar. The title bar
-                         is a deliberate "control plane" already (drag handle +
-                         the #520 nudge-pad toggle), so the zoom field sits
-                         here rather than competing with the validate banner /
-                         nudge pad on the viewport. Click-through state still
-                         applies — the carve-out for HeaderChrome in
-                         ApplyClickThrough keeps the strip reachable when the
-                         viewport is fully click-through, but
-                         IsZoomFieldVisible additionally hides the strip during
-                         the calibration Drop phase since interacting with it
-                         is meaningless mid-calibration. -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal"
-                                VerticalAlignment="Center" Margin="0,0,8,0"
-                                Visibility="{Binding IsZoomFieldVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                        <!-- Amber warning chip — appears when the live zoom
-                             diverges from the calibration stamp by > half a
-                             tick (suppressed for legacy 1.0 stamps + during
-                             active calibration). Clears as the user matches
-                             the zoom or recalibrates; no dismiss button. -->
-                        <Border Margin="0,0,8,0" Padding="6,2" CornerRadius="3"
-                                Background="#CC4A3A0A" BorderBrush="#FFC99A2E" BorderThickness="1"
-                                VerticalAlignment="Center"
-                                Visibility="{Binding IsZoomMismatchWarningVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
-                                ToolTip="{Binding ZoomMismatchText}">
-                            <icon:PackIconLucide Kind="TriangleAlert" Width="11" Height="11"
-                                                 Foreground="#FFFFE6B3" />
-                        </Border>
-                        <Border Padding="6,2" CornerRadius="3"
-                                Background="#FF1A1A1A" BorderBrush="#FF505050" BorderThickness="1"
-                                ToolTip="In-game map zoom (PG's 'Zoom level: X.XX' readout). Calibration captures this stamp; surveys re-scale to whatever you set here. After a PG restart, dial PG's zoom to the cal stamp shown beside the textbox.">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="Zoom" Foreground="#FFCCCCCC" FontSize="11"
-                                           VerticalAlignment="Center" Margin="0,0,6,0" />
-                                <Slider Minimum="0.13" Maximum="2.0"
-                                        SmallChange="0.01" LargeChange="0.1"
-                                        Width="100" VerticalAlignment="Center" Margin="0,0,6,0"
-                                        Focusable="False"
-                                        Value="{Binding Session.CurrentMapZoom, Mode=TwoWay}" />
-                                <TextBox Width="38" VerticalAlignment="Center"
-                                         Background="#FF101010" Foreground="#FFE0E0E0"
-                                         BorderBrush="#FF505050" BorderThickness="1"
-                                         FontSize="11" Padding="2,0"
-                                         Text="{Binding Session.CurrentMapZoom, Mode=TwoWay, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
-                                <!-- #524 follow-up: the calibration's stamp,
-                                     surfaced inline so the user can read off
-                                     the target value when dialling PG's zoom
-                                     to match (PG resets zoom on client
-                                     restart). Hidden when the area is
-                                     uncalibrated — nothing to compare to. -->
-                                <TextBlock Text="{Binding CalibrationZoomLabel}"
-                                           Foreground="#FF999999" FontSize="11"
-                                           VerticalAlignment="Center" Margin="6,0,0,0"
-                                           Visibility="{Binding IsCalibrationZoomLabelVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
-                                           ToolTip="The zoom this area was calibrated at. Mithril's slider auto-syncs to this on area change; dial PG to the same value for accurate pin placement." />
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
+                    <!-- #1095: live-view status badge replaces the deleted
+                         zoom strip. Shows the last probe result (detected +
+                         scale/timestamp, detecting, or a failure reason) so
+                         the user knows whether the map-overlay dot is fresh.
+                         Use the re-detect hotkey (Legolas · Calibration) after
+                         panning or zooming PG's world map. -->
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding LiveViewStatusText}"
+                               Margin="6,2"
+                               VerticalAlignment="Center"
+                               Foreground="#DDDDDD"
+                               FontSize="11" />
                     <!-- #520: in-overlay toggle mirroring LegolasSettings.ShowNudgePadOnOverlay,
                          so the user can hide/show the nudge pad without alt-tabbing to
                          Settings. Symmetric: re-enabling stays in reach when hidden. The

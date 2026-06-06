@@ -62,12 +62,20 @@ public static class OverlayServiceCollectionExtensions
         // IOverlayCaptureSource: the production impl lives here (platform coupling);
         // the interface moved to Mithril.MapCalibration.Detection to avoid a circular
         // project reference (Detection ← Overlay is already in the graph).
+        //
+        // IMPORTANT: IOverlayWindow MUST NOT be resolved eagerly here.
+        // OverlayWindowService (which IS IOverlayWindow) takes ILiveMapViewService
+        // in its ctor, and ILiveMapViewService requires IOverlayCaptureSource, so
+        // resolving IOverlayWindow at factory-construction time would form the cycle:
+        //   OverlayWindowService → ILiveMapViewService → IOverlayCaptureSource
+        //     → IOverlayWindow → OverlayWindowService (re-entrant singleton deadlock)
+        // The window-accessor lambda defers resolution to first Capture() call,
+        // by which point all singletons are fully constructed. (#1095)
         services.TryAddSingleton<IOverlayCaptureSource>(sp =>
         {
-            var overlay = sp.GetRequiredService<IOverlayWindow>();
             var logger = sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.Overlay.Capture");
             return new OverlayWindowCaptureSource(
-                windowAccessor: () => overlay.Window,
+                windowAccessor: () => sp.GetRequiredService<IOverlayWindow>().Window,
                 logger: logger);
         });
 
