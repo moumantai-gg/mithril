@@ -3,11 +3,14 @@
 // tagged for Phase 5b but minimum-touch keep-it-building forced the rename
 // to land here in 5a — the helpers are frame-blind D2D rasterisation, so
 // the rename is cosmetic; mouse-event boundaries still live in 5b.
+using System.Collections.Generic;
 using System.Numerics;
 using Legolas.Domain;
 using Legolas.ViewModels;
+using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration;
 using Mithril.Overlay;
+using Mithril.Shared.Diagnostics.Telemetry;
 using Vortice.Direct2D1;
 using Vortice.DCommon;
 using Vortice.Mathematics;
@@ -59,10 +62,18 @@ internal sealed class LegolasOverlaySceneDrawer
 
     private readonly MapOverlayViewModel _vm;
     private readonly MarchingAntsClock _antsClock = new();
+    private readonly ILogger? _logger;
 
-    public LegolasOverlaySceneDrawer(MapOverlayViewModel vm)
+    // GhostDrawer state-transition tracking (#1093 Task 4). Per-frame
+    // integer-compare on the hot path; emit log + meter only on transition.
+    // Buckets: 0=hidden, 1=empty, 2=drawing, 3=brush_null.
+    private int _lastGhostBucket = -1;  // -1 = unobserved, no transition logged yet
+    private bool _brushNullWarned;
+
+    public LegolasOverlaySceneDrawer(MapOverlayViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
+        _logger = logger;
     }
 
     /// <summary>The scene-drawer callback registered via
@@ -147,15 +158,40 @@ internal sealed class LegolasOverlaySceneDrawer
     private void DrawCalibrationGhosts(IOverlaySceneContext ctx)
     {
         var vm = _vm;
-        if (!vm.ShowCalibrationGhosts) return;
-        var ghosts = vm.CalibrationGhosts;
-        if (ghosts.Count == 0) return;
+        int currentBucket;
+        IReadOnlyList<GhostMarker>? ghosts = null;
+        ID2D1SolidColorBrush? stroke = null;
+        ID2D1SolidColorBrush? fill = null;
 
-        var stroke = ctx.Brushes.Get(GhostStrokeColor);
-        var fill = ctx.Brushes.Get(GhostStrokeColor);
-        if (stroke is null || fill is null) return;
+        // #1093 Task 4: classify the current frame BEFORE the early-return
+        // chain so the state-transition logger sees every bucket. The brush
+        // lookups still happen exactly once per frame — just hoisted above
+        // the rendering branch so the brush_null bucket is observable.
+        if (!vm.ShowCalibrationGhosts)
+        {
+            currentBucket = 0; // hidden
+        }
+        else
+        {
+            ghosts = vm.CalibrationGhosts;
+            if (ghosts.Count == 0)
+            {
+                currentBucket = 1; // empty
+            }
+            else
+            {
+                stroke = ctx.Brushes.Get(GhostStrokeColor);
+                fill = ctx.Brushes.Get(GhostStrokeColor);
+                currentBucket = (stroke is null || fill is null) ? 3 : 2; // brush_null or drawing
+            }
+        }
 
-        for (var i = 0; i < ghosts.Count; i++)
+        LogGhostBucketTransition(currentBucket);
+
+        if (currentBucket != 2) return;
+
+        // Non-null by construction when currentBucket == 2.
+        for (var i = 0; i < ghosts!.Count; i++)
         {
             var g = ghosts[i];
             var cx = (float)g.Pixel.X;
@@ -163,10 +199,10 @@ internal sealed class LegolasOverlaySceneDrawer
             // Outer hollow ring — matches the legacy XAML's
             // <Ellipse Stroke="#FFE040E0" StrokeThickness="2" Width="16" Height="16">.
             var outer = new Ellipse(new System.Numerics.Vector2(cx, cy), 8f, 8f);
-            ctx.RenderTarget.DrawEllipse(outer, stroke, 2f);
+            ctx.RenderTarget.DrawEllipse(outer, stroke!, 2f);
             // Center dot — matches <Ellipse Fill="#FFE040E0" Width="4" Height="4">.
             var center = new Ellipse(new System.Numerics.Vector2(cx, cy), 2f, 2f);
-            ctx.RenderTarget.FillEllipse(center, fill);
+            ctx.RenderTarget.FillEllipse(center, fill!);
         }
         // TODO(#875): #495 ghost-label re-add. D2D text needs
         // ID2D1DeviceContext + IDWriteFactory which the current surface
@@ -174,6 +210,73 @@ internal sealed class LegolasOverlaySceneDrawer
         // validation works without labels). #875 also tracks the
         // validation-status banner deferred to the step-7 chrome lift.
     }
+
+    /// <summary>#1093 Task 4: emit a Trace log + meter increment when the
+    /// ghost-pass classification changes between frames. Per-frame
+    /// integer-compare is the hot-path cost; logger / meter only fire on
+    /// transition. The first observation (prev = -1) seeds the state without
+    /// logging — that's startup, not a real transition.</summary>
+    private void LogGhostBucketTransition(int currentBucket)
+    {
+        if (currentBucket == _lastGhostBucket) return;
+        int prevBucket = _lastGhostBucket;
+        _lastGhostBucket = currentBucket;
+
+        if (prevBucket == -1) return;
+
+        var from = BucketName(prevBucket);
+        var to = BucketName(currentBucket);
+
+        MithrilMeters.LegolasCalibration.GhostDrawerTransitions.Add(1,
+            new KeyValuePair<string, object?>("from", from),
+            new KeyValuePair<string, object?>("to", to));
+
+        if (currentBucket == 3)
+        {
+            // brush_null is rare + degraded; warn once per session.
+            if (!_brushNullWarned)
+            {
+                _brushNullWarned = true;
+                _logger?.LogWarning(
+                    "DrawCalibrationGhosts: brush fetch returned null; ghost pass skipped this frame.");
+            }
+            return;
+        }
+
+        switch ((prevBucket, currentBucket))
+        {
+            case (0, 1):
+                _logger?.LogTrace(
+                    "DrawCalibrationGhosts: shown but empty — VM didn't rebuild any ghosts.");
+                break;
+            case (1, 2):
+                _logger?.LogTrace(
+                    "DrawCalibrationGhosts: drawing {Count} ghost(s).",
+                    _vm.CalibrationGhosts.Count);
+                break;
+            case (2, 1):
+                _logger?.LogTrace("DrawCalibrationGhosts: ghost set cleared.");
+                break;
+            case (2, 0):
+            case (1, 0):
+                _logger?.LogTrace("DrawCalibrationGhosts: hidden by toggle.");
+                break;
+            default:
+                _logger?.LogTrace(
+                    "DrawCalibrationGhosts: transitioned from {From} to {To}.",
+                    from, to);
+                break;
+        }
+    }
+
+    private static string BucketName(int b) => b switch
+    {
+        0 => "hidden",
+        1 => "empty",
+        2 => "drawing",
+        3 => "brush_null",
+        _ => "unknown",
+    };
 
     private static readonly System.Windows.Media.Color GhostStrokeColor =
         System.Windows.Media.Color.FromArgb(0xFF, 0xE0, 0x40, 0xE0);
