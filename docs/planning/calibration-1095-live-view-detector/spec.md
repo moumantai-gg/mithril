@@ -43,10 +43,10 @@ The contributor model is unchanged: the wizard remains end-user accessible, so a
 
 ```
 Mithril.MapCalibration
-├── AreaCalibration                       (record: drop CalibrationZoom field; schema v2 → v3)
-├── Internal / AreaProjectionCore         (drop zoomFactor; layer-1 math only)
-├── WorldToTextureCalibration             (drop currentZoom param; output is texture_px)
-├── WorldToOverlayCalibration             (drop currentZoom param; compose tex→overlay via MapViewFix)
+├── AreaCalibration                       (record: drop CalibrationZoom property; bump SchemaVersion default)
+├── WorldToTextureCalibration             (drop CalibrationZoom struct field; drop currentZoom params)
+├── WorldToOverlayCalibration             (drop CalibrationZoom struct field; drop currentZoom params)
+├── Internal / AreaProjectionCore         (drop calibrationZoom + currentZoom params; drop ZoomFactor)
 ├── MapViewFix                            (new struct)
 ├── ILiveMapViewService                   (new — per-area MapViewFix + Refresh + Changed)
 │   └── LiveMapViewService                (new impl)
@@ -59,13 +59,19 @@ Mithril.MapCalibration.Detection
 └── (existing detection primitives reused: ImageOps, GrayImage, CalibrationConfidenceGate)
 
 Mithril.Overlay
-└── IOverlayCaptureSource                 (new — captures the overlay region as GrayImage)
+├── IOverlayZoomSource                    (DELETE — fake layer-2; replaced by ILiveMapViewService)
+├── FixedOverlayZoomSource                (DELETE — the platform default for the deleted interface)
+├── IOverlayCaptureSource                 (new — captures the overlay region as GrayImage)
+└── Internal / OverlayWindowService       (drop IOverlayZoomSource ctor dep; consume ILiveMapViewService.GetCurrent for layer-2)
 
 Legolas.Module
-├── ViewModels / MapOverlayViewModel      (delete slider + zoom-seed; subscribe to LiveMapViewService.Changed)
+├── ViewModels / MapOverlayViewModel      (delete slider + zoom-seed + IsZoomMismatchWarningVisible + ZoomMismatchText + CalibrationZoomLabel; subscribe to LiveMapViewService.Changed)
+├── ViewModels / SessionState             (delete CurrentMapZoom + OnCurrentMapZoomChanged)
+├── Rendering / LegolasOverlayZoomSource  (DELETE — Legolas-side IOverlayZoomSource adapter)
+├── Hotkeys / OverlayController           (wire ILiveMapViewService + IOverlayCaptureSource; remove IOverlayZoomSource override registration in LegolasModule.cs)
 ├── Hotkeys / RedetectMapViewHotkey       (new)
-├── Controllers / OverlayController       (wires trigger sites + capture source)
-└── Views / MapOverlay header             (slider removed; view-state badge added)
+├── Views / MapOverlayView.xaml           (zoom strip removed — lines 87–92 binding to Session.CurrentMapZoom; view-state badge added)
+└── Views / WizardView.xaml               (zoom strip at lines 35–53 + 730 — wizard solves at canonical only, so the strip is no longer needed; remove or replace with a "fully zoom out, then click here" affordance)
 ```
 
 ### 4.2 Math
@@ -76,17 +82,17 @@ Legolas.Module
 pixel = origin + (R × world) × scale
 ```
 
-where `R` is the rotation+mirror composition. No `zoomFactor`, no `calibrationZoom`, no `currentZoom`. The output `pixel` is in whichever frame the cal lives in — Texture for AutoCal / BundledBaseline cals, Overlay for wizard cals (until #1087 cross-frame composition normalizes through Texture).
+where `R` is the rotation+mirror composition. No `zoomFactor`, no `calibrationZoom`, no `currentZoom`. The output `pixel` is in whichever frame the cal lives in — Texture for AutoCal / BundledBaseline cals, Overlay for wizard cals. (#1087's `WorldToTextureCalibration.ProjectThroughOverlay` is unchanged in its math role — it composes a Texture-frame cal with a `MapRect` placement to yield a Texture-frame → Overlay-frame composition. Its caller chain — `OverlayWindowService.ResolveComposedOverlayCalibration` — feeds layer-2 in the new model, replacing the `IOverlayZoomSource`-driven zoom path it uses today.)
 
-**Layer 2** (composition in `WorldToOverlayCalibration.ToOverlay` and equivalents):
+**Layer 2** (composition site is the marker-projection path inside `OverlayWindowService` and the VM-side projections; not on `WorldToOverlayCalibration` directly):
 
 ```
 overlay_px = (texture_px − pan_tex) × viewScale
 ```
 
-where `(pan_tex, viewScale)` come from a fresh `MapViewFix`. Texture-frame cals feed `texture_px` directly. Overlay-frame cals are routed through Texture-frame composition (`ProjectThroughOverlay`, #1087) before entering layer-2.
+where `(pan_tex, viewScale)` come from a fresh `MapViewFix`. Texture-frame cals feed `texture_px` directly. Overlay-frame wizard cals are an open compatibility question — they project to canonical-overlay pixel, not to texture pixel, so `MapViewFix` cannot be applied to them directly. Two viable paths: (a) at runtime, convert Overlay-frame cals to Texture-frame using base-texture dims (inverse of `ProjectThroughOverlay`), then apply layer-2; or (b) Overlay-frame cals work only at canonical view (no layer-2) and are a transitional form. (a) is preferred and is small; the inverse-composition math is closed-form and the base-texture dims are already accessible via `IMapTextureDimensions`. Spec'd at implementation time; the plan can decide which path to take in PR-1.
 
-When no `MapViewFix` has ever been measured for the current area, `WorldToOverlayCalibration.ToOverlay` returns null and consumers refuse to render (status badge says "not measured"). When a prior fix exists but the latest re-detect failed, the prior fix stays in use and the badge surfaces the failure — the user sees stale-but-coherent markers plus a clear indicator that re-detection is owed.
+When no `MapViewFix` has ever been measured for the current area, the live-overlay composition path returns null and consumers refuse to render (status badge says "not measured"). When a prior fix exists but the latest re-detect failed, the prior fix stays in use and the badge surfaces the failure — the user sees stale-but-coherent markers plus a clear indicator that re-detection is owed.
 
 ### 4.3 Data flow
 
@@ -137,7 +143,7 @@ Failure modes (return null + diagnostic for the status badge):
 
 **Automatic re-detect**: triggered on `SetCalibrationValidation(true)`, motherlode-overlay enable, survey-overlay enable. The same `LiveMapViewService.RefreshAsync` path; results fan out via `Changed`.
 
-**No silent fallback**: when no fix is available, marker collections are cleared and the badge surfaces the cause.
+**No silent fallback**: when the area has *never* been measured, marker collections are cleared and the badge says "not measured." When a prior fix exists but the latest re-detect failed, the prior fix stays in use (markers don't blank) and the badge surfaces the failure separately. Either way, no path renders markers through a guessed-or-stale layer-2.
 
 **Zoom-mismatch banner and `IsZoomMismatchWarningVisible`**: deleted. The mismatch was only meaningful under the broken math.
 
@@ -152,32 +158,50 @@ Failure modes (return null + diagnostic for the status badge):
 
 ## 8. Code-level changes
 
-- `Mithril.MapCalibration/AreaCalibration.cs` — remove `CalibrationZoom`. Bump `SchemaVersion` default to 3.
-- `Mithril.MapCalibration/Internal/AreaProjectionCore.cs` — remove `calibrationZoom`, `currentZoom` params; remove `ZoomFactor`. Update `Project`, `Unproject` signatures and bodies.
-- `Mithril.MapCalibration/WorldToTextureCalibration.cs` — drop `currentZoom` from `ToTexture` signature.
-- `Mithril.MapCalibration/WorldToOverlayCalibration.cs` — drop `currentZoom` from `ToOverlay`; compose via `MapViewFix` for Texture-frame inputs.
-- `Mithril.MapCalibration/MapViewFix.cs` (new).
+**Cal records and projection math:**
+- `Mithril.MapCalibration/AreaCalibration.cs` — remove the `CalibrationZoom` property. Bump `SchemaVersion` default from 1 to 3 (skip 2 to make the no-CalibrationZoom invariant unambiguous from inspection).
+- `Mithril.MapCalibration/WorldToTextureCalibration.cs` — drop `CalibrationZoom` from the record-struct primary constructor; drop the `double currentZoom` parameter from `ToTexture` / `FromTexture`; drop the 1-arg overloads that default `currentZoom = CalibrationZoom`. Update `ProjectThroughOverlay` to compose without the `CalibrationZoom` thread-through.
+- `Mithril.MapCalibration/WorldToOverlayCalibration.cs` — drop `CalibrationZoom` from the record-struct primary constructor; drop the `double currentZoom` parameter from `ToOverlay` / `FromOverlay`; drop the 1-arg overloads. Compose with `MapViewFix` for Texture-frame inputs (helper method, e.g. `ToLiveOverlay(WorldCoord, MapViewFix)`).
+- `Mithril.MapCalibration/Internal/AreaProjectionCore.cs` — drop `calibrationZoom`, `currentZoom` params on `Project` / `Unproject`; delete the private `ZoomFactor` helper.
+
+**New types in Mithril.MapCalibration / Detection:**
+- `Mithril.MapCalibration/MapViewFix.cs` (new — `record struct`).
 - `Mithril.MapCalibration/ILiveMapViewService.cs` (new).
 - `Mithril.MapCalibration/LiveMapViewService.cs` (new).
 - `Mithril.MapCalibration.Detection/IMapViewProbe.cs` (new).
 - `Mithril.MapCalibration.Detection/CrossCorrelationMapViewProbe.cs` (new).
-- `Mithril.Overlay/IOverlayCaptureSource.cs` (new) + concrete impl over the shared window.
-- `Legolas.Module/ViewModels/MapOverlayViewModel.cs` — delete the slider, the zoom-seed logic at `OnCalibrationChanged`, `IsZoomMismatchWarningVisible`, `ZoomMismatchText`, `CalibrationZoomLabel`. Subscribe to `LiveMapViewService.Changed`. Update `RebuildCalibrationGhosts`, `MotherlodeMarkerPixels`, `MotherlodeGuidanceOverlay`, `RefreshSurveyPlayerAnchor` to read the current fix and refuse to render when null.
-- `Legolas.Module/Services/PlayerLogIngestionService.cs` — `HandleMapTarget` reads the current fix.
-- `Legolas.Module/Hotkeys/RedetectMapViewHotkey.cs` (new).
-- `Legolas.Module/Controllers/OverlayController.cs` — wire `IOverlayCaptureSource` and `LiveMapViewService`; add status-badge slot.
-- `Legolas.Module/Views/MapOverlay header` — slider removed; status badge added (XAML; mind [`docs/wpf-gotchas.md`](../../wpf-gotchas.md)).
-- `Mithril.MapCalibration/BundledData/map-calibration-baseline.json` — unchanged at rest (`calibrationZoom` was never serialized for `1.0` defaults; file-wrapper schemaVersion stays at 2).
-- DI wiring: `IMapViewProbe`, `ILiveMapViewService`, `IOverlayCaptureSource` registered in their owning modules' service-collection extensions.
 
-The `OverlayWindowService.ResolveComposedOverlayCalibration` ([#1087](https://github.com/moumantai-gg/mithril/pull/1087)) picker stays. Layer-2 composition wraps its output before reaching consumers.
+**Mithril.Overlay surface:**
+- `Mithril.Overlay/IOverlayZoomSource.cs` — DELETE the file (interface + `FixedOverlayZoomSource`). It's the fake-layer-2 abstraction; `ILiveMapViewService` replaces it.
+- `Mithril.Overlay/IOverlayCaptureSource.cs` (new) + concrete impl over the shared window.
+- `Mithril.Overlay/Internal/OverlayWindowService.cs` — drop the `IOverlayZoomSource _zoomSource` field + ctor dep (line 80); replace the per-tick zoom read in projection driver with a `ILiveMapViewService.GetCurrent(currentArea)` read that flows through layer-2 composition. Update tests via the `ResolveComposedOverlayCalibrationForTest` seam.
+- `Mithril.Overlay/DependencyInjection/OverlayServiceCollectionExtensions.cs:55` — remove the `IOverlayZoomSource` registration; add `IMapViewProbe` + `ILiveMapViewService` + `IOverlayCaptureSource` registrations.
+
+**Legolas.Module consumer churn (namespace `Legolas.*`, NOT `Legolas.Module.*`):**
+- `Legolas.Module/ViewModels/SessionState.cs` — delete `CurrentMapZoom` (and its `OnCurrentMapZoomChanged` clamp partial method at line 147).
+- `Legolas.Module/ViewModels/MapOverlayViewModel.cs` — delete: the `SessionState.CurrentMapZoom` PropertyChanged subscription (line 215); the zoom-seed logic at `OnCalibrationChanged` (lines 809–815); `IsZoomMismatchWarningVisible`, `ZoomMismatchText`, `CalibrationZoomLabel`, `IsCalibrationZoomLabelVisible`. Subscribe to `ILiveMapViewService.Changed`. Update `RebuildCalibrationGhosts`, `MotherlodeMarkerPixels`, `MotherlodeGuidanceOverlay`, `RefreshSurveyPlayerAnchor` to compose through the current fix; refuse to render when none has ever been measured for the area.
+- `Legolas.Module/Services/PlayerLogIngestionService.cs` — `HandleMapTarget` composes through the current fix.
+- `Legolas.Module/Rendering/LegolasOverlaySceneDrawer.cs` — drop the `currentZoom` parameter from the calibration-ghost draw site (it no longer threads through `AreaProjectionCore`).
+- `Legolas.Module/Rendering/LegolasOverlayZoomSource.cs` — DELETE the file (the Legolas-side adapter for the deleted `IOverlayZoomSource`).
+- `Legolas.Module/LegolasModule.cs` (around lines 227–234) — remove the `IOverlayZoomSource` override registration that pointed at `LegolasOverlayZoomSource`.
+- `Legolas.Module/Hotkeys/OverlayController.cs` (namespace `Legolas.Hotkeys`) — wire the trigger sites for `LiveMapViewService.RefreshAsync` (validation toggle, motherlode overlay enable, survey overlay enable); inject `IOverlayCaptureSource`.
+- `Legolas.Module/Hotkeys/RedetectMapViewHotkey.cs` (new) — manual re-detect via a `IHotkeyCommand`.
+- `Legolas.Module/Views/MapOverlayView.xaml` — delete the zoom strip (lines 87–92 binding to `Session.CurrentMapZoom`); add view-state badge. Mind [`docs/wpf-gotchas.md`](../../wpf-gotchas.md).
+- `Legolas.Module/Views/WizardView.xaml` — wizard solves at canonical only (PG enforces "fully zoomed out = no pan"), so the zoom strip at lines 35–53 + 730 is dropped; the wizard prompts the user to "zoom fully out, then click the first landmark."
+
+**Bundled data and DI:**
+- `Mithril.MapCalibration/BundledData/map-calibration-baseline.json` — unchanged at rest (`calibrationZoom` was never serialized for `1.0` defaults; file-wrapper `schemaVersion` stays at 2 — this PR doesn't reshape the file format).
+- DI wiring: `IMapViewProbe`, `ILiveMapViewService`, `IOverlayCaptureSource` registered via the Mithril.MapCalibration + Mithril.Overlay service-collection extensions; Legolas drops its `IOverlayZoomSource` override.
+
+**Composition path (not a picker):**
+- `Mithril.Overlay/Internal/OverlayWindowService.ResolveComposedOverlayCalibration` (internal helper added by [#1087](https://github.com/moumantai-gg/mithril/pull/1087); not a picker, a Texture→Overlay composition using `MapRect`). Stays in place. Its caller chain wraps the result through `MapViewFix` layer-2 before reaching marker projection. The actual picker is `MapCalibrationService.PickByFrame` ([Internal/MapCalibrationService.cs:142](../../../src/Mithril.MapCalibration/Internal/MapCalibrationService.cs:142)) — unchanged here; the picker-mismatch concern from #1095 disappears because the `_session.CurrentMapZoom` seed step (which was reading from the union-picker `GetCalibration` while projection used `PickByFrame`) is deleted along with the field.
 
 ## 9. Testing
 
 - **Math regression**: `AreaProjectionCore` tests verify world → texture-pixel projection for `BundledBaseline` Serbule, Eltibule, Kur Mountains records matches today's projection at the equivalent canonical zoom — confirms the math change doesn't shift canonical projections (only stops misprojecting at non-canonical).
 - **Probe unit**: `CrossCorrelationMapViewProbe` against synthetic `GrayImage` scenarios — exact copy → `(pan=0, viewScale=1)`; scaled copy → expected scale; panned copy → expected pan; noise → null with confidence below gate. Plus a golden against a captured Serbule overlay + bundled base texture.
 - **Service**: `LiveMapViewService` — concurrent `RefreshAsync(area)` deduped; per-area state isolated; `Changed` fires on UI thread; failed probe leaves the prior fix in place (markers stay rendered from last good measurement); the status badge surfaces the failure separately.
-- **Migration**: v2 record with `calibrationZoom: 0.42` round-trips through load → save → load, ends with no field at rest, one Info log emitted.
+- **Migration**: an `AreaCalibration` JSON blob carrying `calibrationZoom: 0.42` (a wizard-style record) deserializes cleanly (unknown-property ignored), emits the one-shot Info log, round-trips through save → reload with no `calibrationZoom` field at rest.
 - **VM**: `MapOverlayViewModel` does not render markers when `LiveMapViewService.GetCurrent(currentArea)` is null; renders correctly when fix is present.
 - **E2E (manual)**: in PG on Serbule at off-cal zoom, toggle validation → detection completes → ghosts render at correct positions. Reproduces the #1095 trigger condition; closes it.
 
@@ -188,6 +212,7 @@ Filed as follow-up issues at PR-open time:
 1. **Periodic background detection**: a low-rate refresh loop that catches PG pan/zoom without an explicit user gesture. Current design is gesture-driven (and a hotkey covers the resync case); periodic is a follow-up if it proves needed.
 2. **PG-log-signal verification for pan/zoom**: spot-check whether PG emits anything observable on `Player.log` for world-map UI state changes. If yes, drive `LiveMapViewService` from the signal instead of (or alongside) screenshot probing.
 3. **Wizard solving directly in Texture frame**: today's wizard solves in Overlay frame and rides cross-frame composition for runtime use. A wizard that solves directly in Texture frame would retire the Overlay frame from wizard solves and simplify the runtime path further. Independently scoped.
+4. **Overlay-frame cal → Texture-frame conversion** (if §4.2 path (a) isn't selected in PR-1): a one-shot migrator that walks user-stored Overlay-frame wizard cals, inverse-composes them through `IMapTextureDimensions`, and re-saves them as Texture-frame so they get layer-2 detection support without re-solving.
 
 ## 11. References
 
