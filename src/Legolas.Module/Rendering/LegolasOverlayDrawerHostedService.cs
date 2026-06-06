@@ -40,6 +40,7 @@ internal sealed class LegolasOverlayDrawerHostedService : IHostedService
     private readonly MarkerSceneRenderer _renderer;
     private readonly IOverlayWindow _overlayWindow;
     private readonly MapOverlayViewModel _mapVm;
+    private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger? _logger;
     private IDisposable? _sceneRegistration;
 
@@ -52,6 +53,7 @@ internal sealed class LegolasOverlayDrawerHostedService : IHostedService
         _renderer = renderer;
         _overlayWindow = overlayWindow;
         _mapVm = mapVm;
+        _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger("Legolas.Overlay");
     }
 
@@ -62,7 +64,13 @@ internal sealed class LegolasOverlayDrawerHostedService : IHostedService
         // #835 step 6: register Legolas's freeform scene drawer with the
         // shared overlay window. Holds the IDisposable for the lifetime of
         // this service — released on StopAsync (and on host shutdown).
-        var sceneDrawer = new LegolasOverlaySceneDrawer(_mapVm);
+        // #1093 Task 4: pass a dedicated `Legolas.Overlay.GhostDrawer`
+        // child logger so the drawer's state-transition log records sit
+        // under their own diagnostics category (distinct from the host's
+        // `Legolas.Overlay` lifecycle line above).
+        var sceneDrawer = new LegolasOverlaySceneDrawer(
+            _mapVm,
+            _loggerFactory?.CreateLogger("Legolas.Overlay.GhostDrawer"));
         _sceneRegistration = _overlayWindow.RegisterScene(sceneDrawer.Draw);
 
         _logger?.LogInformation(

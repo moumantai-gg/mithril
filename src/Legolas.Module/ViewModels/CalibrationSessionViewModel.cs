@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -7,6 +8,7 @@ using Legolas.Services;
 using Arda.Contracts;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Logging;
+using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Reference;
 
 namespace Legolas.ViewModels;
@@ -536,17 +538,27 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
         if (_service.CurrentOverlayCalibration is not { } c)
         {
             ClickWarning = "Solve a calibration first — nothing to project.";
+            var skippedArea = _service.CurrentScene?.MapAssetKey ?? "<unknown>";
+            _logger?.LogInformation(
+                "ProjectLandmarks: refused — no overlay calibration; UI surfaced 'Solve a calibration first'.");
+            MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
+                new KeyValuePair<string, object?>("consumer", "wizard_landmarks"),
+                new KeyValuePair<string, object?>("area", skippedArea));
             RaiseDebug();
             return;
         }
+        var skipped = 0;
         foreach (var r in References)
         {
-            if (Placements.Any(p => ReferenceEquals(p.Reference, r))) continue;
+            if (Placements.Any(p => ReferenceEquals(p.Reference, r))) { skipped++; continue; }
             // Canonical absolute world→pixel — shared with the #454
             // ProcessMapFx placement path so the two can't drift.
             // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
             GhostPins.Add(new GhostPin(r.Name, c.ToOverlay(r.World)));
         }
+        _logger?.LogInformation(
+            "ProjectLandmarks: projected {Count} ghost pins from {Refs} refs ({Skipped} already placed).",
+            GhostPins.Count, References.Count, skipped);
         ClickWarning = null;
         RaiseDebug();
     }

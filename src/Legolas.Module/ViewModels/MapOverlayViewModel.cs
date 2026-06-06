@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Media;
 using Arda.Contracts;
@@ -15,6 +16,7 @@ using Legolas.Rendering;
 using Legolas.Services;
 using Mithril.MapCalibration;
 using Mithril.Overlay;
+using Mithril.Shared.Diagnostics.Telemetry;
 
 namespace Legolas.ViewModels;
 
@@ -325,10 +327,30 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// </summary>
     private void RefreshSurveyPlayerAnchor(bool fromTrackerFix)
     {
+        // #1093 §5.3 + §10: PlayerPositionChanged is sparse (zone-in /
+        // teleport only) per pg_log_timezones / signals wiki, and the other
+        // triggers (CurrentMapZoom, _characterPin.Changed, _areaCalibration
+        // .Changed) all sit on user-action / lifecycle cadence. Information
+        // level is safe here. Skip path uses LogCalibrationFallback +
+        // ProjectionSkipped(consumer=survey_anchor) so the projection-miss
+        // counter family stays uniform across consumers.
+        var overlayCal = _areaCalibration?.CurrentOverlayCalibration;
+        if (overlayCal is null && _latestTrackerFix is not null)
+        {
+            // Only count as a "skip" when there WAS a tracker fix to project
+            // — without one, ResolveSurveyAnchor returns Cleared by design
+            // (no tracker = no anchor, unrelated to calibration presence).
+            var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
+            LogCalibrationFallback(skippedArea, "RefreshSurveyPlayerAnchor", "no_overlay_cal");
+            MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
+                new KeyValuePair<string, object?>("consumer", "survey_anchor"),
+                new KeyValuePair<string, object?>("area", skippedArea));
+        }
+
         var res = ResolveSurveyAnchor(
             _latestTrackerFix,
             _characterPin?.Current,
-            _areaCalibration?.CurrentOverlayCalibration,
+            overlayCal,
             fromTrackerFix,
             _session.SurveyPlayerIsManual,
             _session.SurveyPlayerIsPinned,
@@ -340,6 +362,17 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _session.SurveyPlayerSource = r.Source;
         _session.SurveyPlayerIsManual = r.IsManual;
         _session.SurveyPlayerIsPinned = r.IsPinned;
+
+        // Success log (sparse — same cadence as the inputs). Skipped when the
+        // resolution cleared (no source/pixel) to avoid a "no anchor" entry
+        // every Changed event in an area with no fix yet.
+        if (r.Pixel is { } px)
+        {
+            var areaKey = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
+            _logger?.LogInformation(
+                "RefreshSurveyPlayerAnchor({Area}): anchor={Px:0},{Py:0} source={Source} isManual={IsManual} isPinned={IsPinned} fromTrackerFix={FromTrackerFix}.",
+                areaKey, px.X, px.Y, r.Source?.ToString() ?? "<none>", r.IsManual, r.IsPinned, fromTrackerFix);
+        }
     }
 
     /// <summary>
@@ -616,12 +649,24 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// (don't leave the overlay stuck open just because validation opened it).</summary>
     private void SetCalibrationValidation(bool on)
     {
+        // #1093 D7 — toggle is THE lifecycle anchor. Capture pre-state up
+        // front so the Information log at the end can report what the user
+        // asked for and what context the VM saw. Always emitted regardless
+        // of `on`, so a triager grepping for "SetCalibrationValidation"
+        // finds the one entry that started the chain.
+        var area = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
+        var scene = _areaCalibration?.CurrentScene;
+        var isCalibrated = IsCurrentAreaCalibrated;
+        var overlayCalPresent = _areaCalibration?.CurrentOverlayCalibration is not null;
+        string action;
+
         if (on)
         {
             _mapVisibleBeforeValidation = _session.IsMapVisible;
             ShowCalibrationGhosts = true;
             _session.IsMapVisible = true;
             RebuildCalibrationGhosts();
+            action = "shown_and_rebuilt";
         }
         else
         {
@@ -630,8 +675,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             if (_mapVisibleBeforeValidation is { } prev)
                 _session.IsMapVisible = prev;
             _mapVisibleBeforeValidation = null;
+            action = "hidden_and_cleared";
         }
         OnPropertyChanged(nameof(CalibrationValidationStatus));
+
+        _logger?.LogInformation(
+            "SetCalibrationValidation(on={On}, area={Area}, scene={Scene}, isCalibrated={IsCalibrated}, overlayCalPresent={OverlayCalPresent}): {Action} → ghostsBuilt={GhostsBuilt}.",
+            on, area, scene?.SceneFriendlyName ?? "<none>", isCalibrated, overlayCalPresent, action, CalibrationGhosts.Count);
     }
 
     /// <summary>#495: the wizard calls this when the user enters a step where
@@ -645,15 +695,65 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
     private void RebuildCalibrationGhosts()
     {
+        // #1093 §5.3: state-change frequency (fires on toggle / area-change /
+        // recalibrate / zoom slider while showing) → safe to log at Information
+        // on the success path. Span + histogram pair lets the perf-recorder
+        // surface "how often / how long / what shape." Producer cost is zero
+        // when no listener is attached.
+        using var act = MithrilActivitySources.LegolasCalibration.StartActivity("calibration.ghosts.rebuild");
+        var sw = Stopwatch.StartNew();
+
         CalibrationGhosts.Clear();
-        if (_areaCalibration?.CurrentOverlayCalibration is not { } cal) return;
+        if (_areaCalibration?.CurrentOverlayCalibration is not { } cal)
+        {
+            // #1093 D4 + §5.3 skip path: the dedup helper is the "human-readable
+            // explanation" (one Trace per (area, callSite, reason)); the meter
+            // is the "how often" answer (every call). Use the live scene's
+            // MapAssetKey as the area; fall back when no scene resolved yet.
+            var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
+            LogCalibrationFallback(skippedArea, "RebuildCalibrationGhosts", "no_overlay_cal");
+            MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
+                new KeyValuePair<string, object?>("consumer", "ghosts"),
+                new KeyValuePair<string, object?>("area", skippedArea));
+            act?.SetTag("cal.path", "none");
+            act?.SetTag("area", skippedArea);
+            return;
+        }
         // #524: pass the live in-game zoom so dragging the bound slider live-
         // reprojects the ghosts (the validate loop is precisely the diagnostic
         // for surfacing zoom drift after a change).
+        var refs = _areaCalibration.CurrentAreaReferences;
         foreach (var g in GhostLabelDeclutter.Build(
-                     _areaCalibration.CurrentAreaReferences, cal, _session.CurrentMapZoom))
+                     refs, cal, _session.CurrentMapZoom))
             CalibrationGhosts.Add(g);
         OnPropertyChanged(nameof(CalibrationValidationStatus));
+
+        // #1093 §5.3 success path. WorldToOverlayCalibration carries the math
+        // but not the picked record's Source/ResidualPixels; pull those from
+        // AreaCalibration when available (typical case in production — both
+        // come out of the same picker call). Sentinels match the
+        // <c>cal.source</c>/<c>cal.residual_px</c> vocabulary in the tag
+        // descriptor file.
+        var areaKey = _areaCalibration.CurrentScene?.MapAssetKey ?? "<unknown>";
+        var source = _areaCalibration.CurrentCalibration?.Source.ToString() ?? "<unknown>";
+        var residual = _areaCalibration.CurrentCalibration?.ResidualPixels ?? double.NaN;
+        _logger?.LogInformation(
+            "RebuildCalibrationGhosts({Area}): built {Ghosts} from {Refs} refs at zoom={Zoom} (cal source={Source}, residual={Residual:0.00}px).",
+            areaKey, CalibrationGhosts.Count, refs.Count,
+            _session.CurrentMapZoom, source, residual);
+
+        act?.SetTag("area", areaKey);
+        act?.SetTag("refs_count", refs.Count);
+        act?.SetTag("ghosts_built", CalibrationGhosts.Count);
+        act?.SetTag("cal.path", "direct_overlay");
+        act?.SetTag("cal.source", source);
+        act?.SetTag("cal.residual_px", residual);
+
+        MithrilMeters.LegolasCalibration.GhostsRebuildMs.Record(
+            sw.Elapsed.TotalMilliseconds,
+            new KeyValuePair<string, object?>("area", areaKey),
+            new KeyValuePair<string, object?>("refs_count", refs.Count),
+            new KeyValuePair<string, object?>("ghosts_built", CalibrationGhosts.Count));
     }
 
     /// <summary>#524 follow-up: the area key the last <see cref="OnCalibrationChanged"/>
@@ -669,13 +769,24 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(IsCurrentAreaCalibrated));
         ToggleCalibrationValidationCommand.NotifyCanExecuteChanged();
+        // #1093 §5.3: track which branch fired so the Information log at the
+        // end names the action the triager actually wants — `drop_validation`,
+        // `rebuild`, or `noop` (the most common case: the calibration changed
+        // but ghosts weren't showing, so no UI rebuild was needed).
+        string action;
         if (!IsCurrentAreaCalibrated && ShowCalibrationGhosts)
         {
             SetCalibrationValidation(false);   // calibration gone — drop + restore
+            action = "drop_validation";
         }
         else if (ShowCalibrationGhosts)
         {
             RebuildCalibrationGhosts();
+            action = "rebuild";
+        }
+        else
+        {
+            action = "noop";
         }
         OnPropertyChanged(nameof(CalibrationValidationStatus));
         // #524: area switch / recalibrate flips warning + legacy-hint conditions
@@ -702,6 +813,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             if (_areaCalibration?.CurrentCalibration is { } cal)
                 _session.CurrentMapZoom = cal.CalibrationZoom;
         }
+
+        // #1093 §5.3: state-change frequency — fires on area-switch /
+        // recalibrate / clear. Information level lets the triager grep one
+        // line per gate flip without flooding the log.
+        _logger?.LogInformation(
+            "OnCalibrationChanged({Area}): IsCalibrated={IsCalibrated} ShowGhosts={ShowGhosts} → {Action}.",
+            _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>",
+            IsCurrentAreaCalibrated, ShowCalibrationGhosts, action);
     }
 
     /// <summary>#460/#477A: true while the guided calibration walkthrough is in
@@ -1094,7 +1213,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // area doesn't flood the trace.
         if (_areaState?.CurrentArea is not { Length: > 0 } areaKey)
         {
-            LogCalibrationFallback("(no-area)", "Area state has no current area key.");
+            LogCalibrationFallback("(no-area)", "RefreshCalibrationMarker", "Area state has no current area key.");
             return;
         }
         // Only register while the Pair phase is live — Drop captures right-
@@ -1110,13 +1229,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // Convert click pixel -> world via the calibration service.
         if (_areaCalibration is null)
         {
-            LogCalibrationFallback(areaKey, "No IAreaCalibrationService injected — marker cannot anchor.");
+            LogCalibrationFallback(areaKey, "RefreshCalibrationMarker", "No IAreaCalibrationService injected — marker cannot anchor.");
             return;
         }
         var cal = _areaCalibration.CurrentOverlayCalibration;
         if (cal is null)
         {
-            LogCalibrationFallback(areaKey,
+            LogCalibrationFallback(areaKey, "RefreshCalibrationMarker",
                 "No baseline calibration for area — calibration walkthrough requires a seed (review iter-1 B2).");
             return;
         }
@@ -1124,7 +1243,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // OverlayPixel, FromOverlay returns WorldCoord directly.
         if (cal.Value.FromOverlay(marker.Pixel, EffectiveZoom(_session.CurrentMapZoom, cal.Value)) is not { } world)
         {
-            LogCalibrationFallback(areaKey,
+            LogCalibrationFallback(areaKey, "RefreshCalibrationMarker",
                 "FromOverlay returned null for marker pixel — calibration shape rejected the point.");
             return;
         }
@@ -1134,17 +1253,23 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Trace one calibration-marker early-return per
-    /// (area, reason) so silent fallbacks are observable in production
+    /// (area, callSite, reason) so silent fallbacks are observable in production
     /// without flooding the trace on a busy area. Mirrors
-    /// <c>OverlayWindowService._projectionMissAreasLogged</c>.</summary>
-    private void LogCalibrationFallback(string areaKey, string reason)
+    /// <c>OverlayWindowService._projectionMissAreasLogged</c>.
+    /// <para>#1093 D4 generalisation: the original helper hardcoded the
+    /// <c>RefreshCalibrationMarker</c> call-site name; every VM projection
+    /// path (RebuildCalibrationGhosts, MotherlodeMarkerPixels,
+    /// MotherlodeGuidanceOverlay, RefreshSurveyPlayerAnchor) calls in with
+    /// its own <paramref name="callSite"/> so a triager can read which
+    /// path silently dropped.</para></summary>
+    private void LogCalibrationFallback(string areaKey, string callSite, string reason)
     {
-        var dedupKey = areaKey + "|" + reason;
+        var dedupKey = areaKey + "|" + callSite + "|" + reason;
         if (_calibrationFallbackAreasLogged.TryAdd(dedupKey, 0))
         {
             _logger?.LogTrace(
-                "MapOverlayViewModel.RefreshCalibrationMarker fallback for area {AreaKey}: {Reason}",
-                areaKey, reason);
+                "MapOverlayViewModel.{CallSite} fallback for area {AreaKey}: {Reason}",
+                callSite, areaKey, reason);
         }
     }
 
@@ -1313,10 +1438,22 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     {
         get
         {
-            if (_session.Mode != SessionMode.Motherlode
-                || _motherlode is null
-                || _areaCalibration?.CurrentOverlayCalibration is not { } cal)
+            if (_session.Mode != SessionMode.Motherlode || _motherlode is null)
                 return Array.Empty<OverlayPixel>();
+            if (_areaCalibration?.CurrentOverlayCalibration is not { } cal)
+            {
+                // #1093 §5.3: per-frame getter — meter + first-time-Trace
+                // skip log, NO success log (would flood at ~60 Hz). The mode
+                // gate above is the "motherlode not active" branch — silent
+                // by design; only the calibration-null branch is the
+                // "silent fallback worth surfacing" case.
+                var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
+                LogCalibrationFallback(skippedArea, "MotherlodeMarkerPixels", "no_overlay_cal");
+                MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
+                    new KeyValuePair<string, object?>("consumer", "motherlode_markers"),
+                    new KeyValuePair<string, object?>("area", skippedArea));
+                return Array.Empty<OverlayPixel>();
+            }
 
             List<OverlayPixel>? list = null;
             var zoom = _session.CurrentMapZoom;
@@ -1338,10 +1475,20 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     {
         get
         {
-            if (_session.Mode != SessionMode.Motherlode
-                || _motherlode is null
-                || _areaCalibration?.CurrentOverlayCalibration is not { } cal)
+            if (_session.Mode != SessionMode.Motherlode || _motherlode is null)
                 return null;
+            if (_areaCalibration?.CurrentOverlayCalibration is not { } cal)
+            {
+                // #1093 §5.3: per-frame getter — meter + first-time-Trace
+                // skip log, NO success log. See MotherlodeMarkerPixels above
+                // for the rationale; identical shape, distinct consumer tag.
+                var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
+                LogCalibrationFallback(skippedArea, "MotherlodeGuidanceOverlay", "no_overlay_cal");
+                MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
+                    new KeyValuePair<string, object?>("consumer", "motherlode_guidance"),
+                    new KeyValuePair<string, object?>("area", skippedArea));
+                return null;
+            }
 
             var next = _motherlode.Snapshot().NextSpot;
             if (next is null) return null;

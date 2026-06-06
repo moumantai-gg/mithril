@@ -100,6 +100,36 @@ public static class MithrilMeters
             Meter.CreateCounter<long>("mithril.overlay.scene.exceptions");
     }
 
+    /// <summary>Legolas calibration consumer chain — picker, projection skips,
+    /// drawer transitions, ghosts-rebuild timing (#1093). Sibling-not-child of the
+    /// MapCalibration capture pipeline: consumer-side projection runs on the UI
+    /// thread asynchronously to the engine's solve attempt.</summary>
+    public static class LegolasCalibration
+    {
+        public static readonly Meter Meter = new("Mithril.Legolas.Calibration");
+
+        // Picker telemetry (`mithril.legolas.calibration.picker.outcomes`) lives in
+        // Mithril.MapCalibration.Diagnostics.MapCalibrationDiagnostics.LegolasCalibrationPickerMeter
+        // because Mithril.MapCalibration.csproj deliberately doesn't reference
+        // Mithril.Shared (long-standing layering). The mirror Meter uses the SAME
+        // name, so listeners filtering on "Mithril.Legolas.Calibration" receive
+        // picker measurements uniformly with the consumer-side counters below.
+
+        /// <summary>VM-side projection paths skipped because <c>CurrentOverlayCalibration</c>
+        /// returned null. Tags: <c>consumer</c> ∈ {ghosts, motherlode_markers, motherlode_guidance,
+        /// survey_pin, survey_anchor, wizard_landmarks}; <c>area</c> (scene MapAssetKey).</summary>
+        public static readonly Counter<long> ProjectionSkipped =
+            Meter.CreateCounter<long>("mithril.legolas.calibration.projection.skipped");
+
+        /// <summary>Drawer ghost-pass state transitions. Tags: <c>from</c>, <c>to</c> ∈ {hidden, empty, drawing, brush_null}.</summary>
+        public static readonly Counter<long> GhostDrawerTransitions =
+            Meter.CreateCounter<long>("mithril.legolas.calibration.ghost_drawer.transitions");
+
+        /// <summary><c>RebuildCalibrationGhosts</c> wall-clock. Tags: <c>area</c>, <c>refs_count</c>, <c>ghosts_built</c>.</summary>
+        public static readonly Histogram<double> GhostsRebuildMs =
+            Meter.CreateHistogram<double>("mithril.legolas.calibration.ghosts.rebuild_ms", unit: "ms");
+    }
+
     // GameState per-service counters and subscriber-count gauges are deferred from PR B
     // (see #818 acceptance criteria); add a `GameState` static here when the follow-up
     // lands rather than shipping an empty placeholder.

@@ -10,6 +10,7 @@ using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
 using Mithril.Shared.Settings;
+using Mithril.Shared.Telemetry.Abstractions;
 using Legolas.Diagnostics;
 using Legolas.Domain;
 using Legolas.Flow;
@@ -44,6 +45,12 @@ public sealed class LegolasModule : IMithrilModule
 
         services.AddMithrilVersionedSettings<LegolasSettings>(settingsPath, LegolasSettingsJsonContext.Default.LegolasSettings);
 
+        // #1093: declare the Legolas calibration consumer-chain tag vocabulary so the
+        // TagCatalog knows about the new keys (otherwise the OTLP allowlist drops them
+        // fail-closed). Companion catalog statics live in MithrilActivitySources /
+        // MithrilMeters (`Mithril.Shared.Diagnostics.Telemetry`).
+        services.AddSingleton<ITagDescriptorProvider, LegolasCalibrationTagDescriptors>();
+
         services.AddSingleton<InventoryGridSettings>(sp =>
             sp.GetRequiredService<LegolasSettings>().InventoryGrid);
         services.AddSingleton<LegolasColors>(sp =>
@@ -62,7 +69,8 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IAreaCalibrationService>(sp => new AreaCalibrationService(
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             sp.GetRequiredService<ICoordinateProjector>(),
-            sp.GetRequiredService<Mithril.MapCalibration.IMapCalibrationService>()));
+            sp.GetRequiredService<Mithril.MapCalibration.IMapCalibrationService>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Legolas.Calibration")));
         services.AddSingleton<PinCalibrationCoordinator>(sp =>
             new PinCalibrationCoordinator(
                 sp.GetRequiredService<IAreaCalibrationService>(),

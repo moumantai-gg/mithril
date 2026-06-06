@@ -1,4 +1,6 @@
+using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Diagnostics;
 
 namespace Mithril.MapCalibration.Internal;
 
@@ -147,15 +149,53 @@ internal sealed class MapCalibrationService : IMapCalibrationService
         // Source. Stamping Source AND Frame at save sites (AutoCalibrationEngine and
         // AreaCalibrationService) keeps disk records self-describing.
         var candidates = new List<AreaCalibration>(capacity: 2);
-        if (_userStore.TryGet(scene.MapAssetKey, frame, out var user)) candidates.Add(user);
-        if (_baseline.TryGetValue(scene.MapAssetKey, out var baseline) && baseline.Frame == frame) candidates.Add(baseline);
+        var hasUserSlot = _userStore.TryGet(scene.MapAssetKey, frame, out var user);
+        if (hasUserSlot) candidates.Add(user);
+        var hasBaseline = _baseline.TryGetValue(scene.MapAssetKey, out var baseline);
+        if (hasBaseline && baseline!.Frame == frame) candidates.Add(baseline);
 
-        if (candidates.Count == 0) return null;
+        // mithril#1093: lowercase tag value per LegolasCalibrationTagDescriptors `frame` row.
+        var frameTag = frame == CalibrationFrame.Texture ? "texture" : "overlay";
+
+        if (candidates.Count == 0)
+        {
+            var userSlotState = hasUserSlot ? "present" : "absent";
+            var baselineFrameState = hasBaseline ? baseline!.Frame.ToString() : "absent";
+            _logger?.LogTrace(
+                "PickByFrame({MapAssetKey}, frame={Frame}): no candidates (user-store {UserSlot}, baseline {BaselineFrame}).",
+                scene.MapAssetKey, frame, userSlotState, baselineFrameState);
+            MapCalibrationDiagnostics.LegolasCalibrationPickerMeter.PickerOutcomes.Add(
+                1,
+                new KeyValuePair<string, object?>("frame", frameTag),
+                new KeyValuePair<string, object?>("outcome", "miss"));
+            return null;
+        }
 
         var eligible = candidates.Where(c => c.ReferenceCount >= MinReferences).ToList();
-        return eligible.Count == 0
-            ? candidates.OrderByDescending(SourceRank).First()
-            : eligible.OrderBy(c => c.ResidualPixels).ThenByDescending(SourceRank).First();
+        AreaCalibration picked;
+        string outcome;
+        if (eligible.Count == 0)
+        {
+            picked = candidates.OrderByDescending(SourceRank).First();
+            outcome = "fallback_below_floor";
+            _logger?.LogInformation(
+                "PickByFrame({MapAssetKey}, frame={Frame}): no candidate cleared MinReferences={Floor}; returning best-source-precedence fallback (source={Source}, residual={Residual:0.00}px, refs={Refs}).",
+                scene.MapAssetKey, frame, MinReferences, picked.Source, picked.ResidualPixels, picked.ReferenceCount);
+        }
+        else
+        {
+            picked = eligible.OrderBy(c => c.ResidualPixels).ThenByDescending(SourceRank).First();
+            outcome = "hit";
+            _logger?.LogTrace(
+                "PickByFrame({MapAssetKey}, frame={Frame}): {Eligible}/{Total} eligible, picked source={Source} residual={Residual:0.00}px refs={Refs}.",
+                scene.MapAssetKey, frame, eligible.Count, candidates.Count, picked.Source, picked.ResidualPixels, picked.ReferenceCount);
+        }
+
+        MapCalibrationDiagnostics.LegolasCalibrationPickerMeter.PickerOutcomes.Add(
+            1,
+            new KeyValuePair<string, object?>("frame", frameTag),
+            new KeyValuePair<string, object?>("outcome", outcome));
+        return picked;
     }
 
     public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations

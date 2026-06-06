@@ -66,7 +66,9 @@ Once `TelemetrySettings.EnableOtlpExport` is enabled (Settings → Diagnostics �
 | `calibration_synthesis_rerank` | Map auto-calibration Detection layer (synthesis-J re-rank) via [`MapCalibrationDiagnostics`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) | One span per solve carrying the synthesis-J re-rank outcome. Tag list TBD per Task 16 of the synthesis-rerank plan. Scaffold-only — producer wiring lands in Task 16. |
 | `calibration.drift_check` | [`AutoCalibrationEngine.CheckDriftAsync`](../src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs) via `MithrilActivitySources.MapCalibration` (mithril#1046) | One span per hotkey-triggered drift check on a scene with a stored calibration; `outcome` tag distinguishes early-exit vs `Ok` vs `Drift`. |
 | `calibration.refine.primary` / `calibration.refine.fallback` | [`CompositeMapRegionRefiner`](../src/Mithril.MapCalibration.Detection/CompositeMapRegionRefiner.cs) via [`MapCalibrationDiagnostics.ActivitySource`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) (mithril#1061) | Per-branch spans from the locate dispatcher. Primary wraps `FeatureMatchingRefiner` (ORB+Lowe); fallback wraps `SobelPaddedPyramidRefiner`. Tags below. |
-| `meter_counter` | All `Meter`-counter producers (Arda lines/verb-unmatched/grammar-break, reference fetch_outcome, domain-event-published, overlay projection.latency_ms + frame.markers, map-calibration synthesis-J histograms + disagree counter) | Sums per (instrument, tag-set) flushed once per second |
+| `calibration.area.select_scene` / `calibration.area.calibrate_current` | [`AreaCalibrationService`](../src/Legolas.Module/Services/AreaCalibrationService.cs) via `MithrilActivitySources.LegolasCalibration` (mithril#1093) | Per AreaCalibrationService scene-handoff / per user-driven calibrate-current invocation. |
+| `calibration.ghosts.rebuild` | [`MapOverlayViewModel.RebuildCalibrationGhosts`](../src/Legolas.Module/ViewModels/MapOverlayViewModel.cs) via `MithrilActivitySources.LegolasCalibration` (mithril#1093) | Per VM ghost-pass rebuild; companion histogram `mithril.legolas.calibration.ghosts.rebuild_ms` records wall-clock. |
+| `meter_counter` | All `Meter`-counter producers (Arda lines/verb-unmatched/grammar-break, reference fetch_outcome, domain-event-published, overlay projection.latency_ms + frame.markers, map-calibration synthesis-J histograms + disagree counter, Legolas calibration picker/projection/drawer/rebuild instruments) | Sums per (instrument, tag-set) flushed once per second |
 | `scope` | _ad-hoc_ | Fallback record kind for any `Mithril.*` Activity that doesn't match a dedicated dispatch arm. Reaches via the `scope` arm until a dedicated `overlay_*` dispatch arm lands in `PerfFileExporter`. |
 
 If you read a trace and a kind you expected is missing, check the producer column first.
@@ -354,9 +356,57 @@ Early exits (`NoStoredCalibration`, `CaptureFailed`, `MapNotLocated`, `NoIconDet
 Get-Content $Path | jq -c 'select(.Kind=="scope" and .Name=="calibration.drift_check") | {area:.Tags."map.area", outcome:.Tags.outcome}'
 ```
 
+### Calibration consumer chain (mithril#1093)
+
+The calibration *consumer* chain — picker → `AreaCalibrationService` lifecycle → VM projection paths → drawer ghost pass — is instrumented on a new `Mithril.Legolas.Calibration` `ActivitySource` and a same-named `Meter`. Consumer spans are siblings (not children) of the Capture-layer `calibration.attempt` span: consumer projection runs on the UI thread asynchronously to the engine's solve attempt, so a single span tree would cost more correlation-id plumbing than it would buy. All three consumer spans surface under the fallback `scope` arm of `PerfFileExporter` until a dedicated dispatch arm lands — read as `Kind="scope"` with the `Name` shown below.
+
+#### `calibration.area.select_scene`
+
+`AreaCalibrationService.SelectScene` body — fires when Arda hands a new scene to the calibration consumer layer.
+
+| Tag | Type | Notes |
+|---|---|---|
+| `scene.asset_key` | string | Unity asset key of the new scene (e.g. `Map_AreaSerbule`). Safe. |
+| `scene.parent_area_key` | string | Containing Arda area key (e.g. `AreaSerbule`). Safe. |
+| `refs_count` | int | Count of reference landmarks available for the scene. |
+| `cal.applied` | bool | `true` when a stored calibration was found and re-applied on entry; `false` for "new scene, no cal." |
+| `cal.source` | string | `AreaCalibration.Source` enum verbatim: `UserRefinement` / `AutoCapture` / `BundledBaseline` / `CommunitySync`. Emitted only when `cal.applied=true`. |
+| `cal.residual_px` | double | Stored calibration's residual in pixels. Emitted only when `cal.applied=true`. |
+
+#### `calibration.area.calibrate_current`
+
+`AreaCalibrationService.CalibrateCurrentArea` body — fires on every user-driven recalibrate.
+
+| Tag | Type | Notes |
+|---|---|---|
+| `scene.asset_key` | string | Scene the placements were solved against. Safe. |
+| `placements` | int | Number of user-supplied placements passed to the solver. |
+| `outcome` | string | One of `solved` / `refused` / `no_fit`. `refused` = pre-solve refusal (no current scene or `placements < 2`); `no_fit` = solver returned null. |
+| `cal.residual_px` | double | Residual of the resulting calibration. Emitted only when `outcome=solved`. |
+
+#### `calibration.ghosts.rebuild`
+
+`MapOverlayViewModel.RebuildCalibrationGhosts` body — fires when ghosts repopulate on validation-toggle, area-change, or recalibrate. Companion histogram below records wall-clock for the same call.
+
+| Tag | Type | Notes |
+|---|---|---|
+| `area` | string | Scene asset key. Safe. |
+| `refs_count` | int | Reference landmarks considered for ghost placement. |
+| `ghosts_built` | int | Ghost dots actually placed (may be < `refs_count` if some refs project off-canvas). |
+| `cal.source` | string | `AreaCalibration.Source` enum verbatim (`UserRefinement` / `AutoCapture` / `BundledBaseline` / `CommunitySync`). Emitted only when `cal.path=direct_overlay`. |
+| `cal.residual_px` | double | Calibration residual. Emitted only when `cal.path=direct_overlay`. |
+| `cal.path` | string | One of `direct_overlay` (overlay-frame calibration consumed via `CurrentOverlayCalibration`) or `none` (no overlay calibration available — the ghosts list is empty regardless of `refs_count`). |
+
+Companion `Mithril.Legolas.Calibration` meter instruments emitted in `meter_counter` records (below):
+
+- `mithril.legolas.calibration.picker.outcomes` — counter, per `MapCalibrationService.PickByFrame` call (declared on the `Mithril.Legolas.Calibration` Meter from `Mithril.MapCalibration.Diagnostics.MapCalibrationDiagnostics` due to project layering — see [spec §4.3](planning/calibration-logging-pass-1093/spec.md#43-meter--instruments)). Tags: `frame` ∈ {`texture`, `overlay`}, `outcome` ∈ {`hit`, `miss`, `fallback_below_floor`}. `hit` = a candidate cleared the `MinReferences` floor; `fallback_below_floor` = no candidate cleared the floor but the picker returned the best-source-precedence fallback; `miss` = no candidates at all (the load-bearing "is `CurrentOverlayCalibration` returning null in production" answer).
+- `mithril.legolas.calibration.projection.skipped` — counter, per VM-side projection path that skipped because `CurrentOverlayCalibration` returned null. Tags: `consumer` ∈ {`ghosts`, `motherlode_markers`, `motherlode_guidance`, `survey_pin`, `survey_anchor`, `wizard_landmarks`}, `area` (scene asset key). First-time-per-scene logged at Trace via `MapOverlayViewModel.LogCalibrationFallback` so the human-readable explanation exists once per scene; the counter is the "how often" answer for per-frame getter paths (`motherlode_markers`, `motherlode_guidance`).
+- `mithril.legolas.calibration.ghost_drawer.transitions` — counter, per drawer ghost-pass state-machine transition. Tags: `from`, `to` ∈ {`hidden`, `empty`, `drawing`, `brush_null`}. The state machine is `hidden ⇄ empty ⇄ drawing` with a degraded `brush_null` sink. State held in two `int?` fields on `LegolasOverlaySceneDrawer` so the per-frame check is two field-reads + one branch.
+- `mithril.legolas.calibration.ghosts.rebuild_ms` — histogram (`double`, unit `ms`), per `RebuildCalibrationGhosts` call. Tags: `area`, `refs_count`, `ghosts_built`. Pair with the `calibration.ghosts.rebuild` span tag set for distribution-over-time questions.
+
 ### `meter_counter`
 
-Aggregated `System.Diagnostics.Metrics.Meter` counter sum, flushed once per second per (instrument, tag-set). Covers PR B's counters: Arda lines/verb-unmatched/grammar-break/verb-unhandled/domain-event-published, reference fetch-outcome, Mithril.Overlay projection latency + frame markers (#835), Mithril.MapCalibration synthesis-J histograms + disagree counter (synthesis-rerank plan Task 10), and any future counters added via the `Mithril.*` Meter prefix.
+Aggregated `System.Diagnostics.Metrics.Meter` counter sum, flushed once per second per (instrument, tag-set). Covers PR B's counters: Arda lines/verb-unmatched/grammar-break/verb-unhandled/domain-event-published, reference fetch-outcome, Mithril.Overlay projection latency + frame markers (#835), Mithril.MapCalibration synthesis-J histograms + disagree counter (synthesis-rerank plan Task 10), Mithril.Legolas.Calibration picker/projection/drawer/rebuild instruments (mithril#1093), and any future counters added via the `Mithril.*` Meter prefix.
 
 | Property | Meaning |
 |---|---|
@@ -472,6 +522,8 @@ A few signatures that have been useful in practice. Most failure modes have a ch
 **Input lag without obvious render cost.** `input_latency` consistently > 50 ms but `frame_summary` looks healthy. Means the input event itself isn't slow — something between the input firing and the next frame is. Usually a binding update or a `Dispatcher.Invoke` that runs at `DataBind`/`Render` priority. Filter `dispatcher` by timestamp surrounding the lagging input event.
 
 **Binding-error flood.** Many unique `binding_error` messages, or one message that re-emits every second for the whole session. WPF retries failed bindings on every layout pass — even with no visual change, each pass costs CPU. The throttle in [`BindingErrorTraceListener`](../src/Mithril.Shared/Diagnostics/Performance/BindingErrorTraceListener.cs) collapses 60×/sec floods to ~1×/sec for storage, but the underlying app cost is still there.
+
+**Calibration validation shows no ghosts.** Grep the trace for the toggle anchor first: `SetCalibrationValidation(on=True, …)` on category `Legolas.MapOverlay`. The next link is `RebuildCalibrationGhosts(<area>): built N from M refs …` (success) or `MapOverlayViewModel.RebuildCalibrationGhosts fallback for area <X>: no_overlay_cal` (skip). If the rebuild succeeded but no dots show, walk to the drawer's `Legolas.Overlay.GhostDrawer` transitions — `drawing` bucket reached means the draw pass executed; `empty` or `brush_null` names the broken link. The gap between toggle and any rebuild line names the missing wire.
 
 ## What the harness doesn't capture
 
