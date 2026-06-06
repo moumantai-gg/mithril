@@ -27,10 +27,6 @@ public class ManualAnchorNudgeTests
         BuildSut()
     {
         var session = new SessionState { Mode = SessionMode.Survey };
-        // #524: legacy CalibrationZoom = 1.0 stamp ⇒ pin live zoom to 1.0 so
-        // a fresh tracker fix re-projects with zoomFactor 1.0 and the
-        // pre-#524 nudge assertions still hold.
-        session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());

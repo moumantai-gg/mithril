@@ -26,7 +26,6 @@ public class MapOverlayCalibrationFallbackDedupTests
     public void Repeated_calibration_fallbacks_same_area_log_trace_only_once()
     {
         var session = new SessionState();
-        session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
@@ -102,7 +101,7 @@ public class MapOverlayCalibrationFallbackDedupTests
         // null (so the rebuild hits the skip path). The fake's Changed event
         // is the trigger we use to invoke OnCalibrationChanged from outside
         // the ctor.
-        var session = new SessionState { CurrentMapZoom = 1.0 };
+        var session = new SessionState();
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());

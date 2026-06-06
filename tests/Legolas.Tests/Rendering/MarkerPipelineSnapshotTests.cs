@@ -234,8 +234,12 @@ public sealed class MarkerPipelineSnapshotTests
         var composed = new WorldToOverlayCalibration(
             OriginX: 0, OriginY: 0, Scale: 1.0,
             RotationRadians: 0, MirrorNorth: true);
+        // mithril#1095: ProjectMarkers now takes a MapViewFix (not currentZoom).
+        // Identity fix: ViewScale=1.0, PanTex=0 — maps canonical pixel 1:1 to overlay.
+        var identityFix = new MapViewFix(PanTexPxX: 0, PanTexPxY: 0, ViewScale: 1.0,
+            Confidence: 1.0, MeasuredAt: DateTimeOffset.UtcNow);
         var projected = OverlayWindowService.ProjectMarkers(
-            snapshot, composed, currentZoom: 1.0);
+            snapshot, composed, identityFix);
         projected.Should().HaveCount(markers.Count,
             "the identity calibration must project every snapshot entry — " +
             "if it doesn't, the projection driver is dropping markers.");

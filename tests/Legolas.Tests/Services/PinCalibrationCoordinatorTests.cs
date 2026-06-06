@@ -327,43 +327,27 @@ public class PinCalibrationCoordinatorTests
         });
     }
 
-    // ---- #524: zoom stamp ------------------------------------------------
+    // ---- mithril#1095: CalibrationZoom stamp retired ----------------------
 
     [Fact]
-    public void Persist_StampsCurrentMapZoom_FromSessionState()
+    public void Persist_Succeeds_AfterZoomStampRetired()
     {
-        var (coord, calib, pins, session) = BuildWithSession();
+        // mithril#1095: SessionState.CurrentMapZoom deleted; calibrationZoom param
+        // is no longer stamped on the record (CalibrationZoom removed from
+        // AreaCalibration). Verify Confirm still succeeds.
+        var (coord, calib, pins, _) = BuildWithSession();
         pins.SeedExisting(
             FakeMapPinState.Pin(10, 10),
             FakeMapPinState.Pin(50, 60),
             FakeMapPinState.Pin(90, 20));
-        session.CurrentMapZoom = 1.5;
         coord.Arm();
-        // Walk the spread-suggested order so each pin maps to its OWN perfect
-        // pixel (residual ~0 ⇒ Confirm is ungated).
         PairAllPerfectly(coord);
 
         var result = coord.Confirm();
 
-        result.Should().NotBeNull();
-        calib.LastCalibrationZoom.Should().Be(1.5, "the live in-game zoom must be passed to CalibrateCurrentArea");
-    }
-
-    [Fact]
-    public void Persist_WithoutSessionState_FallsBackToOne()
-    {
-        // Legacy ctor (no SessionState) still works — preserves headless /
-        // unit-test paths and the pre-#524 default stamp.
-        var (coord, calib, pins, _) = Build();
-        pins.SeedExisting(
-            FakeMapPinState.Pin(10, 10),
-            FakeMapPinState.Pin(50, 60),
-            FakeMapPinState.Pin(90, 20));
-        coord.Arm();
-        PairAllPerfectly(coord);
-
-        coord.Confirm().Should().NotBeNull();
-        calib.LastCalibrationZoom.Should().Be(1.0);
+        result.Should().NotBeNull("Confirm must produce a result regardless of zoom-stamp retirement");
+        calib.LastCalibrationZoom.Should().Be(1.0,
+            "mithril#1095: zoom param defaults to 1.0 (no longer read from SessionState)");
     }
 
     [Fact]

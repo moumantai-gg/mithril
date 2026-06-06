@@ -39,7 +39,6 @@ public class MapOverlayPinnedAnchorTests
         BuildSut(bool calibrated)
     {
         var session = new SessionState();
-        session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var projector = new CoordinateProjector();

@@ -40,7 +40,7 @@ public class MapOverlayCalibrationLoggingTests
     private static (MapOverlayViewModel map, FakeAreaCalibrationService cal,
                     SessionState session, CapturingLoggerFactory loggers) Build()
     {
-        var session = new SessionState { CurrentMapZoom = 1.0 };
+        var session = new SessionState();
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());

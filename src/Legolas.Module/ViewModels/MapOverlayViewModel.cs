@@ -299,9 +299,9 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     {
         // #1093 §5.3 + §10: PlayerPositionChanged is sparse (zone-in /
         // teleport only) per pg_log_timezones / signals wiki, and the other
-        // triggers (CurrentMapZoom, _characterPin.Changed, _areaCalibration
-        // .Changed) all sit on user-action / lifecycle cadence. Information
-        // level is safe here. Skip path uses LogCalibrationFallback +
+        // triggers (_characterPin.Changed, _areaCalibration.Changed,
+        // ILiveMapViewService.Changed) all sit on user-action / lifecycle cadence.
+        // Information level is safe here. Skip path uses LogCalibrationFallback +
         // ProjectionSkipped(consumer=survey_anchor) so the projection-miss
         // counter family stays uniform across consumers.
         var overlayCal = _areaCalibration?.CurrentOverlayCalibration;
@@ -317,6 +317,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 new KeyValuePair<string, object?>("area", skippedArea));
         }
 
+        // mithril#1095: resolve live-view fix for layer-2 composition.
+        var anchorArea = _areaCalibration?.CurrentScene?.MapAssetKey;
+        var liveFix = anchorArea is not null ? _liveView?.GetCurrent(anchorArea) : null;
+
         var res = ResolveSurveyAnchor(
             _latestTrackerFix,
             _characterPin?.Current,
@@ -324,7 +328,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             fromTrackerFix,
             _session.SurveyPlayerIsManual,
             _session.SurveyPlayerIsPinned,
-            _session.CurrentMapZoom);
+            fix: liveFix);
         if (res is not { } r) return;   // keep current (manual sticky / no change)
 
         _session.SurveyPlayerPixel = r.Pixel;
@@ -364,6 +368,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// </list>
     /// Returns <c>null</c> to mean "leave the current anchor as-is".
     /// </summary>
+    /// <summary>
+    /// Pure precedence for the Survey "you are here" anchor (overload with layer-2
+    /// composition via <see cref="MapViewFix"/>). When <paramref name="fix"/> is
+    /// non-null the projection uses <see cref="WorldToOverlayCalibration.ToLiveOverlay"/>
+    /// (layer-2 composition); when null it falls back to canonical
+    /// <see cref="WorldToOverlayCalibration.ToOverlay(WorldCoord)"/> (tests + callers
+    /// without a live fix). The <paramref name="currentMapZoom"/> overload is deleted
+    /// (mithril#1095: CalibrationZoom removed from AreaCalibration).
+    /// </summary>
     public static SurveyAnchorResolution? ResolveSurveyAnchor(
         TrackerFix? tracker,
         CharacterPinFix? pin,
@@ -371,7 +384,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         bool fromTrackerFix,
         bool currentIsManual,
         bool currentIsPinned,
-        double currentMapZoom = 0.0)
+        MapViewFix? fix = null)
     {
         if (pin is { } p && cal is { } pinCal)
         {
@@ -379,8 +392,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 fromTrackerFix && tracker is { } ft && ft.MeasuredAt > p.ObservedAt;
             if (!supersededByFresherAuto)
             {
-                // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
-                var pwt = pinCal.ToOverlay(p.World, EffectiveZoom(currentMapZoom, pinCal));
+                // mithril#1095: layer-2 composition when a live fix is available.
+                var pwt = fix is { } f
+                    ? pinCal.ToLiveOverlay(p.World, f)
+                    : pinCal.ToOverlay(p.World);
                 return new SurveyAnchorResolution(
                     pwt,
                     p.ObservedAt,
@@ -393,23 +408,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         if (currentIsManual && !currentIsPinned && !fromTrackerFix)
             return null;
 
-        if (tracker is not { } fix || cal is not { } c)
+        if (tracker is not { } trackerFix || cal is not { } c)
             return SurveyAnchorResolution.Cleared;
 
-        // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
-        var fxp = c.ToOverlay(new WorldCoord(fix.X, fix.Y, fix.Z), EffectiveZoom(currentMapZoom, c));
+        // mithril#1095: layer-2 composition when a live fix is available.
+        var world = new WorldCoord(trackerFix.X, trackerFix.Y, trackerFix.Z);
+        var fxp = fix is { } lf
+            ? c.ToLiveOverlay(world, lf)
+            : c.ToOverlay(world);
         return new SurveyAnchorResolution(
             fxp,
-            fix.MeasuredAt, fix.Source, IsManual: false, IsPinned: false);
+            trackerFix.MeasuredAt, trackerFix.Source, IsManual: false, IsPinned: false);
     }
-
-    // #524: a caller that doesn't know the live zoom (older tests, legacy
-    // paths) gets the byte-identical no-op (factor 1.0). Live VM paths pass
-    // SessionState.CurrentMapZoom.
-    private static double EffectiveZoom(double currentMapZoom, WorldToOverlayCalibration cal) =>
-        currentMapZoom > 1e-6 ? currentMapZoom : cal.CalibrationZoom;
-    private static double EffectiveZoom(double currentMapZoom, AreaCalibration cal) =>
-        currentMapZoom > 1e-6 ? currentMapZoom : cal.CalibrationZoom;
 
     /// <summary>
     /// Record the user's "set my position" map click (#476 Option&#160;C,
@@ -495,21 +505,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// legacy-stamped next session).</summary>
     private readonly HashSet<string> _legacyHintDismissedAreas = new(StringComparer.Ordinal);
 
-    /// <summary>One-time per-area hint in the wizard's Listening step,
-    /// shown when the area's calibration predates zoom tracking
-    /// (<c>CalibrationZoom == 1.0</c>) and the user hasn't dismissed it this
-    /// session. Drops out the moment they recalibrate (the stamp moves off
-    /// 1.0) or click "Got it".</summary>
-    public bool IsLegacyRecalibrateHintVisible
-    {
-        get
-        {
-            if (_areaCalibration?.CurrentCalibration is not { } cal) return false;
-            if (Math.Abs(cal.CalibrationZoom - 1.0) > 1e-6) return false;
-            var key = _areaCalibration.CurrentScene?.ParentAreaKey;
-            return key is not null && !_legacyHintDismissedAreas.Contains(key);
-        }
-    }
+    /// <summary>mithril#1095: CalibrationZoom removed from AreaCalibration; the
+    /// legacy recalibrate hint (which detected pre-zoom-tracking calibrations via
+    /// <c>CalibrationZoom == 1.0</c>) is retired. Always returns false.</summary>
+    public bool IsLegacyRecalibrateHintVisible => false;
 
     /// <summary>#524: dismiss the legacy hint for the current area for the
     /// rest of this Mithril session. No persistence (a fresh process gets the
@@ -637,12 +636,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             act?.SetTag("area", skippedArea);
             return;
         }
-        // #524: pass the live in-game zoom so dragging the bound slider live-
-        // reprojects the ghosts (the validate loop is precisely the diagnostic
-        // for surfacing zoom drift after a change).
+        // mithril#1095: layer-2 composition — resolve the live MapViewFix for this
+        // area and pass it to GhostLabelDeclutter.Build. If no fix is available yet,
+        // fall back to canonical projection (no layer-2 applied).
+        var areaKey = _areaCalibration.CurrentScene?.MapAssetKey ?? "<unknown>";
+        var ghostFix = areaKey != "<unknown>" ? _liveView?.GetCurrent(areaKey) : null;
         var refs = _areaCalibration.CurrentAreaReferences;
-        foreach (var g in GhostLabelDeclutter.Build(
-                     refs, cal, _session.CurrentMapZoom))
+        foreach (var g in GhostLabelDeclutter.Build(refs, cal, ghostFix))
             CalibrationGhosts.Add(g);
         OnPropertyChanged(nameof(CalibrationValidationStatus));
 
@@ -652,13 +652,11 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // come out of the same picker call). Sentinels match the
         // <c>cal.source</c>/<c>cal.residual_px</c> vocabulary in the tag
         // descriptor file.
-        var areaKey = _areaCalibration.CurrentScene?.MapAssetKey ?? "<unknown>";
         var source = _areaCalibration.CurrentCalibration?.Source.ToString() ?? "<unknown>";
         var residual = _areaCalibration.CurrentCalibration?.ResidualPixels ?? double.NaN;
         _logger?.LogInformation(
-            "RebuildCalibrationGhosts({Area}): built {Ghosts} from {Refs} refs at zoom={Zoom} (cal source={Source}, residual={Residual:0.00}px).",
-            areaKey, CalibrationGhosts.Count, refs.Count,
-            _session.CurrentMapZoom, source, residual);
+            "RebuildCalibrationGhosts({Area}): built {Ghosts} from {Refs} refs (cal source={Source}, residual={Residual:0.00}px).",
+            areaKey, CalibrationGhosts.Count, refs.Count, source, residual);
 
         act?.SetTag("area", areaKey);
         act?.SetTag("refs_count", refs.Count);
@@ -1144,7 +1142,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         }
         // #1076 Phase 6.5: frame-typed inverse — marker.Pixel is already
         // OverlayPixel, FromOverlay returns WorldCoord directly.
-        if (cal.Value.FromOverlay(marker.Pixel, EffectiveZoom(_session.CurrentMapZoom, cal.Value)) is not { } world)
+        // mithril#1095: FromOverlay is single-arg (no zoom factor — CalibrationZoom removed).
+        if (cal.Value.FromOverlay(marker.Pixel) is not { } world)
         {
             LogCalibrationFallback(areaKey, "RefreshCalibrationMarker",
                 "FromOverlay returned null for marker pixel — calibration shape rejected the point.");
@@ -1358,13 +1357,24 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 return Array.Empty<OverlayPixel>();
             }
 
+            // mithril#1095: layer-2 composition — resolve live MapViewFix.
+            // If no fix is available yet, return empty (refuse to render stale pixels).
+            var markerArea = _areaCalibration.CurrentScene?.MapAssetKey;
+            if (string.IsNullOrEmpty(markerArea)) return Array.Empty<OverlayPixel>();
+            var markerFix = _liveView?.GetCurrent(markerArea);
+            if (markerFix is null)
+            {
+                LogCalibrationFallback(markerArea, "MotherlodeMarkerPixels", "no_live_fix");
+                return Array.Empty<OverlayPixel>();
+            }
+
             List<OverlayPixel>? list = null;
-            var zoom = _session.CurrentMapZoom;
             foreach (var s in _motherlode.Snapshot().Surveys)
                 if (!s.Collected && s.SolvedWorld is { } w)
                 {
-                    // #1076 Phase 6.5: frame-typed projection — OverlayPixel out.
-                    (list ??= new()).Add(cal.ToOverlay(w, zoom));
+                    // mithril#1095: layer-2 composition — project through canonical
+                    // calibration then apply live fix.
+                    (list ??= new()).Add(cal.ToLiveOverlay(w, markerFix.Value));
                 }
             return list ?? (IReadOnlyList<OverlayPixel>)Array.Empty<OverlayPixel>();
         }
@@ -1396,13 +1406,21 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             var next = _motherlode.Snapshot().NextSpot;
             if (next is null) return null;
 
-            var zoom = _session.CurrentMapZoom;
-            // #1076 Phase 6.5: frame-typed projection — OverlayPixel out.
-            var center = cal.ToOverlay(next.SuggestedWorld, zoom);
-            var zoomFactor = zoom > 1e-6 && cal.CalibrationZoom > 1e-6
-                ? zoom / cal.CalibrationZoom
-                : 1.0;
-            var radiusPx = next.ToleranceRadiusMetres * cal.Scale * zoomFactor;
+            // mithril#1095: layer-2 composition — resolve live MapViewFix.
+            // If no fix is available yet, return null (refuse to render stale ring).
+            var guidanceArea = _areaCalibration.CurrentScene?.MapAssetKey;
+            if (string.IsNullOrEmpty(guidanceArea)) return null;
+            var guidanceFix = _liveView?.GetCurrent(guidanceArea);
+            if (guidanceFix is null)
+            {
+                LogCalibrationFallback(guidanceArea, "MotherlodeGuidanceOverlay", "no_live_fix");
+                return null;
+            }
+
+            // mithril#1095: project center through layer-2 composition; scale
+            // the radius using the live ViewScale instead of the retired zoomFactor.
+            var center = cal.ToLiveOverlay(next.SuggestedWorld, guidanceFix.Value);
+            var radiusPx = next.ToleranceRadiusMetres * cal.Scale * guidanceFix.Value.ViewScale;
             return new MotherlodeGuidanceCircle(center, radiusPx, _brushes.RouteLine.Color);
         }
     }

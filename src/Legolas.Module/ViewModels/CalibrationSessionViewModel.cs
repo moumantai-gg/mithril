@@ -161,7 +161,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
         $"last={(Placements.Count > 0 ? $"({Placements[^1].X:0},{Placements[^1].Y:0})" : "-")}  " +
         $"you={(PlayerPin is { } pp ? $"({pp.X:0},{pp.Y:0}){(pp.IsSelected ? "*" : "")}" : "-")}  " +
         $"surveys={SurveyPins.Count}  ghosts={GhostPins.Count}  " +
-        $"mapZoom={MapZoom:0.###}  calZoom={_service.CurrentCalibration?.CalibrationZoom.ToString("0.###") ?? "-"}";
+        $"mapZoom={MapZoom:0.###}";
 
     private void RaiseDebug()
     {
@@ -693,10 +693,10 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     private OverlayPixel ProjectSurvey(AreaCalibration c, OverlayPixel origin, MetreOffset off)
         => ProjectAtScale(c, origin, off, c.Scale * ZoomFactor(c));
 
-    /// <summary><c>currentZoom / calibrationZoom</c>, guarded. 1.0 when either
-    /// is unset (default) → behaviour unchanged until the field is used.</summary>
-    public double ZoomFactor(AreaCalibration c) =>
-        MapZoom > 1e-6 && c.CalibrationZoom > 1e-6 ? MapZoom / c.CalibrationZoom : 1.0;
+    /// <summary>mithril#1095: CalibrationZoom removed from AreaCalibration;
+    /// the wizard now operates in overlay-frame at a constant scale (1.0 factor).
+    /// Retained as a method stub so ProjectSurvey compiles without changes.</summary>
+    public static double ZoomFactor(AreaCalibration c) => 1.0;
 
     private static OverlayPixel ProjectAtScale(AreaCalibration c, OverlayPixel origin, MetreOffset off, double scale)
     {

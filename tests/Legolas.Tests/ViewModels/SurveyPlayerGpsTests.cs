@@ -44,10 +44,6 @@ public class SurveyPlayerGpsTests
             PositionSource source = PositionSource.Spawn)
     {
         var session = new SessionState();
-        // #524: this suite's calibration uses the default CalibrationZoom = 1.0,
-        // so pin the live zoom to 1.0 → zoomFactor 1.0 → projections stay
-        // byte-identical to pre-#524.
-        session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var opt = new CapturingOptimizer();

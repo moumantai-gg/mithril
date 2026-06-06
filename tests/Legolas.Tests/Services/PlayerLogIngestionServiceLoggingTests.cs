@@ -28,7 +28,7 @@ public sealed class PlayerLogIngestionServiceLoggingTests : IDisposable
     {
         var bus = new TestDomainEventBus();
         var spy = new StubAreaCalibration();
-        var session = new SessionState { CurrentMapZoom = 1.0 };
+        var session = new SessionState();
         var settings = new LegolasSettings();
         var flow = new SurveyFlowController(session, settings);
         var motherlode = new MotherlodeMeasurementCoordinator(
