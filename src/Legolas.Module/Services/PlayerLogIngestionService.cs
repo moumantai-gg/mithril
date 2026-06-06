@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using System.Collections.Generic;
 using System.Windows;
 using Arda.Contracts;
 using Arda.World.Player;
@@ -8,6 +9,7 @@ using Legolas.Flow;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
 using Mithril.MapCalibration;
+using Mithril.Shared.Diagnostics.Telemetry;
 
 namespace Legolas.Services;
 
@@ -72,7 +74,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
         SessionState session,
         MotherlodeMeasurementCoordinator motherlode,
         LegolasSettings settings,
-        ILogger? logger = null)
+        ILoggerFactory? loggerFactory = null)
     {
         _bus = bus;
         _areaCalibration = areaCalibration;
@@ -80,7 +82,13 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _session = session;
         _motherlode = motherlode;
         _settings = settings;
-        _logger = logger;
+        // #1093 D10: DI never registered the non-generic ILogger directly, so the
+        // former optional `ILogger? logger = null` resolved to null in production
+        // and the "Subscribed to Arda domain events" line below was silently dead.
+        // ILoggerFactory IS registered, so resolving it and creating the named
+        // category here lights the dead line up (verified by
+        // PlayerLogIngestionServiceLoggingTests).
+        _logger = loggerFactory?.CreateLogger("Legolas.Ingestion");
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
@@ -175,44 +183,71 @@ public sealed class PlayerLogIngestionService : BackgroundService
 
     private void HandleMapTarget(WorldCoord world, string shortName, string message)
     {
+        var cleanName = CleanName(shortName);
+
         if (_session.Mode != SessionMode.Survey)
         {
-            _session.LastLogEvent = $"Map target: {CleanName(shortName)} @ ({world.X:0},{world.Z:0}) → ignored (mode is Motherlode)";
+            _session.LastLogEvent = $"Map target: {cleanName} @ ({world.X:0},{world.Z:0}) → ignored (mode is Motherlode)";
+            _logger?.LogTrace(
+                "HandleMapTarget {Name}@({X:0},{Z:0}): ignored, mode is {Mode}.",
+                cleanName, world.X, world.Z, _session.Mode);
             return;
         }
 
         if (_flow.CurrentState is not (SurveyFlowState.Listening or SurveyFlowState.Gathering))
         {
             _session.LastLogEvent =
-                $"Map target: {CleanName(shortName)} @ ({world.X:0},{world.Z:0}) → ignored (survey flow is {_flow.CurrentState})";
+                $"Map target: {cleanName} @ ({world.X:0},{world.Z:0}) → ignored (survey flow is {_flow.CurrentState})";
+            _logger?.LogTrace(
+                "HandleMapTarget {Name}@({X:0},{Z:0}): ignored, flow is {Flow}.",
+                cleanName, world.X, world.Z, _flow.CurrentState);
             return;
         }
 
         if (_areaCalibration.CurrentOverlayCalibration is not { } cal)
         {
             _session.LastLogEvent =
-                $"Map target: {CleanName(shortName)} @ ({world.X:0},{world.Z:0}) → area not calibrated; run pin calibration";
+                $"Map target: {cleanName} @ ({world.X:0},{world.Z:0}) → area not calibrated; run pin calibration";
+            var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
+            _logger?.LogInformation(
+                "HandleMapTarget {Name}@({X:0},{Z:0}) area={Area}: dropped — area not calibrated.",
+                cleanName, world.X, world.Z, skippedArea);
+            MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
+                new KeyValuePair<string, object?>("consumer", "survey_pin"),
+                new KeyValuePair<string, object?>("area", skippedArea));
             return;
         }
 
-        var name = CleanName(shortName);
         // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
         var pixel = cal.ToOverlay(world, _session.CurrentMapZoom);
 
         if (FindDuplicateAbsolute(world, _settings.MapTargetDedupRadiusMetres) is { } dup)
         {
             dup.UpdateModel(dup.Model with { PixelPos = pixel, World = world });
-            _session.LastLogEvent = $"Map target: {name} → duplicate (X,Z), updated";
+            _session.LastLogEvent = $"Map target: {cleanName} → duplicate (X,Z), updated";
+            _logger?.LogTrace(
+                "HandleMapTarget {Name}: duplicate within {Radius}m, updating existing pin.",
+                cleanName, _settings.MapTargetDedupRadiusMetres);
             return;
         }
 
         var index = _session.Surveys.Count;
         var pinVm = new SurveyItemViewModel(
-            Survey.CreateAbsolute(name, world, pixel, index));
+            Survey.CreateAbsolute(cleanName, world, pixel, index));
         _session.Surveys.Add(pinVm);
         _session.SelectedSurvey = pinVm;
         _session.IsInventoryVisible = true;
-        _session.LastLogEvent = $"Map target: {name} → placed (absolute)";
+        _session.LastLogEvent = $"Map target: {cleanName} → placed (absolute)";
+
+        // WorldToOverlayCalibration doesn't carry Source / ResidualPixels — they
+        // live on the full AreaCalibration record (Task 3 finding). Fall back to
+        // sentinels when CurrentCalibration is null (shouldn't happen on the
+        // success branch but cheap to guard).
+        var source = _areaCalibration.CurrentCalibration?.Source.ToString() ?? "<unknown>";
+        var residual = _areaCalibration.CurrentCalibration?.ResidualPixels ?? double.NaN;
+        _logger?.LogInformation(
+            "HandleMapTarget {Name}@({X:0},{Z:0}): placed at overlay ({Px:0},{Py:0}) (cal source={Source}, residual={Residual:0.00}px).",
+            cleanName, world.X, world.Z, pixel.X, pixel.Y, source, residual);
     }
 
     private SurveyItemViewModel? FindDuplicateAbsolute(WorldCoord world, double radiusMetres)
