@@ -88,6 +88,10 @@ public static class DetectionServiceCollectionExtensions
                 primary: sp.GetRequiredService<FeatureMatchingRefiner>(),
                 fallback: sp.GetRequiredService<SobelPaddedPyramidRefiner>(),
                 logger: sp.GetService<ILogger<CompositeMapRegionRefiner>>()));
+
+        // mithril#1095 Phase 1 — live view detector infra.
+        services.TryAddSingleton<IMapViewProbe, CrossCorrelationMapViewProbe>();
+
         return services;
     }
 
