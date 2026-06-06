@@ -74,14 +74,12 @@ public interface IOverlaySceneContext
     MapSceneRef CurrentScene { get; }
 
     /// <summary>Project a world coord to a pixel via the current area's
-    /// calibration, accounting for the live in-game zoom (read per call
-    /// from the injected <see cref="IOverlayZoomSource"/>). Returns
-    /// <see langword="null"/> when the calibration service can't resolve
-    /// the point &#8212; mirrors
-    /// <see cref="IMapCalibrationService.WorldToOverlay"/>'s null return for
-    /// uncalibrated areas or out-of-range coords. Scene drawers gate
-    /// world-space geometry on a non-null projection; pixel-native bits
-    /// (route polyline pixels, calibration placement pins captured by
-    /// pixel) skip the projection entirely.</summary>
+    /// calibration composed with the live <see cref="MapCalibration.MapViewFix"/>
+    /// (pan + scale measured by the cross-correlation probe). Returns
+    /// <see langword="null"/> when no calibration is available or no fix has
+    /// been measured for the current area yet. Scene drawers gate world-space
+    /// geometry on a non-null projection; pixel-native bits (route polyline
+    /// pixels, calibration placement pins captured by pixel) skip the
+    /// projection entirely.</summary>
     OverlayPixel? Project(double worldX, double worldZ);
 }

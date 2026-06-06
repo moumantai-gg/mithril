@@ -29,7 +29,6 @@ internal sealed record CliArgs(
     string? DebugImagePath,
     string? ProjectionOverlayPath,
     string? MaskDebugPath,
-    double Zoom,
     Phase Phase,
     bool DryRun,
     bool UseBorderMask,
@@ -71,7 +70,6 @@ internal sealed record CliArgs(
         string? debugImagePath = null;
         string? projectionOverlayPath = null;
         string? maskDebugPath = null;
-        double zoom = 1.0;
         Phase phase = Phase.Full;
         bool dryRun = false;
         bool useBorderMask = false;
@@ -133,9 +131,6 @@ internal sealed record CliArgs(
                     break;
                 case "--mask-debug":
                     maskDebugPath = Next(argv, ref i);
-                    break;
-                case "--zoom":
-                    zoom = double.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
                     break;
                 case "--phase":
                     phase = ParsePhase(Next(argv, ref i));
@@ -273,7 +268,6 @@ internal sealed record CliArgs(
             DebugImagePath: debugImagePath,
             ProjectionOverlayPath: projectionOverlayPath,
             MaskDebugPath: maskDebugPath,
-            Zoom: zoom,
             Phase: phase,
             DryRun: dryRun,
             UseBorderMask: useBorderMask,
@@ -409,7 +403,6 @@ internal sealed record CliArgs(
             recommended (improves the fit):
               --player-coord <x,z>          player's world coord at screenshot time (signed)
               --player-log  <Player.log>    alternative: extract from most recent [Status]
-              --zoom <float>                in-game map zoom (default 1.0 = CalibrationZoom default)
 
             map-rect override (skip auto-detect):
               --map-rect <x,y,w,h>          visible map's bbox in the screenshot (px); use when

@@ -26,7 +26,6 @@ internal static class MapRectConversion
             ResidualPixels: cal.ResidualPixels)
         {
             MirrorNorth = cal.MirrorNorth,
-            CalibrationZoom = cal.CalibrationZoom,
         };
         return CandidateTransform.FromCalibration(inMemory, mapRect, out anisotropyPercent);
     }

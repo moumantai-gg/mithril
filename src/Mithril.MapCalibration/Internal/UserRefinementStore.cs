@@ -12,12 +12,11 @@ namespace Mithril.MapCalibration.Internal;
 /// one character is exactly as valid on another.
 ///
 /// <para>Note: the in-game map pan/zoom that the user calibrated against
-/// <em>can</em> differ across characters (different UI preferences). The
-/// <see cref="AreaCalibration.CalibrationZoom"/> field captures the zoom; the
-/// no-pan assumption is documented in <see cref="WorldToOverlayCalibration.ToOverlay(WorldCoord, double)"/>.
-/// If a different character runs the game with a different pan, the projection
-/// drifts and the user re-runs the walkthrough &#8212; an established Legolas UX
-/// concern, not a data-shape concern.</para>
+/// <em>can</em> differ across characters (different UI preferences). Post-#1095
+/// the runtime engine measures pan + zoom on every gesture via
+/// <see cref="ILiveMapViewService"/> rather than reading a baked-in zoom
+/// stamp, so a cal solved for one (pan, zoom) state is valid for every other
+/// state once a fresh <see cref="MapViewFix"/> has been measured.</para>
 ///
 /// <para>Schema-3 (mithril#1082): the in-memory dictionary holds
 /// <see cref="SceneRefinements"/> typed-slot containers so an AutoCal
@@ -325,6 +324,13 @@ internal sealed class UserRefinementStore
         {
             try
             {
+                // Log + ignore legacy calibrationZoom field (mithril#1095).
+                // The field was dropped from AreaCalibration in the Schema-3 invariant
+                // (schemaVersion=3 means no-CalibrationZoom), but files written by
+                // builds that pre-date #1095 may still carry it. STJ silently drops it;
+                // we emit one Info log per slot so the migration is observable.
+                LogLegacyCalibrationZoomIfPresent(entry.Value, entry.Name);
+
                 var slots = entry.Value.Deserialize(MapCalibrationJsonContext.Default.SceneRefinements);
                 if (slots is null || slots.IsEmpty) continue;
                 // v3 records are only produced by Save, which already restamps
@@ -337,6 +343,52 @@ internal sealed class UserRefinementStore
                     "Skipping unparseable user refinement scene {Scene} in {Path} — {Reason}.",
                     entry.Name, _filePath, ex.Message);
             }
+        }
+    }
+
+    /// <summary>
+    /// Emits one <see cref="LogLevel.Information"/> log per
+    /// <see cref="AreaCalibration"/> JSON object that carries the legacy
+    /// <c>calibrationZoom</c> field (mithril#1095). The field is silently dropped
+    /// by STJ; the log provides one-startup observability — the migration is
+    /// complete once the log stops firing.
+    ///
+    /// <para>Handles both call sites:
+    /// <list type="bullet">
+    ///   <item>v1/v2: <paramref name="sceneElement"/> is the flat
+    ///     <c>AreaCalibration</c> JSON — checked directly.</item>
+    ///   <item>v3: <paramref name="sceneElement"/> is the <c>SceneRefinements</c>
+    ///     JSON — <c>texture</c> and <c>overlay</c> sub-objects are checked.</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    private void LogLegacyCalibrationZoomIfPresent(JsonElement sceneElement, string sceneKey)
+    {
+        if (sceneElement.ValueKind != JsonValueKind.Object) return;
+
+        // v3 path: check nested AreaCalibration objects inside SceneRefinements.
+        foreach (var slot in new[] { "texture", "overlay" })
+        {
+            if (sceneElement.TryGetProperty(slot, out var slotElement) &&
+                slotElement.ValueKind == JsonValueKind.Object &&
+                slotElement.TryGetProperty("calibrationZoom", out _))
+            {
+                _logger?.LogInformation(
+                    "Legacy calibrationZoom field found in user refinement scene {Scene} ({Slot} slot) at {Path} — field is ignored and will be absent on next save.",
+                    sceneKey, slot, _filePath);
+            }
+        }
+
+        // v1/v2 path: the element is a flat AreaCalibration — check it directly.
+        // (For v3 SceneRefinements the root object won't carry calibrationZoom,
+        // so this check is a no-op on that path.)
+        if (sceneElement.TryGetProperty("calibrationZoom", out _) &&
+            !sceneElement.TryGetProperty("texture", out _) &&
+            !sceneElement.TryGetProperty("overlay", out _))
+        {
+            _logger?.LogInformation(
+                "Legacy calibrationZoom field found in user refinement scene {Scene} at {Path} — field is ignored and will be absent on next save.",
+                sceneKey, _filePath);
         }
     }
 
@@ -356,6 +408,10 @@ internal sealed class UserRefinementStore
         {
             try
             {
+                // Log + ignore legacy calibrationZoom field (mithril#1095).
+                // v1/v2 entries are flat AreaCalibration objects; pass directly.
+                LogLegacyCalibrationZoomIfPresent(entry.Value, entry.Name);
+
                 var cal = entry.Value.Deserialize(MapCalibrationJsonContext.Default.AreaCalibration);
                 if (cal is null) continue;
 

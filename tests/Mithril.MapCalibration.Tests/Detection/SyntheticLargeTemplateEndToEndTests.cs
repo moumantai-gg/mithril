@@ -60,7 +60,7 @@ public sealed class SyntheticLargeTemplateEndToEndTests
     // #1076 Phase 6.5: ground truth in texture-pixel frame.
     private static readonly WorldToTextureCalibration Truth = new(
         OriginX: 380.0, OriginY: 280.0, Scale: 1.1, RotationRadians: 0.2,
-        MirrorNorth: false, CalibrationZoom: 1.0);
+        MirrorNorth: false);
 
     // Large templates: same shapes as SyntheticMap.DefaultIcons, scaled up.
     // All max-dims are ≥ 90 px, well above ScaleSearchThresholdPx = 64 px.

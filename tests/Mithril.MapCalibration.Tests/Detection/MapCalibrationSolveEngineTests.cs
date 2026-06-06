@@ -15,7 +15,7 @@ public sealed class MapCalibrationSolveEngineTests
     // synthetic icons at world→texture-pixel positions to feed the detector.
     private static readonly WorldToTextureCalibration Truth = new(
         OriginX: 160, OriginY: 130, Scale: 1.1, RotationRadians: 0.25,
-        MirrorNorth: false, CalibrationZoom: 1.0);
+        MirrorNorth: false);
 
     private static readonly (string Type, string Icon, int W, int H, int Lum, double X, double Z)[] Landmarks =
     [

@@ -36,27 +36,36 @@ public static class GhostLabelDeclutter
     // A little breathing room so labels that merely graze still declutter.
     private const double SeparationPx = 2.0;
 
+    /// <summary>Build ghost markers using canonical (Texture-frame) projection.
+    /// Used by tests and legacy callers that do not have a live <see cref="MapViewFix"/>.</summary>
+    public static IReadOnlyList<GhostMarker> Build(
+        IEnumerable<CalibrationReference> references,
+        WorldToOverlayCalibration calibration)
+        => Build(references, calibration, fix: null);
+
+    /// <summary>Build ghost markers using layer-2 composition: canonical
+    /// overlay-frame projection composed with the supplied live
+    /// <see cref="MapViewFix"/> to produce live overlay pixels.
+    /// When <paramref name="fix"/> is null, falls back to canonical projection
+    /// (legacy behaviour for callers without a live fix).</summary>
     public static IReadOnlyList<GhostMarker> Build(
         IEnumerable<CalibrationReference> references,
         WorldToOverlayCalibration calibration,
-        double currentMapZoom = 0.0)
+        MapViewFix? fix)
     {
         ArgumentNullException.ThrowIfNull(references);
-
-        // #524: thread the in-game map zoom through the projection so the
-        // validate-calibration ghosts re-scale live as the user drags PG's
-        // zoom slider (and the bound Mithril field). Unsupplied (<= 0) falls
-        // back to the calibration's own zoom — byte-identical to pre-#524 for
-        // legacy callers / tests.
-        var effectiveZoom = currentMapZoom > 1e-6 ? currentMapZoom : calibration.CalibrationZoom;
 
         var markers = new List<GhostMarker>();
         var placed = new List<Rect>();
 
         foreach (var r in references)
         {
-            // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
-            var p = calibration.ToOverlay(r.World, effectiveZoom);
+            // mithril#1095: layer-2 composition — project through canonical calibration
+            // then apply the live MapViewFix to get live overlay pixels. Fall back
+            // to canonical projection when no fix is available (e.g. in tests).
+            var p = fix is { } f
+                ? calibration.ToLiveOverlay(r.World, f)
+                : calibration.ToOverlay(r.World);
             var name = r.Name ?? string.Empty;
             var box = new Rect(
                 p.X + LabelAnchorDx,

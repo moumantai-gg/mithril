@@ -130,7 +130,7 @@ public sealed class ManualCalibrationCoordinatorTests
 
     private static WorldToTextureCalibration TextureCal() =>
         new(OriginX: 100, OriginY: 100, Scale: 1.0, RotationRadians: 0,
-            MirrorNorth: false, CalibrationZoom: 1.0);
+            MirrorNorth: false);
 
     private static AreaCalibration OverlayWizardRecord() =>
         new(Scale: 1.0, RotationRadians: 0, OriginX: 100, OriginY: 100,

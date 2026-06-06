@@ -341,7 +341,7 @@ public sealed class MapCalibrationSolveEngine
         // through a texture-frame view of the solved calibration.
         var calTex = new WorldToTextureCalibration(
             calibration.OriginX, calibration.OriginY, calibration.Scale,
-            calibration.RotationRadians, calibration.MirrorNorth, calibration.CalibrationZoom);
+            calibration.RotationRadians, calibration.MirrorNorth);
         foreach (var a in inliers)
         {
             var p = calTex.ToTexture(new WorldCoord(a.WorldX, 0, a.WorldZ));

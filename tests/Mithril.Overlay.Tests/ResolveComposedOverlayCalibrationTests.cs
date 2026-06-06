@@ -23,11 +23,11 @@ public sealed class ResolveComposedOverlayCalibrationTests
 
     private static WorldToOverlayCalibration MakeOverlayCal() =>
         new(OriginX: 100, OriginY: 200, Scale: 1.0,
-            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0);
+            RotationRadians: 0, MirrorNorth: false);
 
     private static WorldToTextureCalibration MakeTexCal(string? sha = KnownSha) =>
         new(OriginX: 50, OriginY: 75, Scale: 2.0,
-            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0)
+            RotationRadians: 0, MirrorNorth: false)
         {
             PixelSha256 = sha,
         };

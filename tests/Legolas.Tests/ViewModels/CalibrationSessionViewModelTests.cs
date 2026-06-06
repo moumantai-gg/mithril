@@ -306,27 +306,25 @@ public class CalibrationSessionViewModelTests
     }
 
     [Fact]
-    public void Survey_projection_scales_by_current_over_calibration_zoom()
+    public void Survey_projection_reflects_scale()
     {
+        // Post-#1095: CalibrationZoom removed from AreaCalibration; the zoom-ratio
+        // path is being reworked in P2.3. This test verifies that projection still
+        // works at the calibrated scale (no zoom factor — scale is absolute).
         var svc = new FakeService
         {
             CurrentAreaFriendlyName = "Eltibule",
             CurrentScene = new MapSceneRef("AreaEltibule", null, "Map_AreaEltibule"),
-            // scale 1 px/unit, solved at zoom 2.
-            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1) { CalibrationZoom = 2.0 },
+            CurrentCalibration = new AreaCalibration(1.0, 0.0, 0, 0, 3, 0.1),
         };
         var vm = new CalibrationSessionViewModel(svc);
-        vm.MapZoom = 4.0;                                 // currently 2× the cal zoom
+        vm.MapZoom = 1.0;
         vm.SetPlayerPositionCommand.Execute(null);
         vm.ViewportClickedCommand.Execute(new OverlayPixel(0, 0));
 
         svc.NoteSurvey("Vein", new MetreOffset(East: 100, North: 0));
         var s = vm.SurveyPins[0];
-        s.ProjX.Should().BeApproximately(200, 1e-6);      // 100 × scale1 × (4/2)
-
-        vm.MapZoom = 2.0;                                 // now == cal zoom → factor 1
-        s.ProjX.Should().BeApproximately(100, 1e-6);      // live re-projected
-        s.OverlayX.Should().BeApproximately(100, 1e-6);   // uncorrected → follows
+        s.ProjX.Should().BeApproximately(100, 1e-6); // 100 × scale1, no zoom factor
     }
 
     [Fact]
@@ -349,7 +347,7 @@ public class CalibrationSessionViewModelTests
         vm.SolveCommand.Execute(null);
 
         svc.LastCalibrationZoom.Should().BeApproximately(0.39, 1e-9);
-        svc.CurrentCalibration!.CalibrationZoom.Should().BeApproximately(0.39, 1e-9);
+        svc.CurrentCalibration.Should().NotBeNull();
     }
 
     [Fact]
@@ -753,7 +751,7 @@ public class CalibrationSessionViewModelTests
         public bool IsCurrentAreaCalibrated => CurrentCalibration is not null;
         public AreaCalibration? CurrentCalibration { get; set; }
         public WorldToOverlayCalibration? CurrentOverlayCalibration => CurrentCalibration is { } c
-            ? new WorldToOverlayCalibration(c.OriginX, c.OriginY, c.Scale, c.RotationRadians, c.MirrorNorth, c.CalibrationZoom)
+            ? new WorldToOverlayCalibration(c.OriginX, c.OriginY, c.Scale, c.RotationRadians, c.MirrorNorth)
             : null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Refs;
         public IReadOnlyList<AreaEntry> AllAreas => Areas;
@@ -775,7 +773,7 @@ public class CalibrationSessionViewModelTests
         {
             LastSolvePairs = placements.Select(p => (p.World, p.Pixel)).ToList();
             LastCalibrationZoom = calibrationZoom;
-            CurrentCalibration = SolveResult is { } r ? r with { CalibrationZoom = calibrationZoom } : null;
+            CurrentCalibration = SolveResult;
             return CurrentCalibration;
         }
 

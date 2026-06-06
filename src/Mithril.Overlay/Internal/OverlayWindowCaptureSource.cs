@@ -1,0 +1,79 @@
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Windows;
+using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Detection;
+
+// IOverlayCaptureSource was moved to Mithril.MapCalibration.Detection (#1095);
+// this implementation still lives in Mithril.Overlay (platform coupling).
+namespace Mithril.Overlay.Internal;
+
+/// <summary>
+/// Captures the screen region under the shared overlay window into a
+/// single-channel <see cref="GrayImage"/>. Uses <c>Graphics.CopyFromScreen</c>
+/// against the overlay window's screen rect — we want PG's pixels, not the
+/// transparent overlay layer's. The overlay window is excluded from capture
+/// via <c>WDA_EXCLUDEFROMCAPTURE</c> on construction (memory:
+/// <c>wda_excludefromcapture_canonical_for_overlay_chrome.md</c>), so this
+/// reads PG's underlying map view directly.
+///
+/// <para>Constructor takes a window accessor (a no-arg <c>Func</c>) so the
+/// type stays testable: production wires it to read the live overlay window
+/// from <see cref="OverlayWindowService"/>; tests pass a fake.</para>
+/// </summary>
+internal sealed class OverlayWindowCaptureSource : IOverlayCaptureSource
+{
+    private readonly Func<Window?> _windowAccessor;
+    private readonly ILogger? _logger;
+
+    public OverlayWindowCaptureSource(Func<Window?> windowAccessor, ILogger? logger = null)
+    {
+        _windowAccessor = windowAccessor;
+        _logger = logger;
+    }
+
+    public GrayImage? Capture()
+    {
+        var window = _windowAccessor();
+        if (window is null) return null;
+
+        try
+        {
+            int x = (int)window.Left, y = (int)window.Top;
+            int w = (int)window.Width, h = (int)window.Height;
+            if (w <= 0 || h <= 0) return null;
+
+            using var bmp = new Bitmap(w, h, PixelFormat.Format24bppRgb);
+            using (var g = Graphics.FromImage(bmp))
+                g.CopyFromScreen(x, y, 0, 0, new System.Drawing.Size(w, h), CopyPixelOperation.SourceCopy);
+
+            var data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+            try
+            {
+                var stride = data.Stride;
+                var pixels = new byte[w * h];
+                unsafe
+                {
+                    var src = (byte*)data.Scan0;
+                    for (int row = 0; row < h; row++)
+                        for (int col = 0; col < w; col++)
+                        {
+                            byte b = src[row * stride + col * 3];
+                            byte gch = src[row * stride + col * 3 + 1];
+                            byte r = src[row * stride + col * 3 + 2];
+                            // Rec. 601 luma — adequate for correlation against
+                            // a gray-decoded base texture.
+                            pixels[row * w + col] = (byte)((r * 299 + gch * 587 + b * 114) / 1000);
+                        }
+                }
+                return new GrayImage(w, h, pixels);
+            }
+            finally { bmp.UnlockBits(data); }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Overlay capture failed — safe-degrade to null fix.");
+            return null;
+        }
+    }
+}

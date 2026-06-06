@@ -174,7 +174,9 @@ public sealed class LegolasModule : IMithrilModule
                 // tests using the simpler ctors still build.
                 sp.GetService<Mithril.Overlay.IWorldOverlayMarkers>(),
                 sp.GetService<IAreaState>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()));
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>(),
+                // #1095: live-view service for layer-2 composition + status badge.
+                sp.GetService<Mithril.MapCalibration.ILiveMapViewService>()));
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
         services.AddSingleton<NudgePadViewModel>();
@@ -224,24 +226,6 @@ public sealed class LegolasModule : IMithrilModule
         services.Replace(ServiceDescriptor.Singleton<IHotkeyGate>(
             sp => sp.GetRequiredService<ForegroundFocusGate>()));
 
-        // #835 step 6: override the platform's default FixedOverlayZoomSource(1.0)
-        // with Legolas's adapter so the shared overlay's projection driver +
-        // IOverlaySceneContext.Project read the live in-game zoom that the
-        // title-bar slider drives (SessionState.CurrentMapZoom).
-        //
-        // Review iter-1 S2: RemoveAll + AddSingleton (NOT TryAdd, NOT
-        // Replace). TryAdd would silently no-op if the platform's
-        // FixedOverlayZoomSource(1.0) registers first (current shell
-        // order: AddMithrilOverlay before AddMithrilModules) — pin
-        // positions would freeze at 100% zoom. Replace would throw if
-        // no descriptor exists yet (e.g. a test that wires
-        // LegolasModule.Register before AddMithrilOverlay). RemoveAll
-        // strips ANY prior registration (including a test stub) before
-        // adding ours, so this works regardless of composition order.
-        services.RemoveAll<Mithril.Overlay.IOverlayZoomSource>();
-        services.AddSingleton<Mithril.Overlay.IOverlayZoomSource>(
-            sp => new LegolasOverlayZoomSource(sp.GetRequiredService<SessionState>()));
-
         services.AddHostedService<OverlayController>();
         services.AddHostedService<AutoOverlayCoordinator>();
 
@@ -280,6 +264,7 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, NudgePinRightFineCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleCalibrationPhaseCommand>();
         services.AddSingleton<IHotkeyCommand, ConfirmCalibrationCommand>();
+        services.AddSingleton<IHotkeyCommand, RedetectMapViewHotkey>();
 
         // Arda-driven ingestion services (replaces former L1 driver +
         // IPlayerWorld.Bus subscriptions). Both subscribe eagerly during

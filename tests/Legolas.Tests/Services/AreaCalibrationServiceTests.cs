@@ -143,7 +143,6 @@ public class AreaCalibrationServiceTests
 
         cal.Should().NotBeNull();
         cal!.Scale.Should().BeApproximately(1.0, 1e-6);
-        cal.CalibrationZoom.Should().BeApproximately(0.39, 1e-9); // stamped + persisted
         // mithril#1041 D6: calibrations land in the shared service only.
         mapCal.GetCalibration(scene).Should().Be(cal);
         proj.LastApplied.Should().Be(cal);

@@ -138,7 +138,7 @@ public sealed class CalibrationBundleJsonTests
         var sut = new RecoveredCalibrationJson(1,
             Scale: 0.31536, RotationRadians: -3.14159,
             OriginX: 1039.45, OriginY: -36.38,
-            MirrorNorth: false, CalibrationZoom: 1.0,
+            MirrorNorth: false,
             ResidualPixels: 0.34, ReferenceCount: 8,
             Source: "AutoCapture",
             Inliers: new[] { new InlierJson("Portal:E→S", 234.1, -78.5, 612.3, 488.7, 0.94) });

@@ -63,7 +63,6 @@ internal static class Pipeline
             LandmarksJsonPath: ResolveLandmarksPath(args),
             NpcsJsonPath: ResolveNpcsPath(args),
             Area: args.Area,
-            Zoom: args.Zoom,
             PlayerCoord: ResolvePlayerCoord(args),
             MapRectOverride: args.MapRect,
             DetectionThreshold: args.DetectionThreshold,
@@ -175,7 +174,7 @@ internal static class Pipeline
         // calibration; per-inlier residuals are texture-pixel.
         var calTex = new WorldToTextureCalibration(
             cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
-            cal.MirrorNorth, cal.CalibrationZoom);
+            cal.MirrorNorth);
         foreach (var r in refs)
         {
             // Per-inlier residual — reveals whether the RMS is dominated by a
@@ -202,7 +201,6 @@ internal sealed record CalibrationInputs(
     string LandmarksJsonPath,
     string NpcsJsonPath,
     string Area,
-    double Zoom,
     (double X, double Z)? PlayerCoord,
     (int X, int Y, int W, int H)? MapRectOverride,
     double DetectionThreshold,

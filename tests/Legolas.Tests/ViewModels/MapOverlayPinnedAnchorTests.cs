@@ -26,7 +26,7 @@ public class MapOverlayPinnedAnchorTests
     // #1076 Phase 6.5: frame-typed overlay view of Calib for projection assertions.
     private static readonly WorldToOverlayCalibration CalibOverlay = new(
         OriginX: 0.0, OriginY: 0.0, Scale: 1.0, RotationRadians: 0.0,
-        MirrorNorth: false, CalibrationZoom: 1.0);
+        MirrorNorth: false);
 
     private static readonly LogLineMetadata Meta = new(
         Timestamp: new DateTimeOffset(2026, 5, 22, 14, 0, 0, TimeSpan.Zero),
@@ -39,7 +39,6 @@ public class MapOverlayPinnedAnchorTests
         BuildSut(bool calibrated)
     {
         var session = new SessionState();
-        session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var projector = new CoordinateProjector();

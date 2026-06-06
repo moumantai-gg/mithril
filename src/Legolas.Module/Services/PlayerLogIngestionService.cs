@@ -51,6 +51,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
 {
     private readonly IDomainEventSubscriber _bus;
     private readonly IAreaCalibrationService _areaCalibration;
+    private readonly ILiveMapViewService? _liveView;
     private readonly SurveyFlowController _flow;
     private readonly SessionState _session;
     private readonly MotherlodeMeasurementCoordinator _motherlode;
@@ -74,10 +75,12 @@ public sealed class PlayerLogIngestionService : BackgroundService
         SessionState session,
         MotherlodeMeasurementCoordinator motherlode,
         LegolasSettings settings,
-        ILoggerFactory? loggerFactory = null)
+        ILoggerFactory? loggerFactory = null,
+        ILiveMapViewService? liveView = null)
     {
         _bus = bus;
         _areaCalibration = areaCalibration;
+        _liveView = liveView;
         _flow = flow;
         _session = session;
         _motherlode = motherlode;
@@ -218,8 +221,30 @@ public sealed class PlayerLogIngestionService : BackgroundService
             return;
         }
 
-        // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
-        var pixel = cal.ToOverlay(world, _session.CurrentMapZoom);
+        // mithril#1095: layer-2 composition — resolve the live MapViewFix for this
+        // area and apply it to produce live overlay pixels. If no fix is available
+        // (ILiveMapViewService not injected, or no probe has completed yet), fall
+        // back to canonical projection so tests and first-start paths still work.
+        var area = _areaCalibration.CurrentScene?.MapAssetKey;
+        var fix = !string.IsNullOrEmpty(area) ? _liveView?.GetCurrent(area) : null;
+        OverlayPixel pixel;
+        if (fix is { } f)
+        {
+            pixel = cal.ToLiveOverlay(world, f);
+        }
+        else
+        {
+            // No live-view fix yet (or no ILiveMapViewService injected) — use
+            // canonical projection. This is the expected path in tests and on
+            // first placement before any probe has completed.
+            if (!string.IsNullOrEmpty(area))
+            {
+                _logger?.LogTrace(
+                    "HandleMapTarget {Name}@({X:0},{Z:0}) area={Area}: no live-view fix, using canonical projection.",
+                    cleanName, world.X, world.Z, area);
+            }
+            pixel = cal.ToOverlay(world);
+        }
 
         if (FindDuplicateAbsolute(world, _settings.MapTargetDedupRadiusMetres) is { } dup)
         {

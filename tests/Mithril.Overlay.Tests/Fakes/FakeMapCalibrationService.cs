@@ -58,7 +58,7 @@ internal sealed class FakeMapCalibrationService : IMapCalibrationService
         return CalibratedAreas.Contains(scene.MapAssetKey)
             ? new WorldToOverlayCalibration(
                 OriginX: 0, OriginY: 0, Scale: 1.0,
-                RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0)
+                RotationRadians: 0, MirrorNorth: false)
             : null;
     }
     public AreaCalibration? GetCalibration(MapSceneRef scene) => null;

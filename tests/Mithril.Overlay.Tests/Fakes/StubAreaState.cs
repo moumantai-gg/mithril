@@ -5,6 +5,27 @@ using Mithril.MapCalibration;
 
 namespace Mithril.Overlay.Tests.Fakes;
 
+/// <summary>Minimal <see cref="ILiveMapViewService"/> stub for tests.
+/// Returns a configurable fix for any area key; defaults to a
+/// no-offset identity fix (PanX=0, PanY=0, Scale=1) so projection
+/// tests get well-defined pixels without a real probe session.</summary>
+internal sealed class StubLiveMapViewService : ILiveMapViewService
+{
+    /// <summary>The fix returned by <see cref="GetCurrent"/> for any
+    /// area key, or null to simulate "never measured".</summary>
+    public MapViewFix? Fix { get; set; } = new MapViewFix(
+        PanTexPxX: 0, PanTexPxY: 0, ViewScale: 1.0,
+        Confidence: 1.0, MeasuredAt: DateTimeOffset.UnixEpoch);
+
+    public MapViewFix? GetCurrent(string mapAssetKey) => Fix;
+    public LiveMapViewStatus GetStatus(string mapAssetKey) =>
+        Fix.HasValue ? LiveMapViewStatus.Detected : LiveMapViewStatus.NeverMeasured;
+    public Task RefreshAsync(string mapAssetKey, CancellationToken ct) => Task.CompletedTask;
+#pragma warning disable CS0067 // event never used — test stub implements interface; Changed is never raised
+    public event Action<string>? Changed;
+#pragma warning restore CS0067
+}
+
 /// <summary>Mutable test stub for <see cref="IAreaState"/>. The scene-hook
 /// tests flip <see cref="CurrentArea"/> to exercise the uncalibrated-area
 /// gate and area-key plumbing into <see cref="IOverlaySceneContext"/>.</summary>

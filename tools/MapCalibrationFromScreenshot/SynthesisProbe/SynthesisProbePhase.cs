@@ -63,7 +63,6 @@ internal static class SynthesisProbePhase
                 Scale: htc.Scale, RotationRadians: htc.Rot,
                 OriginX: htc.Ox, OriginY: htc.Oy,
                 MirrorNorth: htc.Mirror,
-                CalibrationZoom: 1.0,
                 ResidualPixels: 0.0,
                 ReferenceCount: 0,
                 Source: "HandSupplied",

@@ -84,7 +84,6 @@ public sealed class LegolasOverlaySceneDrawerGhostTests
     private static (LegolasOverlaySceneDrawer drawer, MapOverlayViewModel vm) BuildDrawer()
     {
         var session = new SessionState();
-        session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
@@ -202,7 +201,7 @@ public sealed class LegolasOverlaySceneDrawerGhostTransitionsTests
 
     private static (LegolasOverlaySceneDrawer drawer, MapOverlayViewModel vm, RecordingLoggerSink sink) BuildDrawer()
     {
-        var session = new SessionState { CurrentMapZoom = 1.0 };
+        var session = new SessionState();
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());

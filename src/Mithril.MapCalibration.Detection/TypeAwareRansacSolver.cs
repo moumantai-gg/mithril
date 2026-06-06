@@ -286,5 +286,5 @@ public static class TypeAwareRansacSolver
     // keeps the pixel comparison explicit — no frame-erased pixel leaks.
     private static WorldToTextureCalibration AsTexture(AreaCalibration cal) =>
         new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
-            cal.MirrorNorth, cal.CalibrationZoom);
+            cal.MirrorNorth);
 }

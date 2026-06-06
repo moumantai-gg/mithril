@@ -6,14 +6,13 @@ namespace Mithril.MapCalibration.Tests;
 
 public class WorldToOverlayCalibrationTests
 {
-    // Canonical fixture: scale 4, 30° rotation, mirror off, calibration zoom 1.
+    // Canonical fixture: scale 4, 30° rotation, mirror off.
     private static readonly WorldToOverlayCalibration Canonical = new(
         OriginX: 100,
         OriginY: 200,
         Scale: 4.0,
         RotationRadians: Math.PI / 6,
-        MirrorNorth: false,
-        CalibrationZoom: 1.0);
+        MirrorNorth: false);
 
     public static IEnumerable<object[]> Worlds() => new[]
     {
@@ -29,8 +28,8 @@ public class WorldToOverlayCalibrationTests
         // Round-trip is the contract: project then unproject must recover
         // the input world coord on the (X, Z) ground plane (Y elevation is
         // always dropped to 0 by the projection model — pixels are 2D).
-        var pixel = Canonical.ToOverlay(world, currentZoom: 1.0);
-        var recovered = Canonical.FromOverlay(pixel, currentZoom: 1.0);
+        var pixel = Canonical.ToOverlay(world);
+        var recovered = Canonical.FromOverlay(pixel);
 
         recovered.Should().NotBeNull();
         recovered!.Value.X.Should().BeApproximately(world.X, 1e-9);
@@ -40,13 +39,14 @@ public class WorldToOverlayCalibrationTests
     }
 
     [Fact]
-    public void ToOverlay_HonoursZoomFactor()
+    public void ToOverlay_ScaleProportionalToPixelOffset()
     {
-        var atUnitZoom = Canonical.ToOverlay(new WorldCoord(10, 0, 0), 1.0);
-        var atDoubleZoom = Canonical.ToOverlay(new WorldCoord(10, 0, 0), 2.0);
+        // Doubling Scale doubles the pixel offset from origin.
+        var atUnitScale = Canonical.ToOverlay(new WorldCoord(10, 0, 0));
+        var atDoubleScale = (Canonical with { Scale = Canonical.Scale * 2 }).ToOverlay(new WorldCoord(10, 0, 0));
 
-        var unitOffsetX = atUnitZoom.X - Canonical.OriginX;
-        var doubleOffsetX = atDoubleZoom.X - Canonical.OriginX;
+        var unitOffsetX = atUnitScale.X - Canonical.OriginX;
+        var doubleOffsetX = atDoubleScale.X - Canonical.OriginX;
         doubleOffsetX.Should().BeApproximately(2 * unitOffsetX, 1e-9);
     }
 
@@ -57,8 +57,8 @@ public class WorldToOverlayCalibrationTests
         var mirrored = Canonical with { MirrorNorth = true };
 
         var world = new WorldCoord(0, 0, 10);
-        var u = unmirrored.ToOverlay(world, 1.0);
-        var m = mirrored.ToOverlay(world, 1.0);
+        var u = unmirrored.ToOverlay(world);
+        var m = mirrored.ToOverlay(world);
 
         var uOffsetY = u.Y - Canonical.OriginY;
         var mOffsetY = m.Y - Canonical.OriginY;

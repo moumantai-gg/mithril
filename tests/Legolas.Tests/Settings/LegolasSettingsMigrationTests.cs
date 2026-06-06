@@ -212,7 +212,9 @@ public class LegolasSettingsMigrationTests
         c.OriginY.Should().BeApproximately(340, 1e-9);
         c.ReferenceCount.Should().Be(3);
         c.ResidualPixels.Should().BeApproximately(1.75, 1e-9);
-        c.SchemaVersion.Should().Be(1);
+        // mithril#1095: SchemaVersion bumped to 3 (skip 2) to mark the
+        // no-CalibrationZoom invariant unambiguously.
+        c.SchemaVersion.Should().Be(3);
     }
 
     [Fact]

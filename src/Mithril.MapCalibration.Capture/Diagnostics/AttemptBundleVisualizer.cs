@@ -108,10 +108,10 @@ public sealed class AttemptBundleVisualizer : IAttemptBundleVisualizer
             // coords for drawing.
             var calTex = new WorldToTextureCalibration(
                 calibration.OriginX, calibration.OriginY, calibration.Scale,
-                calibration.RotationRadians, calibration.MirrorNorth, calibration.CalibrationZoom);
+                calibration.RotationRadians, calibration.MirrorNorth);
             foreach (var r in references)
             {
-                var px = calTex.ToTexture(r.World, currentZoom: 1.0);
+                var px = calTex.ToTexture(r.World);
                 var (sx, sy) = mapRect.TextureToScreenshot(px.X, px.Y);
                 dc.DrawLine(yellow, new System.Windows.Point(sx - 5, sy), new System.Windows.Point(sx + 5, sy));
                 dc.DrawLine(yellow, new System.Windows.Point(sx, sy - 5), new System.Windows.Point(sx, sy + 5));

@@ -12,7 +12,7 @@ public sealed class TypeAwareRansacSolverTests
     // #1076 Phase 6.5: ground-truth transform: world (X,Z) -> texture pixels.
     private static readonly WorldToTextureCalibration Truth = new(
         OriginX: 400.0, OriginY: 300.0, Scale: 1.2, RotationRadians: 0.35,
-        MirrorNorth: false, CalibrationZoom: 1.0);
+        MirrorNorth: false);
 
     // Texture 800x600 rendered at native scale (factor 1.0) into a screenshot
     // padded by (50, 80) — so texture-pixel == screenshot-pixel - origin.

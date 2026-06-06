@@ -77,7 +77,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     private readonly IDomainEventSubscriber _bus;
     private IDisposable? _mapAssetChangedSub;
     private readonly IPositionState _positionState; // reserved for future consumers; ensures the DI shape matches Decision C
-    private readonly IOverlayZoomSource _zoomSource;
+    private readonly ILiveMapViewService _liveView; // mithril#1095 — real layer-2 measurement (pan + scale from cross-correlation probe)
     private readonly IMapTextureDimensions _textureDimensions; // mithril#1081
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger? _logger;
@@ -120,7 +120,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         ISceneAssetCache sceneCache,
         IDomainEventSubscriber bus,
         IPositionState positionState,
-        IOverlayZoomSource zoomSource,
+        ILiveMapViewService liveView,
         IMapTextureDimensions textureDimensions,   // mithril#1081
         ILoggerFactory? loggerFactory = null)
     {
@@ -132,7 +132,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         _sceneCache = sceneCache;
         _bus = bus;
         _positionState = positionState;
-        _zoomSource = zoomSource;
+        _liveView = liveView;
         _textureDimensions = textureDimensions;    // mithril#1081
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger("Mithril.Overlay");
@@ -356,10 +356,13 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             SetStatusMessage(null);
         }
 
-        // Snapshot the live zoom once per frame so scene drawers and the
-        // registry projection see the same value (no per-Project read
-        // inconsistency across the frame).
-        var currentZoom = SnapshotZoom();
+        // mithril#1095 — resolve the per-frame live view fix once. The fix is the
+        // real layer-2 measurement (pan + scale from the cross-correlation probe).
+        // Null means no measurement has ever succeeded for this area; scene drawers
+        // still run (pixel-native passes), but marker projection is skipped.
+        var currentFix = resolvedScene is { } fixScene
+            ? _liveView.GetCurrent(fixScene.MapAssetKey)
+            : null;
 
         // mithril#1081 — resolve the per-frame composed overlay-frame calibration
         // once, then thread it through to scene drawers (via BeginFrame) and to the
@@ -383,7 +386,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         var drawers = _sceneDrawers;
         if (drawers.Length > 0)
         {
-            _sceneContext.BeginFrame(e.RenderTarget, e.Factory, _brushCache, areaKey, frameScene, currentZoom, composedCal);
+            _sceneContext.BeginFrame(e.RenderTarget, e.Factory, _brushCache, areaKey, frameScene, currentFix, composedCal);
             using (var sceneAct = MithrilActivitySources.Overlay.StartActivity("scene"))
             {
                 sceneAct?.SetTag("area", areaKey);
@@ -421,15 +424,21 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         // ran, including the pixel-native calibration placement pins).
         if (!isCalibrated) return;
 
+        // mithril#1095 — no fix means no layer-2, so marker projection would
+        // place everything at canonical (pan=0, scale=1) overlay pixels regardless
+        // of where the in-game map is panned/zoomed. Skip the whole block; the
+        // status badge surfaces the "not measured" state separately.
+        if (currentFix is null) return;
+
         var snapshot = _markers.CurrentAreaMarkers;
-        var projected = ProjectMarkers(snapshot, composedCal, currentZoom,
+        var projected = ProjectMarkers(snapshot, composedCal, currentFix.Value,
             onMiss: this, snapshotCount: snapshot.Count);
         if (!_firstFrameLogged)
         {
             _firstFrameLogged = true;
             _logger?.LogInformation(
-                "OverlayWindowService: first frame projected for area {AreaKey} ({Count} markers, {DrawerCount} drawers registered, {SceneCount} scene drawers, zoom={Zoom:F2}).",
-                areaKey, projected.Count, _renderer.DrawerCount, drawers.Length, currentZoom);
+                "OverlayWindowService: first frame projected for area {AreaKey} ({Count} markers, {DrawerCount} drawers registered, {SceneCount} scene drawers).",
+                areaKey, projected.Count, _renderer.DrawerCount, drawers.Length);
         }
 
         var sw = ValueStopwatch.StartNew();
@@ -453,32 +462,23 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             new KeyValuePair<string, object?>("area", areaKey));
     }
 
-    /// <summary>Read the live zoom from the injected source, defensively
-    /// substituting 1.0 if the producer surfaced a non-finite value. Per
-    /// <see cref="IOverlayZoomSource"/>'s remarks: producers should never
-    /// let NaN reach here, but the projection driver tolerates it.</summary>
-    private double SnapshotZoom()
-    {
-        var z = _zoomSource.CurrentZoom;
-        return double.IsFinite(z) && z > 0 ? z : 1.0;
-    }
-
     /// <summary>Pure projection helper — takes a snapshot + a composed
-    /// overlay-frame calibration and returns the projected pixel list. The
-    /// composed cal is resolved once per frame by
-    /// <see cref="ResolveComposedOverlayCalibration"/>; this helper has no
-    /// dependency on <see cref="IMapCalibrationService"/>. Test-friendly
+    /// overlay-frame calibration + a live <see cref="MapViewFix"/> and
+    /// returns the projected pixel list. The composed cal is resolved once
+    /// per frame by <see cref="ResolveComposedOverlayCalibration"/>; the fix
+    /// comes from <see cref="ILiveMapViewService.GetCurrent"/>. This helper
+    /// has no dependency on <see cref="IMapCalibrationService"/>. Test-friendly
     /// overload.</summary>
     internal static IReadOnlyList<(OverlayPixel Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
         WorldToOverlayCalibration? composedCal,
-        double currentZoom)
-        => ProjectMarkers(markers, composedCal, currentZoom, onMiss: null, snapshotCount: markers.Count);
+        MapViewFix fix)
+        => ProjectMarkers(markers, composedCal, fix, onMiss: null, snapshotCount: markers.Count);
 
     private static IReadOnlyList<(OverlayPixel Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
         WorldToOverlayCalibration? composedCal,
-        double currentZoom,
+        MapViewFix fix,
         OverlayWindowService? onMiss,
         int snapshotCount)
     {
@@ -494,7 +494,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         for (var i = 0; i < markers.Count; i++)
         {
             var snap = markers[i];
-            result.Add((cal.ToOverlay(snap.World, currentZoom), snap.Style));
+            result.Add((cal.ToLiveOverlay(snap.World, fix), snap.Style));
         }
         return result;
     }
@@ -630,14 +630,13 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     internal int SceneDrawerCount => _sceneDrawers.Length;
 
     /// <summary>Test seam: drive one scene-tick against a supplied render
-    /// target / factory, with the supplied area key + zoom override.
+    /// target / factory, with the supplied area key.
     /// Bypasses the D3D surface so unit tests can exercise scene-drawer
     /// dispatch + the uncalibrated-area gate.</summary>
     internal void DriveSceneForTest(
         ID2D1RenderTarget renderTarget,
         ID2D1Factory factory,
-        string areaKey,
-        double currentZoom)
+        string areaKey)
     {
         _brushCache.Bind(renderTarget);
         // Mirror OnSurfaceRender: the scene-drawer loop runs regardless of
@@ -656,12 +655,12 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         var drawers = _sceneDrawers;
         if (drawers.Length == 0) return;
         // mithril#1081 (Task 11): resolve the composed cal so tests that exercise
-        // the bound-cal zoom path (Project_plumbs_current_zoom_into_bound_composed_cal)
-        // and the texture-frame composition path see the same code as production.
-        // Previously passed composedCal: null, which meant _composedCal was always
-        // null in the scene context and Project() always returned null.
+        // the projection path and the texture-frame composition path see the same
+        // code as production.
         var (composedCal, _) = ResolveComposedOverlayCalibration(scene);
-        _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, scene, currentZoom, composedCal);
+        // mithril#1095: resolve the live view fix for the test scene.
+        var fix = _liveView.GetCurrent(scene.MapAssetKey);
+        _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, scene, fix, composedCal);
         for (var i = 0; i < drawers.Length; i++)
         {
             InvokeSceneDrawerIsolated(drawers[i], i);
@@ -808,7 +807,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         private D2DBrushCache? _brushes;
         private string _areaKey = string.Empty;
         private MapSceneRef _scene;
-        private double _currentZoom = 1.0;
+        private MapViewFix? _currentFix; // mithril#1095 — real layer-2 measurement
         private WorldToOverlayCalibration? _composedCal; // mithril#1081
 
         public OverlaySceneContext(OverlayWindowService owner) { _owner = owner; }
@@ -819,16 +818,16 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             D2DBrushCache brushes,
             string areaKey,
             MapSceneRef scene,
-            double currentZoom,
-            WorldToOverlayCalibration? composedCal = null)   // mithril#1081
+            MapViewFix? currentFix,
+            WorldToOverlayCalibration? composedCal = null)
         {
             _renderTarget = renderTarget;
             _factory = factory;
             _brushes = brushes;
             _areaKey = areaKey;
             _scene = scene;
-            _currentZoom = currentZoom;
-            _composedCal = composedCal; // mithril#1081
+            _currentFix = currentFix;
+            _composedCal = composedCal;
         }
 
         public ID2D1RenderTarget RenderTarget =>
@@ -847,7 +846,10 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
         public MapSceneRef CurrentScene => _scene;
 
-        public OverlayPixel? Project(double worldX, double worldZ) =>
-            _composedCal?.ToOverlay(new WorldCoord(worldX, 0, worldZ), _currentZoom);
+        public OverlayPixel? Project(double worldX, double worldZ)
+        {
+            if (_composedCal is null || _currentFix is null) return null;
+            return _composedCal.Value.ToLiveOverlay(new WorldCoord(worldX, 0, worldZ), _currentFix.Value);
+        }
     }
 }

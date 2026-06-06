@@ -319,14 +319,14 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // TexturePixel.DistanceTo(CroppedFramePixel) doesn't compile.
         var storedTexCal = new WorldToTextureCalibration(
             stored.OriginX, stored.OriginY, stored.Scale, stored.RotationRadians,
-            stored.MirrorNorth, stored.CalibrationZoom);
+            stored.MirrorNorth);
 
         var usedDetectionIndices = new HashSet<int>(detections.Count);
         var residuals = new List<double>(references.Count);
         foreach (var r in references)
         {
             // Predict in TEXTURE space (where the stored calibration solves):
-            TexturePixel predTex = storedTexCal.ToTexture(r.World, currentZoom: 1.0);
+            TexturePixel predTex = storedTexCal.ToTexture(r.World);
 
             // Convert to CROP space — same frame as TypedDetection.Anchor.
             CroppedFramePixel predCrop = alignedRect.TextureToCropped(predTex);

@@ -89,7 +89,7 @@ public sealed class LegolasOverlaySceneDrawerPlacementPinTests
 
     private static (LegolasOverlaySceneDrawer drawer, MapOverlayViewModel vm) BuildDrawer(bool arm)
     {
-        var session = new SessionState { CurrentMapZoom = 1.0 };
+        var session = new SessionState();
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());

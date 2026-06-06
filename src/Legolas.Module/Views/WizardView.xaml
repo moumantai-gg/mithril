@@ -31,29 +31,6 @@
                 <Setter Property="Margin" Value="10,0" />
             </Style>
 
-            <!-- #524: shared map-zoom slider+textbox surface. Two-way bound
-                 to Session.CurrentMapZoom so any of the three host sites
-                 (header strip, Calibrating body, overlay corner) edits the
-                 same value live. Compact horizontal shape mirrors PG's own
-                 zoom slider (- [slider] +). UpdateSourceTrigger=LostFocus on
-                 the textbox so per-keystroke edits don't fire reprojection
-                 storms; the slider is continuous. Range pinned to PG's hard
-                 stops [0.13, 2.00], step 0.01, two-decimal display. -->
-            <DataTemplate x:Key="ZoomFieldSurface">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
-                            ToolTip="The in-game map zoom you're at (PG's 'Zoom level: X.XX' readout). Calibration captures this stamp; surveys re-scale to whatever zoom you set here so a calibration solved at one zoom places pins correctly at another. Assumes you haven't panned the map between calibrating and using it.">
-                    <TextBlock Text="Zoom" VerticalAlignment="Center" Margin="0,0,6,0"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontSize="{DynamicResource AppFontSizeSmall}" />
-                    <Slider Minimum="0.13" Maximum="2.0"
-                            SmallChange="0.01" LargeChange="0.1" TickFrequency="0.1"
-                            Width="120" VerticalAlignment="Center" Margin="0,0,6,0"
-                            Value="{Binding Session.CurrentMapZoom, Mode=TwoWay}" />
-                    <TextBox Width="42" VerticalAlignment="Center"
-                             Text="{Binding Session.CurrentMapZoom, Mode=TwoWay, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
-                </StackPanel>
-            </DataTemplate>
-
             <!-- #476 Option C: shared "set my position" affordance, hosted in
                  both the Listening and Gathering panels (the two phases the
                  SurveyFlow SettingPosition detour returns to). DataContext is
@@ -291,17 +268,6 @@
              strip docks alongside; it's always reachable here (this panel is
              a normal opaque window, never click-through). -->
         <DockPanel DockPanel.Dock="Top" Margin="20,16,20,0">
-            <!-- #524: map-zoom strip — always reachable on the wizard
-                 (opaque, never click-through). Declared first so it docks to
-                 the rightmost slot, sitting to the right of the chip + the
-                 Validate toggle. Hidden until a mode is picked so the bare
-                 PickMode step doesn't show controls that have no consequence
-                 yet. -->
-            <ContentControl DockPanel.Dock="Right" Content="{Binding}"
-                            ContentTemplate="{StaticResource ZoomFieldSurface}"
-                            VerticalAlignment="Center" Margin="10,0,0,0"
-                            Visibility="{Binding HasPickedMode, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
-
             <!-- #501: the chip is the single calibrate/recalibrate entry
                  point. Uncalibrated → guided cold-start; calibrated → arms the
                  #477B confirm guard surfaced as the popup below (anchored
@@ -723,19 +689,15 @@
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
 
-                    <!-- #524: zoom stamp captured at Confirm time. Reads off
-                         PG's "Zoom level: X.XX" readout — set it BEFORE
-                         confirming so the calibration is stamped at the zoom
-                         you actually solved at. Mirrors the header strip
-                         (same Session.CurrentMapZoom) so adjustments here
-                         flow back out. -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,12">
-                        <TextBlock Text="In-game map zoom: " VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontSize="{DynamicResource AppFontSizeBody}" />
-                        <ContentControl Content="{Binding}" ContentTemplate="{StaticResource ZoomFieldSurface}"
-                                        VerticalAlignment="Center" />
-                    </StackPanel>
+                    <!-- #1095: zoom strip removed. The live-view detector
+                         reads the actual pan + scale from PG's map region;
+                         the user no longer needs to dial a zoom value. -->
+                    <TextBlock Text="Zoom out fully (entire map visible), then click the first landmark."
+                               HorizontalAlignment="Center" Margin="0,0,0,12"
+                               VerticalAlignment="Center"
+                               FontStyle="Italic"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               FontSize="{DynamicResource AppFontSizeBody}" />
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <Button Content="Confirm" Style="{StaticResource WizardPrimaryButton}"
@@ -780,16 +742,10 @@
                          the user matches the zoom or recalibrates. Suppressed
                          for legacy 1.0 stamps (the recalibrate hint below
                          handles those). -->
-                    <Border Margin="0,0,0,12" Padding="12,8" CornerRadius="3"
-                            Background="{StaticResource AccentSoftBrush}"
-                            BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
-                            HorizontalAlignment="Center" MaxWidth="520"
-                            Visibility="{Binding MapOverlay.IsZoomMismatchWarningVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                        <TextBlock Text="{Binding MapOverlay.ZoomMismatchText}"
-                                   TextWrapping="Wrap" TextAlignment="Center"
-                                   Foreground="{StaticResource AccentSoftTextBrush}"
-                                   FontSize="{DynamicResource AppFontSizeBody}" />
-                    </Border>
+                    <!-- #1095: zoom-mismatch banner removed — the new layer-2 model
+                         measures PG's live view via the screenshot probe; there's no
+                         "slider drifted from cal zoom" failure mode to surface anymore. -->
+
 
                     <!-- #524: legacy-stamp recalibrate hint. One-time per area
                          per session (Got it dismisses for the rest of the

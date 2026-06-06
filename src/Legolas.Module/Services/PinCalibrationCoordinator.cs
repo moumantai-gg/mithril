@@ -455,17 +455,13 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
         var pairs = _pairs
             .Select(p => (new WorldCoord(p.Pin.X, 0, p.Pin.Z), p.Pixel))
             .ToList();
-        // #524: stamp the live in-game map zoom (read off PG's "Zoom level:
-        // X.XX" readout, kept in sync by the wizard / overlay slider). The
-        // pre-#524 hardcoded 1.0 silently corrupted any session that
-        // calibrated at one zoom and surveyed at another — see issue body for
-        // the ~15× blast radius. Headless / unit-test paths without a
-        // SessionState fall back to 1.0 (the historic default).
-        var zoom = _session?.CurrentMapZoom ?? 1.0;
+        // mithril#1095: CalibrationZoom removed from AreaCalibration — the live view
+        // state is tracked by ILiveMapViewService. The calibrationZoom param is retained
+        // on IAreaCalibrationService for API stability but no longer stamped on the record.
         PersistError = null;
         try
         {
-            var result = _service.CalibrateCurrentArea(pairs, calibrationZoom: zoom);
+            var result = _service.CalibrateCurrentArea(pairs);
             if (result is not null) Disarm();
             return result;
         }

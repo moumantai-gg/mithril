@@ -6,14 +6,13 @@ namespace Mithril.MapCalibration.Tests;
 
 public class WorldToTextureCalibrationTests
 {
-    // Canonical fixture: scale 4, 30° rotation, mirror off, calibration zoom 1.
+    // Canonical fixture: scale 4, 30° rotation, mirror off.
     private static readonly WorldToTextureCalibration Canonical = new(
         OriginX: 100,
         OriginY: 200,
         Scale: 4.0,
         RotationRadians: Math.PI / 6,
-        MirrorNorth: false,
-        CalibrationZoom: 1.0);
+        MirrorNorth: false);
 
     public static IEnumerable<object[]> Worlds() => new[]
     {
@@ -29,8 +28,8 @@ public class WorldToTextureCalibrationTests
         // Round-trip is the contract: project then unproject must recover
         // the input world coord on the (X, Z) ground plane (Y elevation is
         // always dropped to 0 by the projection model — pixels are 2D).
-        var pixel = Canonical.ToTexture(world, currentZoom: 1.0);
-        var recovered = Canonical.FromTexture(pixel, currentZoom: 1.0);
+        var pixel = Canonical.ToTexture(world);
+        var recovered = Canonical.FromTexture(pixel);
 
         recovered.Should().NotBeNull();
         recovered!.Value.X.Should().BeApproximately(world.X, 1e-9);
@@ -40,14 +39,14 @@ public class WorldToTextureCalibrationTests
     }
 
     [Fact]
-    public void ToTexture_HonoursZoomFactor()
+    public void ToTexture_ScaleProportionalToPixelOffset()
     {
-        var atUnitZoom = Canonical.ToTexture(new WorldCoord(10, 0, 0), 1.0);
-        var atDoubleZoom = Canonical.ToTexture(new WorldCoord(10, 0, 0), 2.0);
+        // Doubling Scale doubles the pixel offset from origin.
+        var atUnitScale = Canonical.ToTexture(new WorldCoord(10, 0, 0));
+        var atDoubleScale = (Canonical with { Scale = Canonical.Scale * 2 }).ToTexture(new WorldCoord(10, 0, 0));
 
-        // Doubling currentZoom doubles the effective scale → pixel offset from origin doubles.
-        var unitOffsetX = atUnitZoom.X - Canonical.OriginX;
-        var doubleOffsetX = atDoubleZoom.X - Canonical.OriginX;
+        var unitOffsetX = atUnitScale.X - Canonical.OriginX;
+        var doubleOffsetX = atDoubleScale.X - Canonical.OriginX;
         doubleOffsetX.Should().BeApproximately(2 * unitOffsetX, 1e-9);
     }
 
@@ -58,8 +57,8 @@ public class WorldToTextureCalibrationTests
         var mirrored = Canonical with { MirrorNorth = true };
 
         var world = new WorldCoord(0, 0, 10);
-        var u = unmirrored.ToTexture(world, 1.0);
-        var m = mirrored.ToTexture(world, 1.0);
+        var u = unmirrored.ToTexture(world);
+        var m = mirrored.ToTexture(world);
 
         // The mirror flips the north component → the Y offset from origin inverts.
         var uOffsetY = u.Y - Canonical.OriginY;
@@ -73,7 +72,7 @@ public class WorldToTextureCalibrationTests
         // A texture-frame calibration with known parameters.
         var texCal = new WorldToTextureCalibration(
             OriginX: 100, OriginY: 200, Scale: 4.0,
-            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0);
+            RotationRadians: 0, MirrorNorth: false);
 
         // The texture renders onto the overlay at a known placement:
         // the overlay shows the 1000×500 texture at half-size starting at overlay (30, 40).
@@ -107,7 +106,7 @@ public class WorldToTextureCalibrationTests
         // and uses its PixelSha256 to look up dims for ProjectThroughOverlay.
         var cal = new WorldToTextureCalibration(
             OriginX: 0, OriginY: 0, Scale: 1.0,
-            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0)
+            RotationRadians: 0, MirrorNorth: false)
         {
             PixelSha256 = "abc123",
         };

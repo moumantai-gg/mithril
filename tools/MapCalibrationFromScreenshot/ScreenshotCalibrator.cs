@@ -235,7 +235,7 @@ internal static class ScreenshotCalibrator
         {
             return new CalibrationResult(null, assigned, "solver returned null on RANSAC inliers (degenerate — all collinear?)");
         }
-        cal = cal with { CalibrationZoom = inputs.Zoom, Source = CalibrationSource.BundledBaseline };
+        cal = cal with { Source = CalibrationSource.BundledBaseline };
         assigned = finalAssigned;
 
         // Phase: render the projection overlay on a fresh screenshot copy.
@@ -376,7 +376,7 @@ internal static class ScreenshotCalibrator
     // deleted untyped WorldToWindow surface.
     private static WorldToTextureCalibration AsTexture(AreaCalibration cal) =>
         new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
-            cal.MirrorNorth, cal.CalibrationZoom);
+            cal.MirrorNorth);
 
     // Inlier threshold for RANSAC: a detection is an inlier of a candidate
     // calibration if its pivot-corrected pixel is within this many texture

@@ -25,7 +25,7 @@ public sealed class ReferenceProviderSolverSeamTests
     // #1076 Phase 6.5: ground-truth world (X,Z) -> texture-pixel transform.
     private static readonly WorldToTextureCalibration Truth = new(
         OriginX: 400.0, OriginY: 300.0, Scale: 1.2, RotationRadians: 0.35,
-        MirrorNorth: false, CalibrationZoom: 1.0);
+        MirrorNorth: false);
 
     // Texture 800x600 at native scale, screenshot padded by (50, 80): so
     // texture-pixel == screenshot-pixel - origin.
