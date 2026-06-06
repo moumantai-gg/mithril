@@ -38,7 +38,7 @@ public sealed class LegolasCalibrationTagDescriptors : ITagDescriptorProvider
         new("area",                  PiiClassification.Safe, Subsystem, "Scene MapAssetKey on the consumer-side calibration span / counter (e.g. Map_AreaSerbule)."),
         new("scene.asset_key",       PiiClassification.Safe, Subsystem, "Scene MapAssetKey on AreaCalibrationService.SelectScene / CalibrateCurrentArea spans."),
         new("scene.parent_area_key", PiiClassification.Safe, Subsystem, "Parent area key when the active scene is a sub-scene (e.g. AreaCave1 for Map_HogansKeepBasement)."),
-        new("cal.source",            PiiClassification.Safe, Subsystem, "Calibration record source: user | baseline | composed."),
+        new("cal.source",            PiiClassification.Safe, Subsystem, "Calibration record source: UserRefinement | AutoCapture | BundledBaseline | CommunitySync (verbatim AreaCalibration.Source enum)."),
         new("cal.frame",             PiiClassification.Safe, Subsystem, "Calibration frame: texture | overlay."),
         new("cal.residual_px",       PiiClassification.Safe, Subsystem, "Residual error in pixels for the picked calibration record."),
         new("cal.refs",              PiiClassification.Safe, Subsystem, "Reference-landmark count backing the picked calibration."),
