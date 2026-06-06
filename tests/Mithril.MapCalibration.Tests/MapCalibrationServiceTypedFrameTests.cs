@@ -189,7 +189,7 @@ public sealed class MapCalibrationServiceTypedFrameTests
             Scale: 4.0, RotationRadians: 0.5,
             OriginX: 100, OriginY: 200,
             ReferenceCount: 6, ResidualPixels: 0.5)
-        { Source = CalibrationSource.BundledBaseline, MirrorNorth = true, CalibrationZoom = 1.25 };
+        { Source = CalibrationSource.BundledBaseline, MirrorNorth = true };
 
         var svc = NewSvc(baseline: new Dictionary<string, AreaCalibration> { [Key] = legacy });
 
@@ -199,6 +199,5 @@ public sealed class MapCalibrationServiceTypedFrameTests
         tex.Scale.Should().Be(4.0);
         tex.RotationRadians.Should().Be(0.5);
         tex.MirrorNorth.Should().BeTrue();
-        tex.CalibrationZoom.Should().Be(1.25);
     }
 }

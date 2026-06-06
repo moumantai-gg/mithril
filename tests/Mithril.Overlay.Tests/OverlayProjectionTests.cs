@@ -29,23 +29,22 @@ public sealed class OverlayProjectionTests
 
     /// <summary>
     /// Identity cal: OriginX=0, OriginY=0, Scale=1.0, RotationRadians=0,
-    /// MirrorNorth=false, CalibrationZoom=1.0. At currentZoom=1.0:
-    /// effScale=1.0 → OverlayPixel(world.X, -world.Z).
+    /// MirrorNorth=false. At scale=1.0:
+    /// OverlayPixel(world.X, -world.Z).
     /// </summary>
     private static WorldToOverlayCalibration IdentityCal() =>
         new(OriginX: 0, OriginY: 0, Scale: 1.0,
-            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0);
+            RotationRadians: 0, MirrorNorth: false);
 
     [Fact]
     public void Projects_each_marker_through_composed_cal()
     {
-        // Scale=2.0, no rotation, no mirror. At currentZoom=1.0:
-        //   effScale = 2.0 * (1.0 / 1.0) = 2.0
+        // Scale=2.0, no rotation, no mirror:
         //   OverlayPixel = (0 + 2*X, 0 - 2*Z)
         // Snap(10, 20) → (20, -40); Snap(-5, 7) → (-10, -14)
         var cal = new WorldToOverlayCalibration(
             OriginX: 0, OriginY: 0, Scale: 2.0,
-            RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0);
+            RotationRadians: 0, MirrorNorth: false);
 
         var styleA = new TestStyle("a");
         var styleB = new TestStyle("b");

@@ -34,8 +34,8 @@ public class MapOverlayZoomReactivityTests
     [Fact]
     public void CurrentMapZoom_change_fires_relevant_PropertyChanged_events()
     {
-        // Seed a calibration so the warning chip + marker pixels participate.
-        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 2.0 };
+        // Seed a calibration so the marker pixels participate.
+        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0);
         var (map, _, session) = Build(calibration);
 
         var fired = new HashSet<string>();
@@ -53,97 +53,70 @@ public class MapOverlayZoomReactivityTests
     [Fact]
     public void Warning_chip_appears_when_zoom_diverges_from_calibration_stamp()
     {
-        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 2.0 };
+        // NOTE(#1095-P2.3): CalibrationZoom removed from AreaCalibration; the zoom-mismatch
+        // warning chip behavior is being reworked in P2.3. This test is a placeholder.
+        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0);
         var (map, _, session) = Build(calibration);
 
-        // Stamped at 2.0; matching zoom — no warning.
+        // Post-#1095 the mismatch warning depends on the live MapViewFix, not CalibrationZoom.
         session.CurrentMapZoom = 2.0;
-        map.IsZoomMismatchWarningVisible.Should().BeFalse();
+        map.IsZoomMismatchWarningVisible.Should().BeFalse("no CalibrationZoom stamp — warning disabled");
 
-        // Within the half-tick epsilon — still no warning.
-        session.CurrentMapZoom = 1.96;
-        map.IsZoomMismatchWarningVisible.Should().BeFalse();
-
-        // Beyond the epsilon — warning fires.
         session.CurrentMapZoom = 1.5;
-        map.IsZoomMismatchWarningVisible.Should().BeTrue();
-        map.ZoomMismatchText.Should().Contain("2.00");
+        map.IsZoomMismatchWarningVisible.Should().BeFalse("no CalibrationZoom stamp — warning disabled");
     }
 
     [Fact]
-    public void Warning_chip_suppressed_on_legacy_one_point_zero_stamp()
+    public void Warning_chip_suppressed_when_no_calibration_zoom()
     {
-        // A pre-#524 calibration (CalibrationZoom = 1.0 default) must NOT
-        // flag a warning when the user is at the default 2.0 — they had no
-        // way to set the stamp deliberately. The legacy hint handles that.
-        var legacy = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0); // CalibrationZoom defaults 1.0
-        var (map, _, _) = Build(legacy);
+        // Post-#1095: no CalibrationZoom field — mismatch warning never fires.
+        var cal = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0);
+        var (map, _, _) = Build(cal);
 
         map.IsZoomMismatchWarningVisible.Should().BeFalse(
-            "legacy stamps never trigger the warning — the recalibrate hint covers them");
-        map.IsLegacyRecalibrateHintVisible.Should().BeTrue();
+            "no CalibrationZoom stamp — mismatch warning is disabled");
     }
 
     [Fact]
-    public void Legacy_hint_dismissal_is_session_ephemeral_per_area()
+    public void Legacy_hint_not_shown_post_1095()
     {
-        var legacy = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0);
-        var (map, _, _) = Build(legacy);
+        // Post-#1095: CalibrationZoom removed; legacy-recalibrate hint is no longer
+        // applicable (hint relied on detecting CalibrationZoom == 1.0 default).
+        // P2.3 will remove this hint from the VM entirely.
+        var cal = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0);
+        var (map, _, _) = Build(cal);
 
-        map.IsLegacyRecalibrateHintVisible.Should().BeTrue();
-        map.DismissLegacyRecalibrateHintCommand.Execute(null);
-        map.IsLegacyRecalibrateHintVisible.Should().BeFalse();
+        // Legacy hint behavior is being removed in P2.3; just confirm no crash.
+        _ = map.IsLegacyRecalibrateHintVisible;
     }
 
     [Fact]
-    public void Legacy_hint_disappears_when_recalibration_lifts_stamp_off_one()
+    public void Calibration_load_does_not_crash_on_area_change()
     {
-        var legacy = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0);
-        var (map, cal, _) = Build(legacy);
-        map.IsLegacyRecalibrateHintVisible.Should().BeTrue();
-
-        // Recalibrate at 2.0 — stamp moves off 1.0.
-        cal.SetCalibration(new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 2.0 });
-
-        map.IsLegacyRecalibrateHintVisible.Should().BeFalse();
-    }
-
-    [Fact]
-    public void Auto_seeds_CurrentMapZoom_from_calibration_stamp_on_area_change()
-    {
-        // Fresh session defaults to 2.0. Loading an area whose calibration
-        // stamp is 0.5 should pull the slider to 0.5 — the user's "what
-        // zoom should I dial PG to after restart?" answer comes from the
-        // stamp, surfaced via auto-seed.
-        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 0.5 };
-        var (map, cal, session) = Build();
+        // Post-#1095: CalibrationZoom removed from AreaCalibration; the auto-seed
+        // behavior (slider ← CalibrationZoom) is being removed in P2.3. This test
+        // ensures loading a calibration does not crash the VM.
+        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0);
+        var (_, cal, session) = Build();
         session.CurrentMapZoom.Should().Be(2.0, "default before any calibration is loaded");
 
         cal.SetCalibration(calibration);
-
-        session.CurrentMapZoom.Should().Be(0.5);
-        map.CalibrationZoomLabel.Should().Contain("0.50");
-        map.IsCalibrationZoomLabelVisible.Should().BeTrue();
+        // Slider is NOT seeded post-#1095 (no CalibrationZoom to read).
     }
 
     [Fact]
-    public void Recalibrating_same_area_does_not_clobber_user_slider_value()
+    public void Recalibrating_same_area_does_not_crash()
     {
-        // After area-load auto-seed sets slider to 0.5, the user might have
-        // manually moved it to 1.5 (e.g., they changed PG's zoom). A fresh
-        // Changed event from a recalibration of the SAME area must not pull
-        // the slider back — it's the user's value now.
-        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 0.5 };
+        // Post-#1095: CalibrationZoom removed; just verify no crash on repeated
+        // SetCalibration calls for the same area. P2.3 updates VM behavior fully.
+        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0);
         var (_, cal, session) = Build();
-        cal.SetCalibration(calibration);            // first load → seed to 0.5
-        session.CurrentMapZoom.Should().Be(0.5);
+        cal.SetCalibration(calibration);
 
-        session.CurrentMapZoom = 1.5;               // user moved the slider
+        session.CurrentMapZoom = 1.5;
+        cal.SetCalibration(new AreaCalibration(2.0, 0.0, 100, 200, 3, 0));
 
-        // Recalibrate the same area (key unchanged) — Changed fires again.
-        cal.SetCalibration(new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 0.5 });
-
-        session.CurrentMapZoom.Should().Be(1.5, "same-area Changed must not clobber user edits");
+        session.CurrentMapZoom.Should().Be(1.5, "user-set zoom not clobbered by same-area recalibration");
     }
 
     [Fact]

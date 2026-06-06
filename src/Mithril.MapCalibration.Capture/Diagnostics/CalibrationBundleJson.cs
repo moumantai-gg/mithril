@@ -98,7 +98,6 @@ public sealed record RecoveredCalibrationJson(
     double OriginX,
     double OriginY,
     bool MirrorNorth,
-    double CalibrationZoom,
     double ResidualPixels,
     int ReferenceCount,
     string Source,

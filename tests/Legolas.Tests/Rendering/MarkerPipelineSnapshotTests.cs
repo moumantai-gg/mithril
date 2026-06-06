@@ -233,7 +233,7 @@ public sealed class MarkerPipelineSnapshotTests
         // byte-parity baselines are preserved.
         var composed = new WorldToOverlayCalibration(
             OriginX: 0, OriginY: 0, Scale: 1.0,
-            RotationRadians: 0, MirrorNorth: true, CalibrationZoom: 1.0);
+            RotationRadians: 0, MirrorNorth: true);
         var projected = OverlayWindowService.ProjectMarkers(
             snapshot, composed, currentZoom: 1.0);
         projected.Should().HaveCount(markers.Count,

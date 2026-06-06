@@ -15,7 +15,7 @@ public class GhostLabelDeclutterTests
     // +Z convention: ToOverlay(x,0,z) = (x, -z).
     private static readonly WorldToOverlayCalibration Cal = new(
         OriginX: 0, OriginY: 0, Scale: 1, RotationRadians: 0,
-        MirrorNorth: false, CalibrationZoom: 1.0);
+        MirrorNorth: false);
 
     private static CalibrationReference Ref(string name, double x, double z) =>
         new(name, "Landmark", new WorldCoord(x, 0, z));

@@ -17,8 +17,7 @@ public readonly record struct WorldToTextureCalibration(
     double OriginY,
     double Scale,
     double RotationRadians,
-    bool MirrorNorth,
-    double CalibrationZoom)
+    bool MirrorNorth)
 {
     public int SchemaVersion { get; init; } = 1;
 
@@ -31,22 +30,16 @@ public readonly record struct WorldToTextureCalibration(
     /// </summary>
     public string? PixelSha256 { get; init; }
 
-    public TexturePixel ToTexture(WorldCoord world, double currentZoom)
+    public TexturePixel ToTexture(WorldCoord world)
     {
         var (x, y) = AreaProjectionCore.Project(
-            OriginX, OriginY, Scale, RotationRadians, MirrorNorth,
-            CalibrationZoom, world, currentZoom);
+            OriginX, OriginY, Scale, RotationRadians, MirrorNorth, world);
         return new TexturePixel(x, y);
     }
 
-    public TexturePixel ToTexture(WorldCoord world) => ToTexture(world, CalibrationZoom);
-
-    public WorldCoord? FromTexture(TexturePixel pixel, double currentZoom) =>
+    public WorldCoord? FromTexture(TexturePixel pixel) =>
         AreaProjectionCore.Unproject(
-            OriginX, OriginY, Scale, RotationRadians, MirrorNorth,
-            CalibrationZoom, pixel.X, pixel.Y, currentZoom);
-
-    public WorldCoord? FromTexture(TexturePixel pixel) => FromTexture(pixel, CalibrationZoom);
+            OriginX, OriginY, Scale, RotationRadians, MirrorNorth, pixel.X, pixel.Y);
 
     /// <summary>
     /// Compose this texture-frame calibration with a base-texture placement on
@@ -58,17 +51,12 @@ public readonly record struct WorldToTextureCalibration(
     public WorldToOverlayCalibration ProjectThroughOverlay(MapRect overlayRect)
     {
         var sx = overlayRect.Width / (double)overlayRect.TextureWidth;
-        // The composed scale uses sx — overlay-frame X and Y scale identically in
-        // the canonical case. If sx != sy ever becomes a real consumer need, the
-        // texture↔overlay placement is anisotropic and this composition is wrong;
-        // fail loudly there instead of silently picking one axis.
         var sy = overlayRect.Height / (double)overlayRect.TextureHeight;
         return new WorldToOverlayCalibration(
             OriginX: overlayRect.OriginX + OriginX * sx,
             OriginY: overlayRect.OriginY + OriginY * sy,
             Scale: Scale * sx,
             RotationRadians: RotationRadians,
-            MirrorNorth: MirrorNorth,
-            CalibrationZoom: CalibrationZoom);
+            MirrorNorth: MirrorNorth);
     }
 }

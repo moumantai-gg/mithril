@@ -20,9 +20,7 @@ public class MapOverlayCalibrationValidationTests
     private static (MapOverlayViewModel map, FakeAreaCalibrationService cal, SessionState session) Build()
     {
         var session = new SessionState();
-        // #524: these tests build calibrations with the default (legacy)
-        // CalibrationZoom = 1.0; pin the live zoom to match so the projection
-        // zoomFactor is 1.0 and the assertions stay byte-identical to pre-#524.
+        // Pin the live zoom to 1.0 for consistent assertion values.
         session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
@@ -58,7 +56,7 @@ public class MapOverlayCalibrationValidationTests
         // #1076 Phase 6.5: assertions use the frame-typed overlay projection.
         var overlayCal = new WorldToOverlayCalibration(
             calibration.OriginX, calibration.OriginY, calibration.Scale,
-            calibration.RotationRadians, calibration.MirrorNorth, calibration.CalibrationZoom);
+            calibration.RotationRadians, calibration.MirrorNorth);
         map.CalibrationGhosts[0].Pixel.Should().Be(overlayCal.ToOverlay(new WorldCoord(10, 0, 5)));
         map.CalibrationGhosts[1].Pixel.Should().Be(overlayCal.ToOverlay(new WorldCoord(-4, 0, 12)));
         map.CalibrationValidationStatus.Should().Contain("2 known").And.Contain("not accuracy");
@@ -160,7 +158,7 @@ public class MapOverlayCalibrationValidationTests
         // #1076 Phase 6.5: assertion uses the frame-typed overlay projection.
         var c4 = Cal(4.0);
         var overlay4 = new WorldToOverlayCalibration(
-            c4.OriginX, c4.OriginY, c4.Scale, c4.RotationRadians, c4.MirrorNorth, c4.CalibrationZoom);
+            c4.OriginX, c4.OriginY, c4.Scale, c4.RotationRadians, c4.MirrorNorth);
         map.CalibrationGhosts[0].Pixel.Should().Be(overlay4.ToOverlay(new WorldCoord(10, 0, 5)));
     }
 

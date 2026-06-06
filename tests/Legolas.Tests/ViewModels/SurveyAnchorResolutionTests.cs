@@ -19,7 +19,7 @@ public class SurveyAnchorResolutionTests
     // #1076 Phase 6.5: typed overlay-frame view of the same similarity.
     private static WorldToOverlayCalibration Cal() => new(
         OriginX: 100, OriginY: 200, Scale: 2.0, RotationRadians: 0.0,
-        MirrorNorth: false, CalibrationZoom: 1.0);
+        MirrorNorth: false);
     private static TrackerFix Tracker(double x, double z, DateTimeOffset at,
         PositionSource src = PositionSource.Spawn) => new(x, 0, z, at, src);
     private static CharacterPinFix Pin(double x, double z, DateTimeOffset at) =>

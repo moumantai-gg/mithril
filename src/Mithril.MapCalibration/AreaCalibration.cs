@@ -35,15 +35,6 @@ public sealed record AreaCalibration(
     public bool MirrorNorth { get; init; }
 
     /// <summary>
-    /// The in-game map zoom the user was at when this was solved (read off the
-    /// game UI &#8212; Mithril can't see it). <see cref="Scale"/> is px-per-unit
-    /// at THIS zoom; pixels-per-metre scales linearly with zoom, so a projection
-    /// at a different current zoom must be scaled by
-    /// <c>currentZoom / CalibrationZoom</c>. Default <c>1.0</c>.
-    /// </summary>
-    public double CalibrationZoom { get; init; } = 1.0;
-
-    /// <summary>
     /// Where this transform was sourced from (<see cref="CalibrationSource.BundledBaseline"/>
     /// / <see cref="CalibrationSource.CommunitySync"/> /
     /// <see cref="CalibrationSource.UserRefinement"/>). Defaults to
@@ -55,9 +46,10 @@ public sealed record AreaCalibration(
 
     /// <summary>
     /// Schema version for this persisted record. Bump alongside any shape
-    /// change. Default 1.
+    /// change. Default 3 (skip 2 to mark the no-CalibrationZoom invariant
+    /// unambiguously; Schema 2 was never shipped).
     /// </summary>
-    public int SchemaVersion { get; init; } = 1;
+    public int SchemaVersion { get; init; } = 3;
 
     /// <summary>
     /// Which pixel frame the projection outputs into &#8212;

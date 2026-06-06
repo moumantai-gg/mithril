@@ -95,25 +95,25 @@ internal sealed class MapCalibrationService : IMapCalibrationService
     public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom)
     {
         var pick = PickTexture(scene);
-        return pick is null ? null : pick.Value.ToTexture(world, currentZoom);
+        return pick is null ? null : pick.Value.ToTexture(world);
     }
 
     public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom)
     {
         var pick = PickTexture(scene);
-        return pick?.FromTexture(pixel, currentZoom);
+        return pick?.FromTexture(pixel);
     }
 
     public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom)
     {
         var pick = PickOverlay(scene);
-        return pick is null ? null : pick.Value.ToOverlay(world, currentZoom);
+        return pick is null ? null : pick.Value.ToOverlay(world);
     }
 
     public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom)
     {
         var pick = PickOverlay(scene);
-        return pick?.FromOverlay(pixel, currentZoom);
+        return pick?.FromOverlay(pixel);
     }
 
     public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) => PickTexture(scene);
@@ -286,14 +286,14 @@ internal sealed class MapCalibrationService : IMapCalibrationService
 
     private static WorldToTextureCalibration ToTextureCalibration(AreaCalibration legacy) =>
         new(legacy.OriginX, legacy.OriginY, legacy.Scale, legacy.RotationRadians,
-            legacy.MirrorNorth, legacy.CalibrationZoom)
+            legacy.MirrorNorth)
         {
             PixelSha256 = legacy.PixelSha256,
         };
 
     private static WorldToOverlayCalibration ToOverlayCalibration(AreaCalibration legacy) =>
         new(legacy.OriginX, legacy.OriginY, legacy.Scale, legacy.RotationRadians,
-            legacy.MirrorNorth, legacy.CalibrationZoom);
+            legacy.MirrorNorth);
 
     public void SaveUserRefinement(MapSceneRef scene, AreaCalibration calibration)
     {

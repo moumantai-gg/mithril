@@ -263,7 +263,7 @@ internal sealed class FakeCalibrationService : IMapCalibrationService
         {
             _textureCals[mapAssetKey] = new WorldToTextureCalibration(
                 cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
-                cal.MirrorNorth, cal.CalibrationZoom);
+                cal.MirrorNorth);
         }
     }
 
@@ -289,9 +289,9 @@ internal sealed class FakeCalibrationService : IMapCalibrationService
     public bool IsCalibrated(MapSceneRef scene) =>
         Saved.ContainsKey(scene.MapAssetKey) || _prior.ContainsKey(scene.MapAssetKey);
     public TexturePixel? WorldToTexture(MapSceneRef scene, WorldCoord world, double currentZoom) =>
-        _textureCals.TryGetValue(scene.MapAssetKey, out var c) ? c.ToTexture(world, currentZoom) : null;
+        _textureCals.TryGetValue(scene.MapAssetKey, out var c) ? c.ToTexture(world) : null;
     public WorldCoord? TextureToWorld(MapSceneRef scene, TexturePixel pixel, double currentZoom) =>
-        _textureCals.TryGetValue(scene.MapAssetKey, out var c) ? c.FromTexture(pixel, currentZoom) : null;
+        _textureCals.TryGetValue(scene.MapAssetKey, out var c) ? c.FromTexture(pixel) : null;
     public OverlayPixel? WorldToOverlay(MapSceneRef scene, WorldCoord world, double currentZoom) => null;
     public WorldCoord? OverlayToWorld(MapSceneRef scene, OverlayPixel pixel, double currentZoom) => null;
     public WorldToTextureCalibration? GetTextureCalibration(MapSceneRef scene) =>

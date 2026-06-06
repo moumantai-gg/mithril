@@ -23,7 +23,7 @@ public sealed class SyntheticEndToEndTests
     // #1076 Phase 6.5: ground truth in texture-pixel frame.
     private static readonly WorldToTextureCalibration Truth = new(
         OriginX: 400.0, OriginY: 300.0, Scale: 1.2, RotationRadians: 0.35,
-        MirrorNorth: false, CalibrationZoom: 1.0);
+        MirrorNorth: false);
 
     private static readonly (string Type, string Icon, int W, int H, int Lum, double X, double Z)[] Landmarks =
     [

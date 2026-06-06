@@ -185,12 +185,12 @@ public sealed class OverlaySceneHookTests
     {
         var calibration = new FakeMapCalibrationService();
         calibration.CalibratedAreas.Add("Map_A");
-        // Scale=10, CalibrationZoom=1.0 → ToOverlay output is 10 * (currentZoom/1.0) * world.
-        // Different zooms produce observably different pixels.
+        // Scale=10. Different zoom values will produce different projected pixels
+        // when the overlay service applies the live zoom via the MapViewFix path.
         calibration.OverlayCalForScene = _ =>
             new WorldToOverlayCalibration(
                 OriginX: 0, OriginY: 0, Scale: 10.0,
-                RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0);
+                RotationRadians: 0, MirrorNorth: false);
 
         var areaState = new StubAreaState { CurrentArea = "Map_A" };
         var zoom = new MutableZoomSource(1.5);
@@ -368,7 +368,7 @@ public sealed class OverlaySceneHookTests
         calibration.TextureCalForScene = _ =>
             new WorldToTextureCalibration(
                 OriginX: 0, OriginY: 0, Scale: 1.0,
-                RotationRadians: 0, MirrorNorth: false, CalibrationZoom: 1.0)
+                RotationRadians: 0, MirrorNorth: false)
             {
                 PixelSha256 = "test-sha",
             };

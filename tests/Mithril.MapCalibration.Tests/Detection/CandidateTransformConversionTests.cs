@@ -25,7 +25,7 @@ public sealed class CandidateTransformConversionTests
             OriginY: originY,
             ReferenceCount: 5,
             ResidualPixels: 2.5)
-        { MirrorNorth = mirrorNorth, CalibrationZoom = 1.0 };
+        { MirrorNorth = mirrorNorth };
 
         // Simulate the probe-side path: pass the in-memory AreaCalibration's
         // fields through the same arithmetic the bundle DTO would round-trip
@@ -43,7 +43,7 @@ public sealed class CandidateTransformConversionTests
             OriginY: originY,
             ReferenceCount: 5,
             ResidualPixels: 2.5)
-        { MirrorNorth = mirrorNorth, CalibrationZoom = 1.0 };
+        { MirrorNorth = mirrorNorth };
 
         var mapRect = new MapRect(
             OriginX: 0, OriginY: 0,

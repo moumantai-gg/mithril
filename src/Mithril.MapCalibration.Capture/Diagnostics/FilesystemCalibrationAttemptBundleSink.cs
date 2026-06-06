@@ -230,7 +230,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 .ToArray();
             var dto = new RecoveredCalibrationJson(1,
                 cal.Scale, cal.RotationRadians, cal.OriginX, cal.OriginY,
-                cal.MirrorNorth, cal.CalibrationZoom, cal.ResidualPixels,
+                cal.MirrorNorth, cal.ResidualPixels,
                 cal.ReferenceCount, cal.Source.ToString(), inliers);
             return WriteJson(dir, "11-recovered-cal.json", dto, CalibrationBundleJsonContext.Default.RecoveredCalibrationJson);
         }

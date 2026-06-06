@@ -346,8 +346,7 @@ public class PinCalibrationCoordinatorTests
         var result = coord.Confirm();
 
         result.Should().NotBeNull();
-        calib.LastCalibrationZoom.Should().Be(1.5, "the live in-game zoom must be stamped, not the pre-#524 hardcoded 1.0");
-        result!.CalibrationZoom.Should().Be(1.5);
+        calib.LastCalibrationZoom.Should().Be(1.5, "the live in-game zoom must be passed to CalibrateCurrentArea");
     }
 
     [Fact]
@@ -402,7 +401,7 @@ public class PinCalibrationCoordinatorTests
             LastCalibrationZoom = calibrationZoom;
             ChangedCount++;
             Changed?.Invoke(this, EventArgs.Empty);
-            return new AreaCalibration(1, 0, 0, 0, placements.Count, 0) { CalibrationZoom = calibrationZoom };
+            return new AreaCalibration(1, 0, 0, 0, placements.Count, 0);
         }
 
         public MapSceneRef? CurrentScene => new MapSceneRef("AreaTest", null, "Map_AreaTest");

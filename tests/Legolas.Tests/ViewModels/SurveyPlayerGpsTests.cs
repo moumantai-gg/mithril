@@ -35,7 +35,7 @@ public class SurveyPlayerGpsTests
     // #1076 Phase 6.5: frame-typed overlay view of Calib for assertions.
     private static readonly WorldToOverlayCalibration CalibOverlay = new(
         OriginX: 0.0, OriginY: 0.0, Scale: 1.0, RotationRadians: 0.0,
-        MirrorNorth: false, CalibrationZoom: 1.0);
+        MirrorNorth: false);
     private static OverlayPixel CalibToOverlay(WorldCoord w) => CalibOverlay.ToOverlay(w);
 
     private static (SessionState session, MapOverlayViewModel map,
