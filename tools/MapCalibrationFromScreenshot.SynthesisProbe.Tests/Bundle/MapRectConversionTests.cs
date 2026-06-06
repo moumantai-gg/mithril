@@ -16,7 +16,7 @@ public class MapRectConversionTests
             SchemaVersion: 1,
             Scale: 0.31536, RotationRadians: -3.14153,
             OriginX: 1039.45, OriginY: -36.38,
-            MirrorNorth: false, CalibrationZoom: 1.0,
+            MirrorNorth: false,
             ResidualPixels: 0.34, ReferenceCount: 4,
             Source: "UserRefinement",
             Inliers: System.Array.Empty<InlierJson>());
@@ -29,10 +29,9 @@ public class MapRectConversionTests
 
         // Spot-check: world (0, 0, 0) projects to what we'd get composing the
         // canonical AreaCalibration with (MapRect.TextureToScreenshot − origin).
-        var canonical = new AreaCalibration(
-            cal.Scale, cal.RotationRadians, cal.OriginX, cal.OriginY,
-            cal.ReferenceCount, cal.ResidualPixels) { MirrorNorth = cal.MirrorNorth };
-        var texturePixel = canonical.WorldToWindow(new WorldCoord(0, 0, 0));
+        var canonical = new WorldToTextureCalibration(
+            cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians, cal.MirrorNorth);
+        var texturePixel = canonical.ToTexture(new WorldCoord(0, 0, 0));
         var screenshotPixel = mapRect.TextureToScreenshot(texturePixel.X, texturePixel.Y);
         var expectedAlignedX = screenshotPixel.Sx - mapRect.OriginX;
         var expectedAlignedY = screenshotPixel.Sy - mapRect.OriginY;
@@ -47,7 +46,7 @@ public class MapRectConversionTests
     {
         var cal = new RecoveredCalibrationJson(
             1, Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
-            MirrorNorth: false, CalibrationZoom: 1.0,
+            MirrorNorth: false,
             ResidualPixels: 0.0, ReferenceCount: 1, Source: "UserRefinement",
             Inliers: System.Array.Empty<InlierJson>());
 

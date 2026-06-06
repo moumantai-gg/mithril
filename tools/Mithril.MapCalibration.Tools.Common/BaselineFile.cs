@@ -26,7 +26,7 @@ public static class BaselineFile
     /// tool doesn't need to take a dependency on
     /// <c>Mithril.MapCalibration.Internal.BundledBaselineLoader</c> (internal).
     /// Field defaults match <c>AreaCalibration</c>: MirrorNorth=false,
-    /// CalibrationZoom=1.0, Source=UserRefinement, SchemaVersion=1.</para>
+    /// Source=UserRefinement, SchemaVersion=1.</para>
     /// </summary>
     public static AreaCalibration? TryReadAnchor(string baselinePath, string area)
     {
@@ -94,7 +94,6 @@ public static class BaselineFile
         var cal = new AreaCalibration(scale, rotation, originX, originY, refCount, residual);
 
         if (obj["mirrorNorth"]?.GetValue<bool>() is bool mirror) cal = cal with { MirrorNorth = mirror };
-        if (obj["calibrationZoom"]?.GetValue<double>() is double zoom) cal = cal with { CalibrationZoom = zoom };
         if (obj["source"]?.GetValue<string>() is string srcStr
             && Enum.TryParse<CalibrationSource>(srcStr, out var src))
         {
@@ -137,8 +136,7 @@ public static class BaselineFile
     private static JsonObject SerializeAreaCalibration(AreaCalibration cal)
     {
         // Mirror MapCalibrationJsonContext's DefaultIgnoreCondition = WhenWritingDefault.
-        // Defaults per AreaCalibration.cs: MirrorNorth=false, CalibrationZoom=1.0,
-        // Source=UserRefinement, SchemaVersion=1.
+        // Defaults per AreaCalibration.cs: MirrorNorth=false, Source=UserRefinement, SchemaVersion=1.
         var obj = new JsonObject
         {
             ["scale"] = cal.Scale,
@@ -149,7 +147,6 @@ public static class BaselineFile
             ["residualPixels"] = cal.ResidualPixels,
         };
         if (cal.MirrorNorth) obj["mirrorNorth"] = true;
-        if (Math.Abs(cal.CalibrationZoom - 1.0) > 1e-9) obj["calibrationZoom"] = cal.CalibrationZoom;
         if (cal.Source != CalibrationSource.UserRefinement) obj["source"] = cal.Source.ToString();
         if (cal.SchemaVersion != 1) obj["schemaVersion"] = cal.SchemaVersion;
         return obj;

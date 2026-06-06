@@ -78,7 +78,7 @@ internal static class SelfTest
             OriginY: 300.0,
             ReferenceCount: 0,
             ResidualPixels: 0.0)
-        { MirrorNorth = false, CalibrationZoom = 1.0 };
+        { MirrorNorth = false };
 
         // ---------------------------------------------------------------------
         // 4. Place landmarks at chosen world coords; project to texture pixels
@@ -105,7 +105,7 @@ internal static class SelfTest
         // project through a texture-frame view of truth.
         var truthTex = new WorldToTextureCalibration(
             truth.OriginX, truth.OriginY, truth.Scale, truth.RotationRadians,
-            truth.MirrorNorth, truth.CalibrationZoom);
+            truth.MirrorNorth);
         foreach (var (type, _, world) in landmarks)
         {
             var spec = iconSpecs.First(s => s.LandmarkType == type);
@@ -159,7 +159,6 @@ internal static class SelfTest
             LandmarksJsonPath: landmarksJson,
             NpcsJsonPath: npcsJson,
             Area: "AreaSelfTest",
-            Zoom: 1.0,
             PlayerCoord: (playerWorld.X, playerWorld.Z),
             // Known padding from step 6; the NCC auto-detect that used to find
             // this synthetic rect was retired in the PR-4 cutover, so the self
