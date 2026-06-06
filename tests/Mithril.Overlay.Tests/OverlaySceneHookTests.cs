@@ -23,11 +23,11 @@ namespace Mithril.Overlay.Tests;
 /// projection is calibration-gated) so pixel-native passes — e.g. the
 /// calibration placement pins — render during an uncalibrated Drop/Pair
 /// walkthrough (dissolved-#868); the chip still surfaces (#872 / #887)</item>
-/// <item>Zoom plumbing: <see cref="IOverlaySceneContext.Project"/> reads
-/// the live <see cref="IOverlayZoomSource"/> per call</item>
+/// <item>Fix plumbing: <see cref="IOverlaySceneContext.Project"/> composes
+/// the canonical pixel with the live <see cref="MapViewFix"/> per call</item>
 /// <item><see cref="IOverlaySceneContext.Project"/> returns null in
-/// uncalibrated-area paths (defensive cover; the projection block — not the
-/// scene drawers — is what skips uncalibrated)</item>
+/// uncalibrated-area paths or when no fix is available (defensive cover; the
+/// projection block — not the scene drawers — is what skips uncalibrated)</item>
 /// </list>
 /// </summary>
 public sealed class OverlaySceneHookTests
@@ -35,7 +35,7 @@ public sealed class OverlaySceneHookTests
     private static OverlayWindowService BuildService(
         FakeMapCalibrationService calibration,
         StubAreaState areaState,
-        IOverlayZoomSource zoom,
+        StubLiveMapViewService? liveView = null,
         Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null,
         IMapTextureDimensions? dims = null)   // mithril#1081 Task 11: optional dims
     {
@@ -52,7 +52,7 @@ public sealed class OverlaySceneHookTests
         var bus = new StubDomainEventSubscriber();
         return new OverlayWindowService(
             markers, renderer, calibration, areaState, mapState, sceneCache, bus,
-            position, zoom,
+            position, liveView ?? new StubLiveMapViewService(),
             textureDimensions: dims ?? new NullMapTextureDimensions(),  // mithril#1081
             loggerFactory);
     }
@@ -71,7 +71,7 @@ public sealed class OverlaySceneHookTests
         var calibration = new FakeMapCalibrationService();
         calibration.CalibratedAreas.Add("A");
         var areaState = new StubAreaState { CurrentArea = "A" };
-        var service = BuildService(calibration, areaState, new FixedOverlayZoomSource(1.0));
+        var service = BuildService(calibration, areaState);
 
         var calls = 0;
         IOverlaySceneContext? captured = null;
@@ -84,7 +84,7 @@ public sealed class OverlaySceneHookTests
         // Drive a single tick. The fake render target / factory pointers
         // are never dereferenced inside the scene-context's Project (which
         // we don't call here) or the drawer body (which only counts).
-        service.DriveSceneForTest(renderTarget: null!, factory: null!, areaKey: "A", currentZoom: 1.0);
+        service.DriveSceneForTest(renderTarget: null!, factory: null!, areaKey: "A");
 
         calls.Should().Be(1);
         captured.Should().NotBeNull();
@@ -97,7 +97,7 @@ public sealed class OverlaySceneHookTests
         var calibration = new FakeMapCalibrationService();
         calibration.CalibratedAreas.Add("A");
         var areaState = new StubAreaState { CurrentArea = "A" };
-        var service = BuildService(calibration, areaState, new FixedOverlayZoomSource(1.0));
+        var service = BuildService(calibration, areaState);
 
         var calls = 0;
         var handle = ((IOverlayWindow)service).RegisterScene(_ => calls++);
@@ -107,7 +107,7 @@ public sealed class OverlaySceneHookTests
         service.SceneDrawerCount.Should().Be(0);
 
         // Subsequent ticks must not invoke the disposed drawer.
-        service.DriveSceneForTest(null!, null!, "A", 1.0);
+        service.DriveSceneForTest(null!, null!, "A");
         calls.Should().Be(0,
             "the disposed drawer must not fire — a future bug where Dispose() didn't " +
             "actually unhook the registration would slowly leak per-tick work and is " +
@@ -120,14 +120,14 @@ public sealed class OverlaySceneHookTests
         var calibration = new FakeMapCalibrationService();
         calibration.CalibratedAreas.Add("A");
         var areaState = new StubAreaState { CurrentArea = "A" };
-        var service = BuildService(calibration, areaState, new FixedOverlayZoomSource(1.0));
+        var service = BuildService(calibration, areaState);
 
         var order = new List<int>();
         using var h1 = ((IOverlayWindow)service).RegisterScene(_ => order.Add(1));
         using var h2 = ((IOverlayWindow)service).RegisterScene(_ => order.Add(2));
         using var h3 = ((IOverlayWindow)service).RegisterScene(_ => order.Add(3));
 
-        service.DriveSceneForTest(null!, null!, "A", 1.0);
+        service.DriveSceneForTest(null!, null!, "A");
 
         order.Should().Equal(new[] { 1, 2, 3 },
             because: "drawing-order matters for transparent geometry — D2D has no depth buffer, " +
@@ -153,12 +153,12 @@ public sealed class OverlaySceneHookTests
     {
         var calibration = new FakeMapCalibrationService(); // nothing calibrated
         var areaState = new StubAreaState { CurrentArea = "AreaUncalibrated" };
-        var service = BuildService(calibration, areaState, new FixedOverlayZoomSource(1.0));
+        var service = BuildService(calibration, areaState);
 
         var calls = 0;
         using var h = ((IOverlayWindow)service).RegisterScene(_ => calls++);
 
-        service.DriveSceneForTest(null!, null!, "AreaUncalibrated", 1.0);
+        service.DriveSceneForTest(null!, null!, "AreaUncalibrated");
 
         calls.Should().Be(1,
             "scene drawers MUST still fire on uncalibrated areas — pixel-native passes " +
@@ -172,29 +172,30 @@ public sealed class OverlaySceneHookTests
     }
 
     /// <summary>
-    /// mithril#1081 Task 11 — replaces <c>Project_plumbs_current_zoom_into_WorldToOverlay</c>.
-    /// Same invariant (live zoom flows into projection); new seam. Post-#1081 the
-    /// calibration service is no longer on the per-marker render path — the seam
-    /// moved to <see cref="OverlaySceneContext._composedCal"/>'s <c>ToOverlay</c>
-    /// call. Verify the invariant by checking the projected <see cref="OverlayPixel"/>
-    /// changes as zoom changes (Scale=10, CalibrationZoom=1 → output scales with
-    /// per-tick zoom ratio).
+    /// mithril#1095 — replaces the <c>MutableZoomSource</c>-based zoom-plumbing
+    /// test. The invariant is the same (live view state flows into projection);
+    /// the seam moved from <see cref="IOverlayZoomSource"/> to
+    /// <see cref="ILiveMapViewService"/>. Verify by checking that different
+    /// <see cref="MapViewFix"/> values (different pan/scale) produce different
+    /// projected pixels.
     /// </summary>
     [Fact]
-    public void Project_plumbs_current_zoom_into_bound_composed_cal()
+    public void Project_plumbs_live_fix_into_bound_composed_cal()
     {
         var calibration = new FakeMapCalibrationService();
         calibration.CalibratedAreas.Add("Map_A");
-        // Scale=10. Different zoom values will produce different projected pixels
-        // when the overlay service applies the live zoom via the MapViewFix path.
         calibration.OverlayCalForScene = _ =>
             new WorldToOverlayCalibration(
                 OriginX: 0, OriginY: 0, Scale: 10.0,
                 RotationRadians: 0, MirrorNorth: false);
 
         var areaState = new StubAreaState { CurrentArea = "Map_A" };
-        var zoom = new MutableZoomSource(1.5);
-        var service = BuildService(calibration, areaState, zoom);
+        var liveView = new StubLiveMapViewService
+        {
+            Fix = new MapViewFix(PanTexPxX: 0, PanTexPxY: 0, ViewScale: 1.0,
+                Confidence: 1.0, MeasuredAt: DateTimeOffset.UnixEpoch),
+        };
+        var service = BuildService(calibration, areaState, liveView);
 
         var projectedPoints = new List<OverlayPixel?>();
         using var h = ((IOverlayWindow)service).RegisterScene(ctx =>
@@ -202,20 +203,20 @@ public sealed class OverlaySceneHookTests
             projectedPoints.Add(ctx.Project(10, 20));
         });
 
-        service.DriveSceneForTest(null!, null!, "Map_A", 1.5);
-        var firstAtZoom1_5 = projectedPoints[^1];
+        service.DriveSceneForTest(null!, null!, "Map_A");
+        var firstFix = projectedPoints[^1];
 
-        zoom.CurrentZoom = 0.75;
-        service.DriveSceneForTest(null!, null!, "Map_A", 0.75);
-        var secondAtZoom0_75 = projectedPoints[^1];
+        // Different pan + scale → different overlay pixel.
+        liveView.Fix = new MapViewFix(PanTexPxX: 50, PanTexPxY: 30, ViewScale: 2.0,
+            Confidence: 1.0, MeasuredAt: DateTimeOffset.UnixEpoch);
+        service.DriveSceneForTest(null!, null!, "Map_A");
+        var secondFix = projectedPoints[^1];
 
-        firstAtZoom1_5.Should().NotBe(secondAtZoom0_75,
-            because: "Project must pass the per-tick live zoom into the bound " +
-            "WorldToOverlayCalibration.ToOverlay call. If this regresses to a hardcoded " +
-            "zoom (or the bound cal's CalibrationZoom only), pins drift whenever the " +
-            "in-game zoom slider is off the calibration zoom. mithril#1081 moved the " +
-            "seam from IMapCalibrationService.WorldToOverlay to OverlaySceneContext's " +
-            "bound _composedCal.ToOverlay call, but the live-zoom invariant from PR #863 remains.");
+        firstFix.Should().NotBe(secondFix,
+            because: "Project must compose the canonical pixel with the live MapViewFix. " +
+            "If this regresses, the overlay pins will not track the in-game map pan/scale. " +
+            "mithril#1095: IOverlayZoomSource deleted; ILiveMapViewService.GetCurrent is the " +
+            "real layer-2 source. Different fixes must produce different overlay pixels.");
     }
 
     [Fact]
@@ -239,12 +240,12 @@ public sealed class OverlaySceneHookTests
         // TextureCalForScene is null by default (no hook) → no texture-frame cal
         // → ResolveComposedOverlayCalibration returns (null, None)
         var areaState = new StubAreaState { CurrentArea = "A" };
-        var service = BuildService(calibration, areaState, new FixedOverlayZoomSource(1.0));
+        var service = BuildService(calibration, areaState);
 
         IOverlaySceneContext? ctx = null;
         using var h = ((IOverlayWindow)service).RegisterScene(c => ctx = c);
 
-        service.DriveSceneForTest(null!, null!, "A", 1.0);
+        service.DriveSceneForTest(null!, null!, "A");
 
         ctx.Should().NotBeNull();
         var px = ctx!.Project(10, 20);
@@ -267,8 +268,7 @@ public sealed class OverlaySceneHookTests
         calibration.CalibratedAreas.Add("A");
         var areaState = new StubAreaState { CurrentArea = "A" };
         var loggerFactory = new CapturingLoggerFactory();
-        var service = BuildService(calibration, areaState,
-            new FixedOverlayZoomSource(1.0), loggerFactory);
+        var service = BuildService(calibration, areaState, loggerFactory: loggerFactory);
 
         // Attach a MeterListener on SceneDrawerExceptions so we can assert
         // the counter ticked. Per the existing MissCountersTests pattern,
@@ -319,7 +319,7 @@ public sealed class OverlaySceneHookTests
         });
         using var hSibling = ((IOverlayWindow)service).RegisterScene(_ => siblingDrawerFired++);
 
-        service.DriveSceneForTest(null!, null!, "A", 1.0);
+        service.DriveSceneForTest(null!, null!, "A");
 
         throwingDrawerFired.Should().Be(1, "the throwing drawer must still be invoked exactly once.");
         siblingDrawerFired.Should().Be(1,
@@ -375,8 +375,7 @@ public sealed class OverlaySceneHookTests
 
         var stubDims = new StubMapTextureDimensions((1000, 1000));
         var areaState = new StubAreaState { CurrentArea = "Map_A" };
-        var service = BuildService(calibration, areaState,
-            new FixedOverlayZoomSource(1.0), dims: stubDims);
+        var service = BuildService(calibration, areaState, dims: stubDims);
 
         var projected = new List<OverlayPixel?>();
         using var h = ((IOverlayWindow)service).RegisterScene(ctx =>
@@ -384,7 +383,7 @@ public sealed class OverlaySceneHookTests
             projected.Add(ctx.Project(100, 200));
         });
 
-        service.DriveSceneForTest(null!, null!, "Map_A", 1.0);
+        service.DriveSceneForTest(null!, null!, "Map_A");
 
         projected.Single().Should().NotBeNull(
             because: "Project must compose the texture-frame record onto the overlay " +
@@ -398,9 +397,4 @@ public sealed class OverlaySceneHookTests
         public (int Width, int Height)? TryGetSizeBySha(string? sha) => result;
     }
 
-    private sealed class MutableZoomSource : IOverlayZoomSource
-    {
-        public MutableZoomSource(double zoom) { CurrentZoom = zoom; }
-        public double CurrentZoom { get; set; }
-    }
 }

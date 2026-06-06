@@ -50,13 +50,6 @@ public static class OverlayServiceCollectionExtensions
             return new MarkerSceneRenderer(loggerFactory?.CreateLogger("Mithril.Overlay"));
         });
 
-        // Zoom source — platform default is a constant 1.0 multiplier.
-        // Legolas overrides this registration with its
-        // SessionState.CurrentMapZoom adapter (#835 step 6). TryAdd so
-        // consumer modules can replace before Mithril.Overlay's own
-        // registration without losing their override.
-        services.TryAddSingleton<IOverlayZoomSource>(_ => new FixedOverlayZoomSource(1.0));
-
         // Overlay window service — singleton, surfaced under three contracts
         // (one instance, multiple lookups). Per CLAUDE.md GameState pattern:
         // the hosted-service registration is the lifecycle hook; the
