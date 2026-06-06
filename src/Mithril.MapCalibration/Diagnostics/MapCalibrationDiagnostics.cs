@@ -46,4 +46,28 @@ public static class MapCalibrationDiagnostics
         public static readonly Counter<long> SynthesisDisagree =
             Meter.CreateCounter<long>("mithril.map_calibration.synthesis.disagree");
     }
+
+    /// <summary>
+    /// Picker telemetry for <c>MapCalibrationService.PickByFrame</c> (#1093 spec §5.1).
+    ///
+    /// <para>The spec catalogs this counter under
+    /// <c>MithrilMeters.LegolasCalibration.PickerOutcomes</c> in <c>Mithril.Shared</c>,
+    /// but <c>Mithril.MapCalibration.csproj</c> deliberately doesn't reference
+    /// <c>Mithril.Shared</c> (layering). We mirror the spec's external observability
+    /// contract by declaring a sibling <see cref="Meter"/> with the SAME name
+    /// (<c>"Mithril.Legolas.Calibration"</c>) and the SAME instrument name
+    /// (<c>"mithril.legolas.calibration.picker.outcomes"</c>) here. A
+    /// <see cref="System.Diagnostics.Metrics.MeterListener"/> subscribing to either
+    /// the producer-side or the Shared-side <see cref="Meter"/> instance with this
+    /// name receives the picker measurements transparently.</para>
+    /// </summary>
+    public static class LegolasCalibrationPickerMeter
+    {
+        public static readonly Meter Meter = new("Mithril.Legolas.Calibration");
+
+        /// <summary>Every <c>PickByFrame</c> call. Tags: <c>frame</c> ∈ {texture, overlay},
+        /// <c>outcome</c> ∈ {hit, miss, fallback_below_floor}.</summary>
+        public static readonly Counter<long> PickerOutcomes =
+            Meter.CreateCounter<long>("mithril.legolas.calibration.picker.outcomes");
+    }
 }
