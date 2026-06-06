@@ -84,7 +84,80 @@ public class MapOverlayCalibrationFallbackDedupTests
             "(review iter-1 B2 — a per-marker trace would flood diagnostics on a " +
             "busy walkthrough).");
         traceEntries[0].Message.Should().Contain("AreaTest")
-            .And.Contain("No IAreaCalibrationService injected");
+            .And.Contain("No IAreaCalibrationService injected")
+            .And.Contain("RefreshCalibrationMarker",
+                "the generalised LogCalibrationFallback (#1093 D4) carries the " +
+                "call-site name verbatim so a triager can grep for which " +
+                "projection path silently dropped.");
+    }
+
+    [Fact]
+    public void RebuildCalibrationGhosts_skip_path_uses_new_3arg_signature()
+    {
+        // #1093 D4 — the generalised LogCalibrationFallback's 3-arg signature
+        // must be reachable from the RebuildCalibrationGhosts call-site. Drive
+        // the rebuild's no_overlay_cal branch by wiring a stub whose
+        // IsCurrentAreaCalibrated is true (so OnCalibrationChanged steers
+        // into the rebuild branch) but whose CurrentOverlayCalibration is
+        // null (so the rebuild hits the skip path). The fake's Changed event
+        // is the trigger we use to invoke OnCalibrationChanged from outside
+        // the ctor.
+        var session = new SessionState { CurrentMapZoom = 1.0 };
+        var settings = new LegolasSettings();
+        var surveyFlow = new SurveyFlowController(session, settings);
+        var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
+        var projector = new CoordinateProjector();
+        var brushes = new LegolasBrushes(settings);
+        var stub = new DecoupledCalStub();
+        var loggerFactory = new TestLoggerFactory();
+
+        var map = new MapOverlayViewModel(
+            session, projector, optimizer, surveyFlow, brushes, settings,
+            pinCalibration: null, positionState: null, bus: null,
+            areaCalibration: stub, loggerFactory: loggerFactory);
+
+        // Toggle on — the command's CanExecute checks IsCurrentAreaCalibrated,
+        // which the stub reports true. SetCalibrationValidation(true) calls
+        // RebuildCalibrationGhosts which sees CurrentOverlayCalibration null
+        // → the no_overlay_cal skip path.
+        map.ToggleCalibrationValidationCommand.CanExecute(null).Should().BeTrue();
+        map.ToggleCalibrationValidationCommand.Execute(null);
+
+        var traceEntries = loggerFactory.Entries
+            .Where(e => e.Level == LogLevel.Trace
+                        && e.Category == "Legolas.MapOverlay"
+                        && e.Message.Contains("RebuildCalibrationGhosts fallback"))
+            .ToList();
+
+        traceEntries.Should().HaveCount(1,
+            "the rebuild skip path emits the generalised LogCalibrationFallback " +
+            "with callSite=RebuildCalibrationGhosts.");
+        traceEntries[0].Message.Should().Contain("Map_AreaTest")
+            .And.Contain("no_overlay_cal")
+            .And.Contain("RebuildCalibrationGhosts");
+    }
+
+    /// <summary>Stub that reports calibrated (so the command's CanExecute lets
+    /// the toggle through) while keeping CurrentOverlayCalibration null (so
+    /// the rebuild hits the skip path). Models the #1093 follow-up scenario
+    /// where a texture-frame-only record is present but the overlay-frame
+    /// composition hasn't happened yet.</summary>
+    private sealed class DecoupledCalStub : IAreaCalibrationService
+    {
+        public MapSceneRef? CurrentScene => new MapSceneRef("AreaTest", null, "Map_AreaTest");
+        public string? CurrentAreaFriendlyName => "Test";
+        public bool IsCurrentAreaCalibrated => true;
+        public AreaCalibration? CurrentCalibration => new(1.0, 0.0, 0, 0, 3, 0.5);
+        public WorldToOverlayCalibration? CurrentOverlayCalibration => null;
+        public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
+        public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
+        public AreaCalibration? CalibrateCurrentArea(
+            IReadOnlyList<(WorldCoord World, OverlayPixel Pixel)> placements, double calibrationZoom = 1.0) => null;
+        public event EventHandler? Changed { add { } remove { } }
+        public void SelectScene(MapSceneRef scene) { }
+        public void ClearCurrentAreaCalibration() { }
+        public void NoteSurvey(string name, MetreOffset offset) { }
+        public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }
     }
 
     private sealed class StubAreaCalibrationService : IAreaCalibrationService
