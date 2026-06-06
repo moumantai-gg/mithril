@@ -12,12 +12,11 @@ namespace Mithril.MapCalibration.Internal;
 /// one character is exactly as valid on another.
 ///
 /// <para>Note: the in-game map pan/zoom that the user calibrated against
-/// <em>can</em> differ across characters (different UI preferences). The
-/// <see cref="AreaCalibration.CalibrationZoom"/> field captures the zoom; the
-/// no-pan assumption is documented in <see cref="WorldToOverlayCalibration.ToOverlay(WorldCoord, double)"/>.
-/// If a different character runs the game with a different pan, the projection
-/// drifts and the user re-runs the walkthrough &#8212; an established Legolas UX
-/// concern, not a data-shape concern.</para>
+/// <em>can</em> differ across characters (different UI preferences). Post-#1095
+/// the runtime engine measures pan + zoom on every gesture via
+/// <see cref="ILiveMapViewService"/> rather than reading a baked-in zoom
+/// stamp, so a cal solved for one (pan, zoom) state is valid for every other
+/// state once a fresh <see cref="MapViewFix"/> has been measured.</para>
 ///
 /// <para>Schema-3 (mithril#1082): the in-memory dictionary holds
 /// <see cref="SceneRefinements"/> typed-slot containers so an AutoCal

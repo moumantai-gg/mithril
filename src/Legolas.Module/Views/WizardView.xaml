@@ -742,16 +742,10 @@
                          the user matches the zoom or recalibrates. Suppressed
                          for legacy 1.0 stamps (the recalibrate hint below
                          handles those). -->
-                    <Border Margin="0,0,0,12" Padding="12,8" CornerRadius="3"
-                            Background="{StaticResource AccentSoftBrush}"
-                            BorderBrush="{StaticResource AccentBrush}" BorderThickness="1"
-                            HorizontalAlignment="Center" MaxWidth="520"
-                            Visibility="{Binding MapOverlay.IsZoomMismatchWarningVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                        <TextBlock Text="{Binding MapOverlay.ZoomMismatchText}"
-                                   TextWrapping="Wrap" TextAlignment="Center"
-                                   Foreground="{StaticResource AccentSoftTextBrush}"
-                                   FontSize="{DynamicResource AppFontSizeBody}" />
-                    </Border>
+                    <!-- #1095: zoom-mismatch banner removed — the new layer-2 model
+                         measures PG's live view via the screenshot probe; there's no
+                         "slider drifted from cal zoom" failure mode to surface anymore. -->
+
 
                     <!-- #524: legacy-stamp recalibrate hint. One-time per area
                          per session (Got it dismisses for the rest of the
