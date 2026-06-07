@@ -338,6 +338,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         var anchorArea = _areaCalibration?.CurrentScene?.MapAssetKey;
         var liveFix = anchorArea is not null ? _liveView?.GetCurrent(anchorArea) : null;
 
+        // mithril#1107 review-fix-3: when ILiveMapViewService is wired but no fix is
+        // available, REFUSE to project (mirror RebuildCalibrationGhosts / MotherlodeMarkerPixels).
+        // ResolveSurveyAnchor's no-fix branch falls back to canonical (texture-pixel) coords,
+        // which post-#1107 rebrand renders the "you are here" anchor at off-screen
+        // texture pixels — exactly the (-102,1102)-style coords seen in 4fe128da verify logs.
+        // When _liveView is null (legacy test ctors) keep the canonical fallback.
+        if (_liveView is not null && liveFix is null && _latestTrackerFix is not null)
+        {
+            LogCalibrationFallback(anchorArea ?? "<unknown>", "RefreshSurveyPlayerAnchor", "no_live_fix");
+            return;
+        }
+
         var res = ResolveSurveyAnchor(
             _latestTrackerFix,
             _characterPin?.Current,
