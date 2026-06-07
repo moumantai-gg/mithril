@@ -395,7 +395,36 @@ The calibration *consumer* chain — picker → `AreaCalibrationService` lifecyc
 | `ghosts_built` | int | Ghost dots actually placed (may be < `refs_count` if some refs project off-canvas). |
 | `cal.source` | string | `AreaCalibration.Source` enum verbatim (`UserRefinement` / `AutoCapture` / `BundledBaseline` / `CommunitySync`). Emitted only when `cal.path=direct_overlay`. |
 | `cal.residual_px` | double | Calibration residual. Emitted only when `cal.path=direct_overlay`. |
-| `cal.path` | string | One of `direct_overlay` (overlay-frame calibration consumed via `CurrentOverlayCalibration`) or `none` (no overlay calibration available — the ghosts list is empty regardless of `refs_count`). |
+| `cal.path` | string | One of `direct_overlay` (overlay-frame calibration consumed via `CurrentOverlayCalibration`), `composed_from_texture` (texture-frame record composed onto the overlay surface via the shared `IComposedOverlayCalibrationResolver` — mithril#1096), or `none` (no usable calibration this frame — the ghosts list is empty regardless of `refs_count`). |
+
+**`cal.path = composed_from_texture` (mithril#1096):** the producer resolved
+the overlay-frame calibration by composing a texture-frame record onto the
+target surface (overlay window or wizard canvas) via
+`WorldToTextureCalibration.ProjectThroughOverlay(MapRect)` with dims from
+`IMapTextureDimensions`. Indicates the post-#1081 AutoCal record path lit up
+on this scene. The same vocabulary now appears on the VM-side consumer spans
+(`calibration.ghosts.rebuild`, etc.) and on the `overlay_project` span — both
+sides route through the shared `IComposedOverlayCalibrationResolver`.
+
+**`ProjectionSkipped` counter semantic note (mithril#1096):** the counter
+no longer increments when a texture-frame record successfully composes —
+the scene hit the happy path via the composer. Only `Path == None`
+outcomes increment the counter. A drop in this counter for a given
+`area` between pre- and post-#1096 builds is the migration landing
+correctly, not a regression.
+
+**MissReason vocabulary on `LogCalibrationFallback` Trace records (mithril#1096):**
+when the composer returns `Path == None`, the consumer feeds the resolver's
+`MissReason` into the dedup helper:
+
+| MissReason | Cause |
+|---|---|
+| `no_scene` | `CurrentScene` is null (no `MapAssetChanged` yet). |
+| `no_usable_calibration` | Picker returned neither overlay nor texture record. |
+| `null_sha` | Texture record exists but `PixelSha256` is null (pre-#1081). User re-runs AutoCalibrate. |
+| `unsized_surface` | Surface dims ≤ 0 (window not realised; wizard not laid out). |
+| `catalogue_miss` | Texture sha doesn't match `CanonicalAssetHashes`. |
+| `no_overlay_cal` | Legacy fallback (composer not wired — should not appear in production builds). |
 
 Companion `Mithril.Legolas.Calibration` meter instruments emitted in `meter_counter` records (below):
 

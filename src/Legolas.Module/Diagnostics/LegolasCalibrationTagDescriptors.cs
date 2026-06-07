@@ -42,7 +42,7 @@ public sealed class LegolasCalibrationTagDescriptors : ITagDescriptorProvider
         new("cal.frame",             PiiClassification.Safe, Subsystem, "Calibration frame: texture | overlay."),
         new("cal.residual_px",       PiiClassification.Safe, Subsystem, "Residual error in pixels for the picked calibration record."),
         new("cal.refs",              PiiClassification.Safe, Subsystem, "Reference-landmark count backing the picked calibration."),
-        new("cal.path",              PiiClassification.Safe, Subsystem, "Projection path taken: direct_overlay | none (the composed-cal migration adds composed)."),
+        new("cal.path",              PiiClassification.Safe, Subsystem, "Projection path taken: direct_overlay | composed_from_texture | none. mithril#1096 finalised the vocabulary; the resolver returns ComposedFromTexture when only a texture-frame record exists and composes onto the live surface."),
         new("consumer",              PiiClassification.Safe, Subsystem, "VM-side projection consumer: ghosts | motherlode_markers | motherlode_guidance | survey_pin | survey_anchor | wizard_landmarks."),
         new("frame",                 PiiClassification.Safe, Subsystem, "PickByFrame request frame: texture | overlay."),
         new("refs_count",            PiiClassification.Safe, Subsystem, "Reference-landmark count input to RebuildCalibrationGhosts."),
