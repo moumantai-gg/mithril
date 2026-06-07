@@ -180,6 +180,16 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         return new SceneDrawerHandle(this, registration);
     }
 
+    /// <inheritdoc />
+    public (double Width, double Height) GetSurfaceSize()
+    {
+        var window = _window;
+        if (window is null) return (0, 0);
+        var surface = window.OverlaySurface;
+        if (surface is null) return (0, 0);
+        return (surface.ActualWidth, surface.ActualHeight);
+    }
+
     private void UnregisterScene(SceneDrawerRegistration registration)
     {
         lock (_sceneDrawersLock)
@@ -578,26 +588,8 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         if (scene is not { } s) return (null, CalPath.None);
         var overlayCal = _calibration.GetOverlayCalibration(s);
         var textureCal = overlayCal is null ? _calibration.GetTextureCalibration(s) : null;
-        var (w, h) = ResolveOverlaySurfaceSize();
+        var (w, h) = GetSurfaceSize();
         return ResolveComposedOverlayCalibrationForTest(s, overlayCal, textureCal, _textureDimensions, w, h);
-    }
-
-    /// <summary>
-    /// Read the live overlay surface's DIU size. Per the overlay's strict-1:1
-    /// invariant (docs/legolas-overview.md §Pitfalls + the XAML's no-internal-
-    /// zoom-pan promise) the surface fills the in-game map region; ActualWidth/
-    /// Height in DIU == OverlayPixel in current Mithril (single-monitor DPI;
-    /// CanvasOverlayMapping identity case per #1077 §3 / P.3). Returns (0,0)
-    /// when the window or surface isn't realised yet — caller treats as F2
-    /// fail-soft.
-    /// </summary>
-    private (double Width, double Height) ResolveOverlaySurfaceSize()
-    {
-        var window = _window;
-        if (window is null) return (0, 0);
-        var surface = window.OverlaySurface;
-        if (surface is null) return (0, 0);
-        return (surface.ActualWidth, surface.ActualHeight);
     }
 
     /// <summary>
@@ -613,7 +605,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         var texCal = _calibration.GetTextureCalibration(scene);
         if (texCal is null) return "no usable calibration";
         if (string.IsNullOrWhiteSpace(texCal.Value.PixelSha256)) return "null_sha (pre-#1081 record)";
-        var (w, h) = ResolveOverlaySurfaceSize();
+        var (w, h) = GetSurfaceSize();
         if (w <= 0 || h <= 0) return "unsized_surface";
         if (_textureDimensions.TryGetSizeBySha(texCal.Value.PixelSha256) is null) return "catalogue_miss";
         return "unknown";
