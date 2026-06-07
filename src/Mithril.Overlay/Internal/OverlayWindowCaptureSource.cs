@@ -39,8 +39,26 @@ internal sealed class OverlayWindowCaptureSource : IOverlayCaptureSource
 
         try
         {
-            int x = (int)window.Left, y = (int)window.Top;
-            int w = (int)window.Width, h = (int)window.Height;
+            // mithril#1107 review fix: Capture() runs on a Task.Run thread per
+            // LiveMapViewService.RunProbe, but Window.Left/Top/Width/Height are
+            // WPF dispatcher-affined — accessing them off the dispatcher throws
+            // InvalidOperationException. Pre-fix: every probe failed with "calling
+            // thread cannot access this object", the live-view detector never
+            // produced a fix, and consumers fell back to canonical projection.
+            // Marshal the read to the dispatcher (with CheckAccess for the rare
+            // case the probe IS on the UI thread).
+            int x, y, w, h;
+            if (window.Dispatcher.CheckAccess())
+            {
+                x = (int)window.Left; y = (int)window.Top;
+                w = (int)window.Width; h = (int)window.Height;
+            }
+            else
+            {
+                var (rx, ry, rw, rh) = window.Dispatcher.Invoke(() =>
+                    ((int)window.Left, (int)window.Top, (int)window.Width, (int)window.Height));
+                x = rx; y = ry; w = rw; h = rh;
+            }
             if (w <= 0 || h <= 0) return null;
 
             using var bmp = new Bitmap(w, h, PixelFormat.Format24bppRgb);

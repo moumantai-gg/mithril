@@ -688,14 +688,21 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         var ghostFix = areaKey != "<unknown>" ? _liveView?.GetCurrent(areaKey) : null;
         if (_liveView is not null && ghostFix is null)
         {
+            // mithril#1107 review-fix-3: DO NOT TriggerLiveViewRefresh from here.
+            // OnLiveViewChanged re-invokes RebuildCalibrationGhosts when the probe
+            // raises Changed, so a probe-failed → Changed → rebuild → no fix →
+            // trigger-refresh → probe-failed cycle is a tight loop on the UI thread
+            // (RaiseChanged marshals via the dispatcher, and the LiveMapViewService
+            // has no logger so the loop is invisible in boot.log). User-action sites
+            // (SetCalibrationValidation toggle, area-change, RedetectMapViewHotkey)
+            // are the canonical triggers; if the probe consistently fails, leave it
+            // failed and let the user re-trigger via the hotkey.
             LogCalibrationFallback(areaKey, "RebuildCalibrationGhosts", "no_live_fix");
             MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                 new KeyValuePair<string, object?>("consumer", "ghosts"),
                 new KeyValuePair<string, object?>("area", areaKey));
             act?.SetTag("cal.path", "none");
             act?.SetTag("area", areaKey);
-            // Trigger an async probe so the next Changed event rebuilds.
-            TriggerLiveViewRefresh();
             return;
         }
         var refs = _areaCalibration!.CurrentAreaReferences;
