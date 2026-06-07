@@ -604,7 +604,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             _mapVisibleBeforeValidation = _session.IsMapVisible;
             ShowCalibrationGhosts = true;
             _session.IsMapVisible = true;
-            RebuildCalibrationGhosts();
+            // mithril#1096 review fix: setting IsMapVisible=true triggers OverlayController
+            // to Show() the overlay window, but WPF's layout pass that sizes
+            // OverlaySurface.ActualWidth is async. A synchronous RebuildCalibrationGhosts
+            // here sees ActualWidth=0 on first toggle, the composer's unsized_surface
+            // branch fires for texture-frame-only scenes (exactly the case #1096 fixes),
+            // and ghosts never build — the user toggles, sees nothing, and has to toggle
+            // again to recover. Defer to Loaded priority so layout completes first.
+            DeferAfterLayout(RebuildCalibrationGhosts);
             // #1095: trigger a fresh live-view probe so the ghosts render
             // against the current pan/zoom without requiring a manual hotkey.
             TriggerLiveViewRefresh();
@@ -1213,6 +1220,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             LogCalibrationFallback(areaKey, "RefreshCalibrationMarker", "No IAreaCalibrationService injected — marker cannot anchor.");
             return;
         }
+        // mithril#1096 NOT MIGRATED: this site reads CurrentOverlayCalibration directly
+        // (not via ResolveOverlayCal) because the Pair-phase pixel→world inverse is
+        // an overlay-frame-only operation by design — there is no overlay-frame cal yet
+        // during the calibration walkthrough that BUILDS it, so texture-frame composition
+        // doesn't apply. The IsPairing gate above means we only reach here when an
+        // overlay-frame seed already exists (from a prior solve / community sync /
+        // bundled baseline). Spec §2.
         var cal = _areaCalibration.CurrentOverlayCalibration;
         if (cal is null)
         {
@@ -1232,6 +1246,28 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
         var style = BuildCalibrationMarkerStyle(marker.IsSelected);
         _calibrationMarkers[marker] = _markers.AddMarker(areaKey, world.X, world.Z, style);
+    }
+
+    /// <summary>mithril#1096 review fix — defer <paramref name="action"/> until after the
+    /// next WPF layout/render pass so newly-shown overlay surfaces have their
+    /// <c>ActualWidth</c>/<c>ActualHeight</c> populated before <see cref="ResolveOverlayCal"/>
+    /// is invoked. <c>DispatcherPriority.Loaded</c> is the right priority: it fires AFTER
+    /// <c>Render</c> (which runs layout), so by the time the queued action runs the
+    /// overlay surface is sized. When no WPF dispatcher is available (test ctor),
+    /// runs synchronously — preserves legacy test behaviour.</summary>
+    private static void DeferAfterLayout(Action action)
+    {
+        var dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null)
+        {
+            // No WPF dispatcher (test ctor, headless): run synchronously.
+            // GetSurfaceSize() returns (0,0) on the legacy test fakes anyway,
+            // and the ResolveOverlayCal helper falls back to direct-overlay-only
+            // when the composer isn't wired, so this preserves pre-#1096 behaviour.
+            action();
+            return;
+        }
+        dispatcher.BeginInvoke(action, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     /// <summary>mithril#1096 — single point of policy for "give me a usable

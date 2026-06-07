@@ -381,7 +381,12 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         // once, then thread it through to scene drawers (via BeginFrame) and to the
         // marker loop. Replaces the per-call calibration.WorldToOverlay path the
         // marker loop and IOverlaySceneContext.Project used to take individually.
-        var (composedCal, calPath) = ResolveComposedOverlayCalibration(resolvedScene);
+        //
+        // mithril#1096 review fix: capture the full ComposedCalResolution so MissReason
+        // is available below at the once-per-scene Trace log without a second resolve.
+        var calResolution = ResolveComposedOverlayCalibration(resolvedScene);
+        var composedCal = calResolution.Calibration;
+        var calPath = calResolution.Path;
 
         // The scene the per-frame context binds to: if resolution failed, use
         // a synthesized composite with empty calibration key so Project()
@@ -424,7 +429,11 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
                 new KeyValuePair<string, object?>("area", areaKey));
             if (_projectionMissAreasLogged.TryAdd(assetKey, 0))
             {
-                var reason = ClassifyComposedMissReason(missedScene);
+                // mithril#1096 review fix: reuse MissReason from the line-384 resolve
+                // instead of calling the resolver a second time (the prior shape
+                // raced background-thread SaveUserRefinement and double-counted the
+                // picker metric on every miss-logged frame).
+                var reason = calResolution.MissReason ?? "unknown";
                 _logger?.LogTrace(
                     "OverlayWindowService: cal.path=none for calibrated scene {AssetKey} (reason={Reason}); marker projection skipped this frame and subsequent frames until the condition resolves.",
                     assetKey, reason);
@@ -514,29 +523,19 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
     /// <summary>
     /// mithril#1081 / #1096 — thin pass-through to the shared
-    /// <see cref="IComposedOverlayCalibrationResolver"/>. Returns the legacy
-    /// <c>(Cal, Path)</c> tuple shape so existing call sites at lines 371 + 660
-    /// stay one-liner-clean.
+    /// <see cref="IComposedOverlayCalibrationResolver"/>. Returns the full
+    /// <see cref="ComposedCalResolution"/> so the per-frame call at
+    /// <see cref="OnSurfaceRender"/> can reuse <c>MissReason</c> for the
+    /// once-per-scene Trace log without a second resolver call (review-fix #1096:
+    /// the prior shape returned <c>(Cal, Path)</c> and a sibling
+    /// <c>ClassifyComposedMissReason</c> re-called the resolver, which races a
+    /// background-thread <c>SaveUserRefinement</c> AND double-counts the picker
+    /// meter on every miss-logged frame).
     /// </summary>
-    private (WorldToOverlayCalibration? Cal, CalPath Path)
-        ResolveComposedOverlayCalibration(MapSceneRef? scene)
+    private ComposedCalResolution ResolveComposedOverlayCalibration(MapSceneRef? scene)
     {
         var (w, h) = GetSurfaceSize();
-        var r = _composedResolver.Resolve(scene, w, h);
-        return (r.Calibration, r.Path);
-    }
-
-    /// <summary>
-    /// mithril#1081 / #1096 — re-derives the reason a composed overlay calibration
-    /// could not be built for a calibrated scene. Now delegates to the resolver's
-    /// MissReason (called at most once per scene per session, gated by
-    /// <see cref="_projectionMissAreasLogged"/>).
-    /// </summary>
-    private string ClassifyComposedMissReason(MapSceneRef scene)
-    {
-        var (w, h) = GetSurfaceSize();
-        var r = _composedResolver.Resolve(scene, w, h);
-        return r.MissReason ?? "unknown";
+        return _composedResolver.Resolve(scene, w, h);
     }
 
     /// <summary>Surface the renderer to test code &#8212; production
@@ -577,7 +576,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         // mithril#1081 (Task 11): resolve the composed cal so tests that exercise
         // the projection path and the texture-frame composition path see the same
         // code as production.
-        var (composedCal, _) = ResolveComposedOverlayCalibration(scene);
+        var composedCal = ResolveComposedOverlayCalibration(scene).Calibration;
         // mithril#1095: resolve the live view fix for the test scene.
         var fix = _liveView.GetCurrent(scene.MapAssetKey);
         _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, scene, fix, composedCal);

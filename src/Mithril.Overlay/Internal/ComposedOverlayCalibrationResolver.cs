@@ -39,8 +39,13 @@ internal sealed class ComposedOverlayCalibrationResolver : IComposedOverlayCalib
         if (string.IsNullOrWhiteSpace(tex.PixelSha256))
             return new(null, CalPath.None, "null_sha");
 
-        // F2 — surface not yet laid out.
-        if (surfaceWidth <= 0 || surfaceHeight <= 0)
+        // F2 — surface not yet laid out (or in a transient sub-pixel layout state).
+        // mithril#1096 review fix: guard `< 1` instead of `<= 0` so fractional
+        // ActualWidth/Height (rare WPF mid-DPI / mid-animation transient) doesn't
+        // pass the guard then truncate to 0 in the (int) casts below, which would
+        // build a MapRect with Width=Height=0 and a composed cal that collapses
+        // every world coord to the overlay origin (Scale = Width/TextureWidth = 0).
+        if (surfaceWidth < 1 || surfaceHeight < 1)
             return new(null, CalPath.None, "unsized_surface");
 
         var resolved = _textureDimensions.TryGetSizeBySha(tex.PixelSha256);
