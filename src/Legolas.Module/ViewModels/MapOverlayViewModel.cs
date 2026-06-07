@@ -806,6 +806,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// rebuilt the ghosts at the now-valid scale.</para></summary>
     private void OnLiveViewChanged(string area)
     {
+        // mithril#1107 review-fix-4 logging: surface that Changed actually
+        // arrived (the underlying probe completed). Pair this Trace with the
+        // LiveMapViewService.Probe(...) log to confirm end-to-end delivery.
+        _logger?.LogTrace("OnLiveViewChanged({Area}): fix={Fix} status={Status} ShowGhosts={ShowGhosts}.",
+            area,
+            _liveView?.GetCurrent(area) is { } f ? $"pan=({f.PanTexPxX:0},{f.PanTexPxY:0}) scale={f.ViewScale:0.000}" : "<null>",
+            _liveView?.GetStatus(area).ToString() ?? "<no_service>",
+            ShowCalibrationGhosts);
         OnPropertyChanged(nameof(CalibrationGhosts));
         OnPropertyChanged(nameof(MotherlodeMarkerPixels));
         OnPropertyChanged(nameof(MotherlodeGuidanceOverlay));
@@ -857,7 +865,17 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     private void TriggerLiveViewRefresh()
     {
         var area = _areaCalibration?.CurrentScene?.MapAssetKey;
-        if (string.IsNullOrEmpty(area) || _liveView is null) return;
+        if (string.IsNullOrEmpty(area))
+        {
+            _logger?.LogTrace("TriggerLiveViewRefresh: no current scene; skipping.");
+            return;
+        }
+        if (_liveView is null)
+        {
+            _logger?.LogTrace("TriggerLiveViewRefresh({Area}): no ILiveMapViewService wired; skipping.", area);
+            return;
+        }
+        _logger?.LogTrace("TriggerLiveViewRefresh({Area}): calling RefreshAsync.", area);
         _ = _liveView.RefreshAsync(area);
     }
 

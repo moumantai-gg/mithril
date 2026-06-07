@@ -35,7 +35,11 @@ internal sealed class OverlayWindowCaptureSource : IOverlayCaptureSource
     public GrayImage? Capture()
     {
         var window = _windowAccessor();
-        if (window is null) return null;
+        if (window is null)
+        {
+            _logger?.LogTrace("Capture: window accessor returned null — overlay not realised yet.");
+            return null;
+        }
 
         try
         {
@@ -59,7 +63,12 @@ internal sealed class OverlayWindowCaptureSource : IOverlayCaptureSource
                     ((int)window.Left, (int)window.Top, (int)window.Width, (int)window.Height));
                 x = rx; y = ry; w = rw; h = rh;
             }
-            if (w <= 0 || h <= 0) return null;
+            if (w <= 0 || h <= 0)
+            {
+                _logger?.LogTrace("Capture: window has non-positive dims ({W}x{H} at {X},{Y}); skipping.", w, h, x, y);
+                return null;
+            }
+            _logger?.LogTrace("Capture: copying screen region {W}x{H} at ({X},{Y}).", w, h, x, y);
 
             using var bmp = new Bitmap(w, h, PixelFormat.Format24bppRgb);
             using (var g = Graphics.FromImage(bmp))
