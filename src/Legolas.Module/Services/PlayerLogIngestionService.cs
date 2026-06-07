@@ -53,8 +53,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private readonly IDomainEventSubscriber _bus;
     private readonly IAreaCalibrationService _areaCalibration;
     private readonly ILiveMapViewService? _liveView;
-    private readonly IComposedOverlayCalibrationResolver? _composedResolver;   // mithril#1096
-    private readonly IOverlayWindow? _overlayWindow;                            // mithril#1096
+    private readonly IComposedOverlayCalibrationResolver? _composedResolver;   // mithril#1096; post-#1107 takes no surface dims
     private readonly SurveyFlowController _flow;
     private readonly SessionState _session;
     private readonly MotherlodeMeasurementCoordinator _motherlode;
@@ -80,14 +79,12 @@ public sealed class PlayerLogIngestionService : BackgroundService
         LegolasSettings settings,
         ILoggerFactory? loggerFactory = null,
         ILiveMapViewService? liveView = null,
-        IComposedOverlayCalibrationResolver? composedResolver = null,   // mithril#1096
-        IOverlayWindow? overlayWindow = null)                            // mithril#1096
+        IComposedOverlayCalibrationResolver? composedResolver = null)   // mithril#1096; post-#1107 takes no surface dims
     {
         _bus = bus;
         _areaCalibration = areaCalibration;
         _liveView = liveView;
         _composedResolver = composedResolver;
-        _overlayWindow = overlayWindow;
         _flow = flow;
         _session = session;
         _motherlode = motherlode;
@@ -319,10 +316,9 @@ public sealed class PlayerLogIngestionService : BackgroundService
     /// behaviour when not (preserves existing tests).</summary>
     private (WorldToOverlayCalibration? Cal, string? MissReason) ResolveOverlayCal()
     {
-        if (_composedResolver is not null && _overlayWindow is not null)
+        if (_composedResolver is not null)
         {
-            var (w, h) = _overlayWindow.GetSurfaceSize();
-            var r = _composedResolver.Resolve(_areaCalibration.CurrentScene, w, h);
+            var r = _composedResolver.Resolve(_areaCalibration.CurrentScene);
             return (r.Calibration, r.MissReason);
         }
         var direct = _areaCalibration.CurrentOverlayCalibration;

@@ -102,16 +102,4 @@ public interface IOverlayWindow : INotifyPropertyChanged
     /// convenience for the "just plot world points" case.</para>
     /// </summary>
     IDisposable RegisterScene(Action<IOverlaySceneContext> draw);
-
-    /// <summary>The live D2D overlay surface's DIU size. Returns
-    /// <c>(0, 0)</c> when the window or its surface isn't realised yet
-    /// (callers treat as the F2 "unsized_surface" fail-soft branch). Mirror
-    /// of <see cref="System.Windows.FrameworkElement.ActualWidth"/> /
-    /// <see cref="System.Windows.FrameworkElement.ActualHeight"/> on the
-    /// underlying surface.
-    ///
-    /// <para>mithril#1096: exposed so VM consumers (Legolas) can supply the
-    /// same surface dims to <see cref="IComposedOverlayCalibrationResolver"/>
-    /// that the marker projection block uses internally.</para></summary>
-    (double Width, double Height) GetSurfaceSize();
 }

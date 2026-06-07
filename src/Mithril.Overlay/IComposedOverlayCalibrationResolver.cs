@@ -2,24 +2,26 @@ using Mithril.MapCalibration;
 
 namespace Mithril.Overlay;
 
-/// <summary>Composes a <see cref="WorldToOverlayCalibration"/> for an
-/// arbitrary surface size by reading <see cref="IMapCalibrationService"/>'s
-/// frame-typed records: an overlay-frame record consumes directly; a
-/// texture-frame record composes onto the surface rect via
-/// <see cref="WorldToTextureCalibration.ProjectThroughOverlay(MapRect)"/>
-/// with dims looked up from <see cref="IMapTextureDimensions"/>.
+/// <summary>Resolves a <see cref="WorldToOverlayCalibration"/> for a scene
+/// from the underlying frame-typed records: an overlay-frame record consumes
+/// directly; a texture-frame record is rebranded into an overlay-frame cal
+/// (same transform fields, different type — the layer-2 <c>MapViewFix</c>
+/// applied by <see cref="WorldToOverlayCalibration.ToLiveOverlay"/> handles
+/// surface scaling).
 ///
-/// <para>Pure: the (scene, w, h) inputs fully determine the result given the
-/// injected calibration + dim-catalogue state. The caller chooses the
-/// surface (overlay window vs. wizard canvas vs. test).</para>
+/// <para>mithril#1107 post-review note: the original mithril#1081 design
+/// applied <c>MapRect</c> + surface-dim scaling here. That fought #1095's
+/// two-layer projection model — the surface-scaled output of <c>ToOverlay</c>
+/// double-scaled through <c>ToLiveOverlay</c>'s fix-application. The
+/// rebrand-only shape produces consistent canonical-texture-pixel output for
+/// both wizard-solved and composed cals, so the layer-2 fix correctly
+/// translates downstream regardless of which path produced the cal.</para>
 ///
-/// <para>mithril#1096: lifted from <c>OverlayWindowService.ResolveComposedOverlayCalibrationForTest</c>
-/// so VM-side consumers + the marker projection block can share one resolver
-/// and emit one <c>cal.path</c> vocabulary.</para></summary>
+/// <para>Pure: the scene input + the injected calibration store fully
+/// determine the result.</para></summary>
 public interface IComposedOverlayCalibrationResolver
 {
-    /// <summary>Resolve the composed overlay calibration for <paramref name="scene"/>
-    /// against a target surface of the given dimensions. See
-    /// <see cref="ComposedCalResolution"/> for the result shape.</summary>
-    ComposedCalResolution Resolve(MapSceneRef? scene, double surfaceWidth, double surfaceHeight);
+    /// <summary>Resolve the overlay-frame calibration for <paramref name="scene"/>.
+    /// See <see cref="ComposedCalResolution"/> for the result shape.</summary>
+    ComposedCalResolution Resolve(MapSceneRef? scene);
 }

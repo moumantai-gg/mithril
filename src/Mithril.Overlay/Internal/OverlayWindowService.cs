@@ -78,7 +78,10 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     private IDisposable? _mapAssetChangedSub;
     private readonly IPositionState _positionState; // reserved for future consumers; ensures the DI shape matches Decision C
     private readonly ILiveMapViewService _liveView; // mithril#1095 — real layer-2 measurement (pan + scale from cross-correlation probe)
-    private readonly IMapTextureDimensions _textureDimensions; // mithril#1081
+    // mithril#1107 review fix: _textureDimensions was injected for the pre-review
+    // composer's catalogue lookup; the post-review composer is a direct rebrand
+    // (no catalogue lookup), so the dep is dropped. Reusable via DI if a future
+    // consumer needs it.
     private readonly IComposedOverlayCalibrationResolver _composedResolver; // mithril#1096
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger? _logger;
@@ -122,7 +125,6 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         IDomainEventSubscriber bus,
         IPositionState positionState,
         ILiveMapViewService liveView,
-        IMapTextureDimensions textureDimensions,   // mithril#1081
         IComposedOverlayCalibrationResolver composedResolver,   // mithril#1096
         ILoggerFactory? loggerFactory = null)
     {
@@ -135,7 +137,6 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         _bus = bus;
         _positionState = positionState;
         _liveView = liveView;
-        _textureDimensions = textureDimensions;    // mithril#1081
         _composedResolver = composedResolver;      // mithril#1096
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger("Mithril.Overlay");
@@ -181,16 +182,6 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             "Scene drawer registered (now {Count}).",
             _sceneDrawers.Length);
         return new SceneDrawerHandle(this, registration);
-    }
-
-    /// <inheritdoc />
-    public (double Width, double Height) GetSurfaceSize()
-    {
-        var window = _window;
-        if (window is null) return (0, 0);
-        var surface = window.OverlaySurface;
-        if (surface is null) return (0, 0);
-        return (surface.ActualWidth, surface.ActualHeight);
     }
 
     private void UnregisterScene(SceneDrawerRegistration registration)
@@ -522,21 +513,16 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     }
 
     /// <summary>
-    /// mithril#1081 / #1096 — thin pass-through to the shared
+    /// mithril#1081 / #1096 / #1107 — thin pass-through to the shared
     /// <see cref="IComposedOverlayCalibrationResolver"/>. Returns the full
     /// <see cref="ComposedCalResolution"/> so the per-frame call at
     /// <see cref="OnSurfaceRender"/> can reuse <c>MissReason</c> for the
-    /// once-per-scene Trace log without a second resolver call (review-fix #1096:
-    /// the prior shape returned <c>(Cal, Path)</c> and a sibling
-    /// <c>ClassifyComposedMissReason</c> re-called the resolver, which races a
-    /// background-thread <c>SaveUserRefinement</c> AND double-counts the picker
-    /// meter on every miss-logged frame).
+    /// once-per-scene Trace log without a second resolver call. The pre-review
+    /// composer needed surface dims for <c>MapRect</c>-based composition; post-#1107
+    /// the resolver is a rebrand-only operation so no dims are passed.
     /// </summary>
     private ComposedCalResolution ResolveComposedOverlayCalibration(MapSceneRef? scene)
-    {
-        var (w, h) = GetSurfaceSize();
-        return _composedResolver.Resolve(scene, w, h);
-    }
+        => _composedResolver.Resolve(scene);
 
     /// <summary>Surface the renderer to test code &#8212; production
     /// consumers inject <see cref="MarkerSceneRenderer"/> directly via DI

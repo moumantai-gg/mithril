@@ -34,8 +34,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     private readonly MotherlodeMeasurementCoordinator? _motherlode;
     private readonly ICharacterPinAnchor? _characterPin;
     private readonly ILiveMapViewService? _liveView;
-    private readonly IComposedOverlayCalibrationResolver? _composedResolver;   // mithril#1096
-    private readonly IOverlayWindow? _overlayWindow;                            // mithril#1096
+    private readonly IComposedOverlayCalibrationResolver? _composedResolver;   // mithril#1096; post-#1107 takes no surface dims
     private readonly IDisposable? _positionSub;
 
     // #835 step 3: shared Mithril.Overlay marker registry. Survey pins are
@@ -68,7 +67,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null, ILiveMapViewService? liveView = null, IComposedOverlayCalibrationResolver? composedResolver = null, IOverlayWindow? overlayWindow = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null, ILiveMapViewService? liveView = null, IComposedOverlayCalibrationResolver? composedResolver = null)
     {
         _session = session;
         _projector = projector;
@@ -85,8 +84,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _areaState = areaState;
         _logger = loggerFactory?.CreateLogger("Legolas.MapOverlay");
         _liveView = liveView;
-        _composedResolver = composedResolver;   // mithril#1096
-        _overlayWindow = overlayWindow;          // mithril#1096
+        _composedResolver = composedResolver;   // mithril#1096; post-#1107 takes no surface dims
         if (_liveView is not null)
             _liveView.Changed += OnLiveViewChanged;
         if (_motherlode is not null)
@@ -604,14 +602,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             _mapVisibleBeforeValidation = _session.IsMapVisible;
             ShowCalibrationGhosts = true;
             _session.IsMapVisible = true;
-            // mithril#1096 review fix: setting IsMapVisible=true triggers OverlayController
-            // to Show() the overlay window, but WPF's layout pass that sizes
-            // OverlaySurface.ActualWidth is async. A synchronous RebuildCalibrationGhosts
-            // here sees ActualWidth=0 on first toggle, the composer's unsized_surface
-            // branch fires for texture-frame-only scenes (exactly the case #1096 fixes),
-            // and ghosts never build — the user toggles, sees nothing, and has to toggle
-            // again to recover. Defer to Loaded priority so layout completes first.
-            DeferAfterLayout(RebuildCalibrationGhosts);
+            // Post-#1107 the composer is surface-dim-free (rebrand-only), so a
+            // synchronous RebuildCalibrationGhosts here works regardless of whether
+            // WPF has finished laying out the overlay surface.
+            RebuildCalibrationGhosts();
             // #1095: trigger a fresh live-view probe so the ghosts render
             // against the current pan/zoom without requiring a manual hotkey.
             TriggerLiveViewRefresh();
@@ -1248,48 +1242,25 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _calibrationMarkers[marker] = _markers.AddMarker(areaKey, world.X, world.Z, style);
     }
 
-    /// <summary>mithril#1096 review fix — defer <paramref name="action"/> until after the
-    /// next WPF layout/render pass so newly-shown overlay surfaces have their
-    /// <c>ActualWidth</c>/<c>ActualHeight</c> populated before <see cref="ResolveOverlayCal"/>
-    /// is invoked. <c>DispatcherPriority.Loaded</c> is the right priority: it fires AFTER
-    /// <c>Render</c> (which runs layout), so by the time the queued action runs the
-    /// overlay surface is sized. When no WPF dispatcher is available (test ctor),
-    /// runs synchronously — preserves legacy test behaviour.</summary>
-    private static void DeferAfterLayout(Action action)
-    {
-        var dispatcher = System.Windows.Application.Current?.Dispatcher;
-        if (dispatcher is null)
-        {
-            // No WPF dispatcher (test ctor, headless): run synchronously.
-            // GetSurfaceSize() returns (0,0) on the legacy test fakes anyway,
-            // and the ResolveOverlayCal helper falls back to direct-overlay-only
-            // when the composer isn't wired, so this preserves pre-#1096 behaviour.
-            action();
-            return;
-        }
-        dispatcher.BeginInvoke(action, System.Windows.Threading.DispatcherPriority.Loaded);
-    }
-
     /// <summary>mithril#1096 — single point of policy for "give me a usable
-    /// overlay-frame calibration for the current scene." When the composer +
-    /// overlay window are wired (production, new tests), routes through the
-    /// shared <see cref="IComposedOverlayCalibrationResolver"/> so texture-frame-
-    /// only records compose onto the live surface (parity with OverlayWindowService).
-    /// When EITHER is null (legacy test ctors that don't wire them), falls back to
-    /// the pre-#1096 direct-overlay-only read so every existing test stays green.
-    /// Returns <c>(Cal, Path, MissReason)</c>; consumers feed MissReason into
-    /// <see cref="LogCalibrationFallback"/>'s dedup key.</summary>
+    /// overlay-frame calibration for the current scene." When the composer is wired
+    /// (production + new tests), routes through the shared
+    /// <see cref="IComposedOverlayCalibrationResolver"/> so texture-frame-only
+    /// records are rebranded into overlay-frame cals (post-#1107 layer-1 semantic,
+    /// parity with OverlayWindowService). When null (legacy test ctors that don't
+    /// wire it), falls back to the pre-#1096 direct-overlay-only read so every
+    /// existing test stays green. Returns <c>(Cal, Path, MissReason)</c>; consumers
+    /// feed MissReason into <see cref="LogCalibrationFallback"/>'s dedup key.</summary>
     private (WorldToOverlayCalibration? Cal, CalPath Path, string? MissReason) ResolveOverlayCal()
     {
-        if (_composedResolver is not null && _overlayWindow is not null)
+        if (_composedResolver is not null)
         {
-            var (w, h) = _overlayWindow.GetSurfaceSize();
-            var r = _composedResolver.Resolve(_areaCalibration?.CurrentScene, w, h);
+            var r = _composedResolver.Resolve(_areaCalibration?.CurrentScene);
             return (r.Calibration, r.Path, r.MissReason);
         }
         // Legacy path: pre-#1096 direct-overlay-only behaviour. Mirrors what every
         // call site did before this migration; preserves the contract for test
-        // ctors that don't wire the new dependencies.
+        // ctors that don't wire the new dependency.
         var direct = _areaCalibration?.CurrentOverlayCalibration;
         return direct is not null
             ? (direct, CalPath.DirectOverlay, null)

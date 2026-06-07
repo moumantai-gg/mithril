@@ -177,18 +177,20 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>(),
                 // #1095: live-view service for layer-2 composition + status badge.
                 sp.GetService<Mithril.MapCalibration.ILiveMapViewService>(),
-                // mithril#1096 — composed-cal migration:
-                sp.GetService<Mithril.Overlay.IComposedOverlayCalibrationResolver>(),
-                sp.GetService<Mithril.Overlay.IOverlayWindow>()));
+                // mithril#1096 — composed-cal migration (post-#1107 review fix: resolver
+                // is surface-dim-free, so no IOverlayWindow dep needed):
+                sp.GetService<Mithril.Overlay.IComposedOverlayCalibrationResolver>()));
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
         services.AddSingleton<NudgePadViewModel>();
+        // mithril#1107: Task 10's IComposedOverlayCalibrationResolver injection
+        // reverted — the calibration wizard is being retired (separate follow-up),
+        // so ProjectLandmarks stays on the direct-overlay-cal read.
         services.AddSingleton<CalibrationSessionViewModel>(sp =>
             new CalibrationSessionViewModel(
                 sp.GetRequiredService<IAreaCalibrationService>(),
                 sp.GetService<IDomainEventSubscriber>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>(),
-                sp.GetService<Mithril.Overlay.IComposedOverlayCalibrationResolver>()));   // mithril#1096
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()));
 
         services.AddSingleton<LegolasPanelView>(sp => new LegolasPanelView
         {

@@ -8,31 +8,30 @@ using Xunit;
 namespace Mithril.Overlay.Tests;
 
 /// <summary>
-/// mithril#1096 — IComposedOverlayCalibrationResolver covers the same 8-case
-/// decision table as the pre-#1096 OverlayWindowService internal helper, plus
-/// MissReason vocabulary assertions for the None-returning cases.
+/// mithril#1096 — IComposedOverlayCalibrationResolver decision table.
 ///
-/// (Pre-#1096 history: this file was ResolveComposedOverlayCalibrationTests
-/// targeting OverlayWindowService.ResolveComposedOverlayCalibrationForTest;
-/// the 8 cases are preserved verbatim — only the call shape changed.)
+/// Post-#1107 review fix: the composer is a direct rebrand of the texture cal
+/// (not a surface-scaled composition), so the resolver takes no surface dims and
+/// the F-* branches that needed catalogue lookups + dim guards are gone. The
+/// remaining cases are: scene-null, overlay-frame-present, texture-frame-only,
+/// uncalibrated, both-frames-present (precedence).
+///
+/// Pre-review history: ResolveComposedOverlayCalibrationTests → 8 cases including
+/// null_sha / unsized_surface / catalogue_miss. Those failure modes can't fire
+/// post-#1107 because no catalogue lookup or surface-dim guard runs.
 /// </summary>
 public sealed class ComposedOverlayCalibrationResolverTests
 {
     private static readonly MapSceneRef Scene =
         new(ParentAreaKey: "AreaTest", SceneFriendlyName: null, MapAssetKey: "Map_Test");
 
-    private const string KnownSha = "abc123def";
-
     private static WorldToOverlayCalibration MakeOverlayCal() =>
         new(OriginX: 100, OriginY: 200, Scale: 1.0,
             RotationRadians: 0, MirrorNorth: false);
 
-    private static WorldToTextureCalibration MakeTexCal(string? sha = KnownSha) =>
+    private static WorldToTextureCalibration MakeTexCal() =>
         new(OriginX: 50, OriginY: 75, Scale: 2.0,
-            RotationRadians: 0, MirrorNorth: false)
-        {
-            PixelSha256 = sha,
-        };
+            RotationRadians: 0, MirrorNorth: false);
 
     private sealed class StubCal : IMapCalibrationService
     {
@@ -56,24 +55,16 @@ public sealed class ComposedOverlayCalibrationResolverTests
         public event EventHandler<MapSceneRef>? Changed { add { } remove { } }
     }
 
-    private sealed class StubDims : IMapTextureDimensions
-    {
-        public (int W, int H)? Result { get; set; }
-        public (int Width, int Height)? TryGetSizeBySha(string? sha) => Result;
-    }
-
     private static IComposedOverlayCalibrationResolver Make(
         WorldToOverlayCalibration? overlayCal = null,
-        WorldToTextureCalibration? textureCal = null,
-        (int W, int H)? dims = null)
+        WorldToTextureCalibration? textureCal = null)
         => new ComposedOverlayCalibrationResolver(
-            new StubCal { OverlayCal = overlayCal, TextureCal = textureCal },
-            new StubDims { Result = dims });
+            new StubCal { OverlayCal = overlayCal, TextureCal = textureCal });
 
     [Fact]
     public void WizardOnly_ReturnsDirectOverlayCal()
     {
-        var r = Make(overlayCal: MakeOverlayCal()).Resolve(Scene, 800, 600);
+        var r = Make(overlayCal: MakeOverlayCal()).Resolve(Scene);
 
         r.Calibration.Should().NotBeNull();
         r.Path.Should().Be(CalPath.DirectOverlay);
@@ -82,50 +73,24 @@ public sealed class ComposedOverlayCalibrationResolverTests
     }
 
     [Fact]
-    public void AutoCalOnly_ShaInCatalogue_ReturnsComposedFromTexture()
+    public void AutoCalOnly_RebrandsTextureCalAsComposedFromTexture()
     {
-        var r = Make(textureCal: MakeTexCal(), dims: (1024, 1024)).Resolve(Scene, 800, 600);
+        var r = Make(textureCal: MakeTexCal()).Resolve(Scene);
 
         r.Calibration.Should().NotBeNull();
         r.Path.Should().Be(CalPath.ComposedFromTexture);
         r.MissReason.Should().BeNull();
-    }
-
-    [Fact]
-    public void AutoCalOnly_NullSha_ReturnsNone_NullSha()
-    {
-        var r = Make(textureCal: MakeTexCal(sha: null), dims: (1024, 1024)).Resolve(Scene, 800, 600);
-
-        r.Calibration.Should().BeNull();
-        r.Path.Should().Be(CalPath.None);
-        r.MissReason.Should().Be("null_sha");
-    }
-
-    [Fact]
-    public void AutoCalOnly_ShaNotInCatalogue_ReturnsNone_CatalogueMiss()
-    {
-        var r = Make(textureCal: MakeTexCal(), dims: null).Resolve(Scene, 800, 600);
-
-        r.Calibration.Should().BeNull();
-        r.Path.Should().Be(CalPath.None);
-        r.MissReason.Should().Be("catalogue_miss");
-    }
-
-    [Fact]
-    public void AutoCalOnly_UnsizedSurface_ReturnsNone_UnsizedSurface()
-    {
-        var r = Make(textureCal: MakeTexCal(), dims: (1024, 1024)).Resolve(Scene, 0, 0);
-
-        r.Calibration.Should().BeNull();
-        r.Path.Should().Be(CalPath.None);
-        r.MissReason.Should().Be("unsized_surface");
+        // Rebrand preserves the texture cal's transform fields verbatim — no
+        // surface scaling. Downstream ToLiveOverlay applies the layer-2 fix.
+        r.Calibration!.Value.OriginX.Should().Be(50);
+        r.Calibration!.Value.OriginY.Should().Be(75);
+        r.Calibration!.Value.Scale.Should().Be(2.0);
     }
 
     [Fact]
     public void BothFramesPresent_PrefersDirectOverlay()
     {
-        var r = Make(overlayCal: MakeOverlayCal(), textureCal: MakeTexCal(), dims: (1024, 1024))
-            .Resolve(Scene, 800, 600);
+        var r = Make(overlayCal: MakeOverlayCal(), textureCal: MakeTexCal()).Resolve(Scene);
 
         r.Calibration.Should().NotBeNull();
         r.Path.Should().Be(CalPath.DirectOverlay);
@@ -136,7 +101,7 @@ public sealed class ComposedOverlayCalibrationResolverTests
     [Fact]
     public void Uncalibrated_ReturnsNone_NoUsableCalibration()
     {
-        var r = Make().Resolve(Scene, 800, 600);
+        var r = Make().Resolve(Scene);
 
         r.Calibration.Should().BeNull();
         r.Path.Should().Be(CalPath.None);
@@ -146,7 +111,7 @@ public sealed class ComposedOverlayCalibrationResolverTests
     [Fact]
     public void NullScene_ReturnsNone_NoScene()
     {
-        var r = Make().Resolve(null, 800, 600);
+        var r = Make().Resolve(null);
 
         r.Calibration.Should().BeNull();
         r.Path.Should().Be(CalPath.None);

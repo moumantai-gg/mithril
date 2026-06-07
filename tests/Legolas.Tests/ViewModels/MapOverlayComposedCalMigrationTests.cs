@@ -13,11 +13,13 @@ namespace Legolas.Tests.ViewModels;
 /// mithril#1096 — VM consumers route through IComposedOverlayCalibrationResolver
 /// when wired. Headline behaviour: a scene with only a texture-frame record
 /// (no overlay-frame record) projects ghosts via the composed path.
+///
+/// Post-#1107 review fix: composer is surface-dim-free (direct rebrand of
+/// texture cal), so the stub overlay window + StubDims dropped — the
+/// resolver no longer needs them.
 /// </summary>
 public sealed class MapOverlayComposedCalMigrationTests
 {
-    private const string Sha = "test-sha";
-
     private static CalibrationReference Ref(string name, double x, double z) =>
         new(name, "Landmark", new WorldCoord(x, 0, z));
 
@@ -40,25 +42,6 @@ public sealed class MapOverlayComposedCalMigrationTests
         public void ClearUserRefinement(MapSceneRef scene) { }
         public void DeleteUserRefinement(MapSceneRef scene, CalibrationFrame frame) { }
         public event EventHandler<MapSceneRef>? Changed { add { } remove { } }
-    }
-
-    private sealed class StubDims : IMapTextureDimensions
-    {
-        public (int Width, int Height)? TryGetSizeBySha(string? sha) =>
-            string.Equals(sha, Sha, StringComparison.Ordinal) ? (1024, 1024) : null;
-    }
-
-    private sealed class StubOverlayWindow : IOverlayWindow
-    {
-        public (double W, double H) Size { get; set; } = (800, 600);
-        public (double Width, double Height) GetSurfaceSize() => Size;
-        public System.Windows.Window Window => throw new NotSupportedException();
-        public bool IsReady => true;
-        public string? StatusMessage => null;
-        public void SetStatusMessage(string? message) { }
-        public IDisposable RegisterScene(Action<IOverlaySceneContext> draw) => new Reg();
-        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged { add { } remove { } }
-        private sealed class Reg : IDisposable { public void Dispose() { } }
     }
 
     /// <summary>IAreaCalibrationService double where the area IS calibrated
@@ -109,11 +92,9 @@ public sealed class MapOverlayComposedCalMigrationTests
         {
             TextureCal = new WorldToTextureCalibration(
                 OriginX: 50, OriginY: 75, Scale: 2.0,
-                RotationRadians: 0, MirrorNorth: false) { PixelSha256 = Sha },
+                RotationRadians: 0, MirrorNorth: false),
         };
-        var composer = new Mithril.Overlay.Internal.ComposedOverlayCalibrationResolver(
-            stubCal, new StubDims());
-        var overlayWindow = new StubOverlayWindow();
+        var composer = new Mithril.Overlay.Internal.ComposedOverlayCalibrationResolver(stubCal);
 
         var map = new MapOverlayViewModel(
             session, projector, optimizer, surveyFlow, brushes,
@@ -121,7 +102,7 @@ public sealed class MapOverlayComposedCalMigrationTests
             areaCalibration: areaCal,
             motherlode: null, characterPin: null, markers: null, areaState: null,
             loggerFactory: null, liveView: null,
-            composedResolver: composer, overlayWindow: overlayWindow);
+            composedResolver: composer);
 
         map.IsCurrentAreaCalibrated.Should().BeTrue(
             "the area IS calibrated — texture-frame record exists");
@@ -130,6 +111,6 @@ public sealed class MapOverlayComposedCalMigrationTests
         map.ToggleCalibrationValidationCommand.Execute(null);
 
         map.CalibrationGhosts.Should().HaveCount(2,
-            "post-#1096: texture-frame-only record composes onto the overlay surface and projects both refs");
+            "post-#1096: texture-frame-only record is rebranded into an overlay cal and projects both refs");
     }
 }

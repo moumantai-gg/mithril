@@ -421,10 +421,13 @@ when the composer returns `Path == None`, the consumer feeds the resolver's
 |---|---|
 | `no_scene` | `CurrentScene` is null (no `MapAssetChanged` yet). |
 | `no_usable_calibration` | Picker returned neither overlay nor texture record. |
-| `null_sha` | Texture record exists but `PixelSha256` is null (pre-#1081). User re-runs AutoCalibrate. |
-| `unsized_surface` | Surface dims ≤ 0 (window not realised; wizard not laid out). |
-| `catalogue_miss` | Texture sha doesn't match `CanonicalAssetHashes`. |
 | `no_overlay_cal` | Legacy fallback (composer not wired — should not appear in production builds). |
+
+Pre-#1107 review fix also emitted `null_sha`, `unsized_surface`, and `catalogue_miss` —
+those branches required surface-dim + catalogue-dim lookups for `MapRect`-based composition.
+The post-review composer is a direct rebrand of the texture-frame transform (no catalogue
+lookup, no surface dims), so those failure modes can't fire and the vocabulary is reduced
+to the three above.
 
 Companion `Mithril.Legolas.Calibration` meter instruments emitted in `meter_counter` records (below):
 

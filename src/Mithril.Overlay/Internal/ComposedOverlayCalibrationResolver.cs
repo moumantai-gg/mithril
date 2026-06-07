@@ -2,24 +2,28 @@ using Mithril.MapCalibration;
 
 namespace Mithril.Overlay.Internal;
 
-/// <summary>Default <see cref="IComposedOverlayCalibrationResolver"/>. Body
-/// lifted verbatim from <c>OverlayWindowService.ResolveComposedOverlayCalibrationForTest</c>
-/// + <c>ClassifyComposedMissReason</c> (the 8-case decision table already
-/// proven by <c>ResolveComposedOverlayCalibrationTests</c>).</summary>
+/// <summary>Default <see cref="IComposedOverlayCalibrationResolver"/>.
+///
+/// <para>mithril#1107 review fix: the post-PR-review impl is a direct rebrand of
+/// the texture-frame transform, not a surface-scaled composition. See the
+/// behaviour note on <c>WorldToTextureCalibration</c> (where <c>ProjectThroughOverlay</c>
+/// used to live) for the layer-1/layer-2 rationale — short version: the wizard-
+/// solved overlay-frame cal's <c>ToOverlay</c> returns canonical-texture-pixel
+/// coords (per #1095), and <c>ToLiveOverlay</c> applies the layer-2 fix to translate
+/// those to live overlay pixels. A composed-from-texture cal must do the same so
+/// downstream <c>ToLiveOverlay</c> consumers get a consistent shape — that means
+/// the composition is a type-rebrand of the texture cal's fields, NOT a surface
+/// rescaling.</para></summary>
 internal sealed class ComposedOverlayCalibrationResolver : IComposedOverlayCalibrationResolver
 {
     private readonly IMapCalibrationService _calibration;
-    private readonly IMapTextureDimensions _textureDimensions;
 
-    public ComposedOverlayCalibrationResolver(
-        IMapCalibrationService calibration,
-        IMapTextureDimensions textureDimensions)
+    public ComposedOverlayCalibrationResolver(IMapCalibrationService calibration)
     {
         _calibration = calibration;
-        _textureDimensions = textureDimensions;
     }
 
-    public ComposedCalResolution Resolve(MapSceneRef? scene, double surfaceWidth, double surfaceHeight)
+    public ComposedCalResolution Resolve(MapSceneRef? scene)
     {
         if (scene is not { } s)
             return new(null, CalPath.None, "no_scene");
@@ -35,28 +39,17 @@ internal sealed class ComposedOverlayCalibrationResolver : IComposedOverlayCalib
 
         var tex = textureCal.Value;
 
-        // F1 — pre-#1081 record with no stamped sha. User recovers by re-running AutoCalibrate.
-        if (string.IsNullOrWhiteSpace(tex.PixelSha256))
-            return new(null, CalPath.None, "null_sha");
-
-        // F2 — surface not yet laid out (or in a transient sub-pixel layout state).
-        // mithril#1096 review fix: guard `< 1` instead of `<= 0` so fractional
-        // ActualWidth/Height (rare WPF mid-DPI / mid-animation transient) doesn't
-        // pass the guard then truncate to 0 in the (int) casts below, which would
-        // build a MapRect with Width=Height=0 and a composed cal that collapses
-        // every world coord to the overlay origin (Scale = Width/TextureWidth = 0).
-        if (surfaceWidth < 1 || surfaceHeight < 1)
-            return new(null, CalPath.None, "unsized_surface");
-
-        var resolved = _textureDimensions.TryGetSizeBySha(tex.PixelSha256);
-        if (resolved is not { } d)
-            return new(null, CalPath.None, "catalogue_miss");
-
-        var overlayRect = new MapRect(
-            OriginX: 0, OriginY: 0,
-            Width: (int)surfaceWidth, Height: (int)surfaceHeight,
-            TextureWidth: d.Width, TextureHeight: d.Height);
-
-        return new(tex.ProjectThroughOverlay(overlayRect), CalPath.ComposedFromTexture, null);
+        // mithril#1107 review fix: rebrand-only. The texture cal's transform is
+        // already correct for ToLiveOverlay (it returns canonical-texture-pixel
+        // coords; the layer-2 fix handles surface scaling). No catalogue lookup,
+        // no MapRect math, no surface dims — those were the pre-review #1081 path
+        // that fought #1095's two-layer model.
+        var composed = new WorldToOverlayCalibration(
+            OriginX: tex.OriginX,
+            OriginY: tex.OriginY,
+            Scale: tex.Scale,
+            RotationRadians: tex.RotationRadians,
+            MirrorNorth: tex.MirrorNorth);
+        return new(composed, CalPath.ComposedFromTexture, null);
     }
 }

@@ -19,7 +19,6 @@ internal sealed class FakeOverlayWindow : IOverlayWindow
     public string? StatusMessage { get; private set; }
     public void SetStatusMessage(string? message) { StatusMessage = message; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusMessage))); }
     public IDisposable RegisterScene(Action<IOverlaySceneContext> draw) => new Noop();
-    public (double Width, double Height) GetSurfaceSize() => (0, 0);
     public event PropertyChangedEventHandler? PropertyChanged;
     private sealed class Noop : IDisposable { public void Dispose() { } }
 }
