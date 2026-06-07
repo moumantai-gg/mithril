@@ -176,7 +176,10 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetService<IAreaState>(),
                 sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>(),
                 // #1095: live-view service for layer-2 composition + status badge.
-                sp.GetService<Mithril.MapCalibration.ILiveMapViewService>()));
+                sp.GetService<Mithril.MapCalibration.ILiveMapViewService>(),
+                // mithril#1096 — composed-cal migration:
+                sp.GetService<Mithril.Overlay.IComposedOverlayCalibrationResolver>(),
+                sp.GetService<Mithril.Overlay.IOverlayWindow>()));
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
         services.AddSingleton<NudgePadViewModel>();

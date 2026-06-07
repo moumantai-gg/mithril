@@ -34,6 +34,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     private readonly MotherlodeMeasurementCoordinator? _motherlode;
     private readonly ICharacterPinAnchor? _characterPin;
     private readonly ILiveMapViewService? _liveView;
+    private readonly IComposedOverlayCalibrationResolver? _composedResolver;   // mithril#1096
+    private readonly IOverlayWindow? _overlayWindow;                            // mithril#1096
     private readonly IDisposable? _positionSub;
 
     // #835 step 3: shared Mithril.Overlay marker registry. Survey pins are
@@ -66,7 +68,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null, ILiveMapViewService? liveView = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null, ILiveMapViewService? liveView = null, IComposedOverlayCalibrationResolver? composedResolver = null, IOverlayWindow? overlayWindow = null)
     {
         _session = session;
         _projector = projector;
@@ -83,6 +85,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _areaState = areaState;
         _logger = loggerFactory?.CreateLogger("Legolas.MapOverlay");
         _liveView = liveView;
+        _composedResolver = composedResolver;   // mithril#1096
+        _overlayWindow = overlayWindow;          // mithril#1096
         if (_liveView is not null)
             _liveView.Changed += OnLiveViewChanged;
         if (_motherlode is not null)
@@ -1226,6 +1230,32 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// MotherlodeGuidanceOverlay, RefreshSurveyPlayerAnchor) calls in with
     /// its own <paramref name="callSite"/> so a triager can read which
     /// path silently dropped.</para></summary>
+    /// <summary>mithril#1096 — single point of policy for "give me a usable
+    /// overlay-frame calibration for the current scene." When the composer +
+    /// overlay window are wired (production, new tests), routes through the
+    /// shared <see cref="IComposedOverlayCalibrationResolver"/> so texture-frame-
+    /// only records compose onto the live surface (parity with OverlayWindowService).
+    /// When EITHER is null (legacy test ctors that don't wire them), falls back to
+    /// the pre-#1096 direct-overlay-only read so every existing test stays green.
+    /// Returns <c>(Cal, Path, MissReason)</c>; consumers feed MissReason into
+    /// <see cref="LogCalibrationFallback"/>'s dedup key.</summary>
+    private (WorldToOverlayCalibration? Cal, CalPath Path, string? MissReason) ResolveOverlayCal()
+    {
+        if (_composedResolver is not null && _overlayWindow is not null)
+        {
+            var (w, h) = _overlayWindow.GetSurfaceSize();
+            var r = _composedResolver.Resolve(_areaCalibration?.CurrentScene, w, h);
+            return (r.Calibration, r.Path, r.MissReason);
+        }
+        // Legacy path: pre-#1096 direct-overlay-only behaviour. Mirrors what every
+        // call site did before this migration; preserves the contract for test
+        // ctors that don't wire the new dependencies.
+        var direct = _areaCalibration?.CurrentOverlayCalibration;
+        return direct is not null
+            ? (direct, CalPath.DirectOverlay, null)
+            : (null, CalPath.None, "no_overlay_cal");
+    }
+
     private void LogCalibrationFallback(string areaKey, string callSite, string reason)
     {
         var dedupKey = areaKey + "|" + callSite + "|" + reason;
