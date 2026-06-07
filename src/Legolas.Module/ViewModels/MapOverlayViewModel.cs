@@ -321,14 +321,16 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // Information level is safe here. Skip path uses LogCalibrationFallback +
         // ProjectionSkipped(consumer=survey_anchor) so the projection-miss
         // counter family stays uniform across consumers.
-        var overlayCal = _areaCalibration?.CurrentOverlayCalibration;
+        // mithril#1096: route through the shared composed-cal resolver so the
+        // survey "you-are-here" anchor projects on texture-frame-only scenes.
+        var (overlayCal, _, missReason) = ResolveOverlayCal();
         if (overlayCal is null && _latestTrackerFix is not null)
         {
             // Only count as a "skip" when there WAS a tracker fix to project
             // — without one, ResolveSurveyAnchor returns Cleared by design
             // (no tracker = no anchor, unrelated to calibration presence).
             var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
-            LogCalibrationFallback(skippedArea, "RefreshSurveyPlayerAnchor", "no_overlay_cal");
+            LogCalibrationFallback(skippedArea, "RefreshSurveyPlayerAnchor", missReason ?? "no_overlay_cal");
             MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                 new KeyValuePair<string, object?>("consumer", "survey_anchor"),
                 new KeyValuePair<string, object?>("area", skippedArea));
@@ -591,7 +593,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         var area = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
         var scene = _areaCalibration?.CurrentScene;
         var isCalibrated = IsCurrentAreaCalibrated;
-        var overlayCalPresent = _areaCalibration?.CurrentOverlayCalibration is not null;
+        // mithril#1096: "usable" now means "present-OR-composable" — the resolver
+        // returns non-null when either the direct overlay-frame cal exists OR a
+        // texture-frame record composes onto the live surface.
+        var overlayCalUsable = ResolveOverlayCal().Cal is not null;
         string action;
 
         if (on)
@@ -617,8 +622,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CalibrationValidationStatus));
 
         _logger?.LogInformation(
-            "SetCalibrationValidation(on={On}, area={Area}, scene={Scene}, isCalibrated={IsCalibrated}, overlayCalPresent={OverlayCalPresent}): {Action} → ghostsBuilt={GhostsBuilt}.",
-            on, area, scene?.SceneFriendlyName ?? "<none>", isCalibrated, overlayCalPresent, action, CalibrationGhosts.Count);
+            "SetCalibrationValidation(on={On}, area={Area}, scene={Scene}, isCalibrated={IsCalibrated}, overlayCalUsable={OverlayCalUsable}): {Action} → ghostsBuilt={GhostsBuilt}.",
+            on, area, scene?.SceneFriendlyName ?? "<none>", isCalibrated, overlayCalUsable, action, CalibrationGhosts.Count);
     }
 
     /// <summary>#495: the wizard calls this when the user enters a step where

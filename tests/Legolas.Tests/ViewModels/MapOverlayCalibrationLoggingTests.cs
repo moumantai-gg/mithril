@@ -78,7 +78,7 @@ public class MapOverlayCalibrationLoggingTests
         toggleLogs[0].Message.Should().Contain("on=True")
             .And.Contain("Map_AreaTest")
             .And.Contain("isCalibrated=True")
-            .And.Contain("overlayCalPresent=True")
+            .And.Contain("overlayCalUsable=True")
             .And.Contain("shown_and_rebuilt")
             .And.Contain("ghostsBuilt=3");
     }
