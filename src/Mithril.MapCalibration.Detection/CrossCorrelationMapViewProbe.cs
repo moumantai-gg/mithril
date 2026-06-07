@@ -1,5 +1,6 @@
 using System;
 using System.Numerics;
+using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection.Internal;
 
 namespace Mithril.MapCalibration.Detection;
@@ -23,28 +24,62 @@ public sealed class CrossCorrelationMapViewProbe : IMapViewProbe
     private const double AbsoluteThreshold = 0.55;  // NCC in [0,1]; tuned against synthetic tests
     private const double RatioThreshold = 1.10;     // peak / 2nd-peak (outside guard zone)
 
+    private readonly ILogger? _logger;
+
+    public CrossCorrelationMapViewProbe(ILogger<CrossCorrelationMapViewProbe>? logger = null)
+    {
+        _logger = logger;
+    }
+
     /// <inheritdoc/>
     public MapViewFix? TryProbe(GrayImage screenshot, GrayImage baseTexture)
     {
-        if (screenshot is null || baseTexture is null) return null;
-        if (screenshot.Width < 8 || screenshot.Height < 8) return null;
-        if (baseTexture.Width < 8 || baseTexture.Height < 8) return null;
+        if (screenshot is null || baseTexture is null)
+        {
+            _logger?.LogWarning("TryProbe: null input (screenshot={Screenshot}, baseTex={BaseTex}).",
+                screenshot is null ? "null" : $"{screenshot.Width}x{screenshot.Height}",
+                baseTexture is null ? "null" : $"{baseTexture.Width}x{baseTexture.Height}");
+            return null;
+        }
+        if (screenshot.Width < 8 || screenshot.Height < 8)
+        {
+            _logger?.LogWarning("TryProbe: screenshot too small ({W}x{H} < 8x8).", screenshot.Width, screenshot.Height);
+            return null;
+        }
+        if (baseTexture.Width < 8 || baseTexture.Height < 8)
+        {
+            _logger?.LogWarning("TryProbe: baseTexture too small ({W}x{H} < 8x8).", baseTexture.Width, baseTexture.Height);
+            return null;
+        }
 
-        // ScaleSweepCoarse finds the best coarse candidate (needed as fallback).
-        // GoldenSectionRefine re-scans all coarse scales and golden-sections each,
-        // returning the global best refined result — necessary because the NCC
-        // landscape is often non-unimodal (periodic textures, harmonic scales).
+        _logger?.LogTrace("TryProbe: screenshot {SW}x{SH}, baseTex {TW}x{TH}; starting coarse scale sweep.",
+            screenshot.Width, screenshot.Height, baseTexture.Width, baseTexture.Height);
+
         var coarse = ScaleSweepCoarse(screenshot, baseTexture);
-        if (coarse is null) return null;
+        if (coarse is null)
+        {
+            _logger?.LogWarning("TryProbe: coarse sweep produced no candidate (all scales out of range or degenerate).");
+            return null;
+        }
 
         var refined = GoldenSectionRefine(screenshot, baseTexture, coarse.Value);
 
-        // Also explicitly probe the exact-fit scales: sw/tw (screenshot fills the
-        // texture at scale=1), plus simple integer multiples. The golden section
-        // brackets can miss these when they lie exactly at the null/valid boundary.
         var fix = refined ?? coarse.Value;
         fix = ProbeExactFitScales(screenshot, baseTexture, fix);
-        if (!PassesConfidenceGate(fix)) return null;
+        if (!PassesConfidenceGate(fix))
+        {
+            _logger?.LogWarning(
+                "TryProbe: confidence gate REJECTED. peak={Peak:0.000} (abs threshold {AbsT:0.000}), " +
+                "second={Second:0.000}, ratio={Ratio:0.00} (ratio threshold {RatioT:0.00}), " +
+                "best scale={Scale:0.000}, pan=({PanX:0},{PanY:0}).",
+                fix.PeakScore, AbsoluteThreshold, fix.SecondPeakScore,
+                fix.SecondPeakScore > 0 ? fix.PeakScore / fix.SecondPeakScore : double.PositiveInfinity,
+                RatioThreshold, fix.Scale, fix.PanX, fix.PanY);
+            return null;
+        }
+
+        _logger?.LogTrace("TryProbe: ACCEPTED. peak={Peak:0.000}, second={Second:0.000}, scale={Scale:0.000}, pan=({PanX:0},{PanY:0}).",
+            fix.PeakScore, fix.SecondPeakScore, fix.Scale, fix.PanX, fix.PanY);
 
         return new MapViewFix(
             PanTexPxX: fix.PanX,
