@@ -1443,7 +1443,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         {
             if (_session.Mode != SessionMode.Motherlode || _motherlode is null)
                 return Array.Empty<OverlayPixel>();
-            if (_areaCalibration?.CurrentOverlayCalibration is not { } cal)
+            // mithril#1096: route through the shared composed-cal resolver so a
+            // texture-frame-only record lights the motherlode markers via composition.
+            var (cal, _, missReason) = ResolveOverlayCal();
+            if (cal is null)
             {
                 // #1093 §5.3: per-frame getter — meter + first-time-Trace
                 // skip log, NO success log (would flood at ~60 Hz). The mode
@@ -1451,7 +1454,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 // by design; only the calibration-null branch is the
                 // "silent fallback worth surfacing" case.
                 var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
-                LogCalibrationFallback(skippedArea, "MotherlodeMarkerPixels", "no_overlay_cal");
+                LogCalibrationFallback(skippedArea, "MotherlodeMarkerPixels", missReason ?? "no_overlay_cal");
                 MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                     new KeyValuePair<string, object?>("consumer", "motherlode_markers"),
                     new KeyValuePair<string, object?>("area", skippedArea));
@@ -1460,7 +1463,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
             // mithril#1095: layer-2 composition — resolve live MapViewFix.
             // If no fix is available yet, return empty (refuse to render stale pixels).
-            var markerArea = _areaCalibration.CurrentScene?.MapAssetKey;
+            var markerArea = _areaCalibration?.CurrentScene?.MapAssetKey;
             if (string.IsNullOrEmpty(markerArea)) return Array.Empty<OverlayPixel>();
             var markerFix = _liveView?.GetCurrent(markerArea);
             if (markerFix is null)
@@ -1475,7 +1478,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 {
                     // mithril#1095: layer-2 composition — project through canonical
                     // calibration then apply live fix.
-                    (list ??= new()).Add(cal.ToLiveOverlay(w, markerFix.Value));
+                    (list ??= new()).Add(cal.Value.ToLiveOverlay(w, markerFix.Value));
                 }
             return list ?? (IReadOnlyList<OverlayPixel>)Array.Empty<OverlayPixel>();
         }
@@ -1491,13 +1494,16 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         {
             if (_session.Mode != SessionMode.Motherlode || _motherlode is null)
                 return null;
-            if (_areaCalibration?.CurrentOverlayCalibration is not { } cal)
+            // mithril#1096: route through the shared composed-cal resolver so a
+            // texture-frame-only record draws the guidance ring via composition.
+            var (cal, _, missReason) = ResolveOverlayCal();
+            if (cal is null)
             {
                 // #1093 §5.3: per-frame getter — meter + first-time-Trace
                 // skip log, NO success log. See MotherlodeMarkerPixels above
                 // for the rationale; identical shape, distinct consumer tag.
                 var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
-                LogCalibrationFallback(skippedArea, "MotherlodeGuidanceOverlay", "no_overlay_cal");
+                LogCalibrationFallback(skippedArea, "MotherlodeGuidanceOverlay", missReason ?? "no_overlay_cal");
                 MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                     new KeyValuePair<string, object?>("consumer", "motherlode_guidance"),
                     new KeyValuePair<string, object?>("area", skippedArea));
@@ -1509,7 +1515,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
             // mithril#1095: layer-2 composition — resolve live MapViewFix.
             // If no fix is available yet, return null (refuse to render stale ring).
-            var guidanceArea = _areaCalibration.CurrentScene?.MapAssetKey;
+            var guidanceArea = _areaCalibration?.CurrentScene?.MapAssetKey;
             if (string.IsNullOrEmpty(guidanceArea)) return null;
             var guidanceFix = _liveView?.GetCurrent(guidanceArea);
             if (guidanceFix is null)
@@ -1520,8 +1526,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
             // mithril#1095: project center through layer-2 composition; scale
             // the radius using the live ViewScale instead of the retired zoomFactor.
-            var center = cal.ToLiveOverlay(next.SuggestedWorld, guidanceFix.Value);
-            var radiusPx = next.ToleranceRadiusMetres * cal.Scale * guidanceFix.Value.ViewScale;
+            var center = cal.Value.ToLiveOverlay(next.SuggestedWorld, guidanceFix.Value);
+            var radiusPx = next.ToleranceRadiusMetres * cal.Value.Scale * guidanceFix.Value.ViewScale;
             return new MotherlodeGuidanceCircle(center, radiusPx, _brushes.RouteLine.Color);
         }
     }
