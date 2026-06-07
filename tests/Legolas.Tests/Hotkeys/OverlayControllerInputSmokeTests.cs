@@ -159,6 +159,7 @@ public sealed class OverlayControllerInputSmokeTests
         public string? StatusMessage => null;
         public void SetStatusMessage(string? message) { }
         public IDisposable RegisterScene(Action<IOverlaySceneContext> draw) => new NoopDisposable();
+        public (double Width, double Height) GetSurfaceSize() => (0, 0);
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged { add { } remove { } }
         private sealed class NoopDisposable : IDisposable { public void Dispose() { } }
     }

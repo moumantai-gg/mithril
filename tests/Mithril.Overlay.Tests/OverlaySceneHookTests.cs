@@ -50,10 +50,16 @@ public sealed class OverlaySceneHookTests
         var mapState = new StubMapState();
         var sceneCache = new StubSceneAssetCache();
         var bus = new StubDomainEventSubscriber();
+        var textureDimensions = dims ?? new NullMapTextureDimensions();
+        // mithril#1096: OverlayWindowService now consumes IComposedOverlayCalibrationResolver
+        // via DI. Tests construct the production impl inline so the resolver sees the same
+        // calibration + dims the service does.
+        var composedResolver = new ComposedOverlayCalibrationResolver(calibration, textureDimensions);
         return new OverlayWindowService(
             markers, renderer, calibration, areaState, mapState, sceneCache, bus,
             position, liveView ?? new StubLiveMapViewService(),
-            textureDimensions: dims ?? new NullMapTextureDimensions(),  // mithril#1081
+            textureDimensions: textureDimensions,  // mithril#1081
+            composedResolver: composedResolver,    // mithril#1096
             loggerFactory);
     }
 
