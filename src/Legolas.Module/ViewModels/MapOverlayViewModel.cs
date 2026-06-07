@@ -602,13 +602,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             _mapVisibleBeforeValidation = _session.IsMapVisible;
             ShowCalibrationGhosts = true;
             _session.IsMapVisible = true;
-            // Post-#1107 the composer is surface-dim-free (rebrand-only), so a
-            // synchronous RebuildCalibrationGhosts here works regardless of whether
-            // WPF has finished laying out the overlay surface.
-            RebuildCalibrationGhosts();
-            // #1095: trigger a fresh live-view probe so the ghosts render
-            // against the current pan/zoom without requiring a manual hotkey.
+            // mithril#1107 review-fix-2: trigger the probe FIRST so its async
+            // completion races with — and likely lands during — the rebuild
+            // chain. RebuildCalibrationGhosts itself also calls TriggerLiveViewRefresh
+            // when no fix is available, so this is belt-and-suspenders for the
+            // case where the user has been on this area before (cached fix may
+            // still be present, in which case the rebuild succeeds immediately
+            // and the probe just refreshes for staleness).
             TriggerLiveViewRefresh();
+            RebuildCalibrationGhosts();
             action = "shown_and_rebuilt";
         }
         else
@@ -667,10 +669,35 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             return;
         }
         // mithril#1095: layer-2 composition — resolve the live MapViewFix for this
-        // area and pass it to GhostLabelDeclutter.Build. If no fix is available yet,
-        // fall back to canonical projection (no layer-2 applied).
+        // area and pass it to GhostLabelDeclutter.Build.
+        //
+        // mithril#1107 review-fix-2: when the ILiveMapViewService IS wired but no
+        // fix has been measured yet, REFUSE to build (mirror MotherlodeMarkerPixels
+        // behaviour). Pre-fix the code fell back to canonical (texture-pixel)
+        // projection which renders at the WRONG scale on the overlay surface —
+        // exactly the "rendered but wrong scale" symptom the manual verify caught.
+        // The ILiveMapViewService.Changed event triggers OnLiveViewChanged below,
+        // which now re-invokes RebuildCalibrationGhosts when ghosts are showing,
+        // so the rebuild lands with a valid fix as soon as the probe completes.
+        //
+        // When _liveView is null (legacy test ctors that don't wire the service)
+        // we keep the canonical-projection fallback so existing test fixtures
+        // stay green — they were never in the wrong-scale failure mode because
+        // they don't render to a real overlay surface.
         var areaKey = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
         var ghostFix = areaKey != "<unknown>" ? _liveView?.GetCurrent(areaKey) : null;
+        if (_liveView is not null && ghostFix is null)
+        {
+            LogCalibrationFallback(areaKey, "RebuildCalibrationGhosts", "no_live_fix");
+            MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
+                new KeyValuePair<string, object?>("consumer", "ghosts"),
+                new KeyValuePair<string, object?>("area", areaKey));
+            act?.SetTag("cal.path", "none");
+            act?.SetTag("area", areaKey);
+            // Trigger an async probe so the next Changed event rebuilds.
+            TriggerLiveViewRefresh();
+            return;
+        }
         var refs = _areaCalibration!.CurrentAreaReferences;
         foreach (var g in GhostLabelDeclutter.Build(refs, cal.Value, ghostFix))
             CalibrationGhosts.Add(g);
@@ -749,15 +776,25 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
     /// <summary>Raised by <see cref="ILiveMapViewService.Changed"/> (UI thread)
     /// after a fresh view-fix probe completes. Marks projection-dependent
-    /// collections dirty so their getters re-read the new fix. The actual
-    /// re-projection is delegated to the getters / rebuild methods wired in
-    /// P2.4.</summary>
+    /// collections dirty so their getters re-read the new fix.
+    ///
+    /// <para>mithril#1107 review-fix-2: when calibration ghosts are showing,
+    /// also call <see cref="RebuildCalibrationGhosts"/> directly — the previous
+    /// "raise PropertyChanged and hope the consumer re-reads" pattern didn't
+    /// re-evaluate the <see cref="CalibrationGhosts"/> ObservableCollection
+    /// (which is a backing field, not a derived getter), so a fix arriving
+    /// AFTER the first <see cref="SetCalibrationValidation"/> toggle never
+    /// rebuilt the ghosts at the now-valid scale.</para></summary>
     private void OnLiveViewChanged(string area)
     {
         OnPropertyChanged(nameof(CalibrationGhosts));
         OnPropertyChanged(nameof(MotherlodeMarkerPixels));
         OnPropertyChanged(nameof(MotherlodeGuidanceOverlay));
         OnPropertyChanged(nameof(LiveViewStatusText));
+        // mithril#1107 review-fix-2: rebuild ghosts when a fix arrives, otherwise
+        // a first toggle with no fix yet leaves CalibrationGhosts empty forever.
+        if (ShowCalibrationGhosts)
+            RebuildCalibrationGhosts();
     }
 
     /// <summary>

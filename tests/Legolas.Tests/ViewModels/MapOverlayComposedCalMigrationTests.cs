@@ -23,6 +23,21 @@ public sealed class MapOverlayComposedCalMigrationTests
     private static CalibrationReference Ref(string name, double x, double z) =>
         new(name, "Landmark", new WorldCoord(x, 0, z));
 
+    /// <summary>Minimal ILiveMapViewService stub returning an identity fix
+    /// (pan=0, viewScale=1) so the post-#1107 ghost-rebuild path doesn't
+    /// short-circuit on no_live_fix.</summary>
+    private sealed class StubLiveView : ILiveMapViewService
+    {
+        public MapViewFix? GetCurrent(string mapAssetKey) => new MapViewFix(
+            PanTexPxX: 0, PanTexPxY: 0, ViewScale: 1.0,
+            Confidence: 1.0, MeasuredAt: DateTimeOffset.UnixEpoch);
+        public LiveMapViewStatus GetStatus(string mapAssetKey) => LiveMapViewStatus.Detected;
+        public Task RefreshAsync(string mapAssetKey, CancellationToken ct) => Task.CompletedTask;
+#pragma warning disable CS0067
+        public event Action<string>? Changed;
+#pragma warning restore CS0067
+    }
+
     private sealed class StubCal : IMapCalibrationService
     {
         public WorldToOverlayCalibration? OverlayCal { get; set; }
@@ -101,7 +116,7 @@ public sealed class MapOverlayComposedCalMigrationTests
             settings, pinCalibration: null, positionState: null, bus: null,
             areaCalibration: areaCal,
             motherlode: null, characterPin: null, markers: null, areaState: null,
-            loggerFactory: null, liveView: null,
+            loggerFactory: null, liveView: new StubLiveView(),
             composedResolver: composer);
 
         map.IsCurrentAreaCalibrated.Should().BeTrue(
