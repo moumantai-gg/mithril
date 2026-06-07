@@ -1,1 +1,0 @@
-./src/Mithril.Shell/bin/Debug/net10.0-windows/Mithril.exe
