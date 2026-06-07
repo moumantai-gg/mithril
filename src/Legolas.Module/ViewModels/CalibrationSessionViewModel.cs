@@ -8,6 +8,8 @@ using Legolas.Services;
 using Arda.Contracts;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration;
+using Mithril.Overlay;
 using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Reference;
 
@@ -31,17 +33,20 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     private readonly IAreaCalibrationService _service;
     private readonly IDisposable? _pinSub;
     private readonly Microsoft.Extensions.Logging.ILogger? _logger;
+    private readonly IComposedOverlayCalibrationResolver? _composedResolver;   // mithril#1096
 
     public CalibrationSessionViewModel(
         IAreaCalibrationService service,
         IDomainEventSubscriber? bus = null,
-        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null,
+        IComposedOverlayCalibrationResolver? composedResolver = null)   // mithril#1096
     {
         _service = service;
         _service.Changed += OnServiceChanged;
         _service.SurveyObserved += OnSurveyObserved;
         _pinSub = bus?.Subscribe<MapPinAdded>(OnPinAdded);
         _logger = loggerFactory?.CreateLogger("Legolas.CalibrationSession");
+        _composedResolver = composedResolver;
         Refresh();
     }
 
@@ -535,12 +540,32 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     private void ProjectLandmarks()
     {
         GhostPins.Clear();
-        if (_service.CurrentOverlayCalibration is not { } c)
+
+        // mithril#1096: resolve via the composer when wired (passes the wizard
+        // canvas dims from _viewportW/_viewportH, populated by Viewport_SizeChanged
+        // in CalibrationOverlayView). Fall back to direct-overlay-only on legacy
+        // ctor paths so existing tests stay green.
+        WorldToOverlayCalibration? c;
+        string? missReason;
+        if (_composedResolver is not null)
+        {
+            var r = _composedResolver.Resolve(_service.CurrentScene, _viewportW, _viewportH);
+            c = r.Calibration;
+            missReason = r.MissReason;
+        }
+        else
+        {
+            c = _service.CurrentOverlayCalibration;
+            missReason = c is null ? "no_overlay_cal" : null;
+        }
+
+        if (c is null)
         {
             ClickWarning = "Solve a calibration first — nothing to project.";
             var skippedArea = _service.CurrentScene?.MapAssetKey ?? "<unknown>";
             _logger?.LogInformation(
-                "ProjectLandmarks: refused — no overlay calibration; UI surfaced 'Solve a calibration first'.");
+                "ProjectLandmarks: refused — no overlay calibration (reason={Reason}); UI surfaced 'Solve a calibration first'.",
+                missReason ?? "no_overlay_cal");
             MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                 new KeyValuePair<string, object?>("consumer", "wizard_landmarks"),
                 new KeyValuePair<string, object?>("area", skippedArea));
@@ -554,7 +579,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
             // Canonical absolute world→pixel — shared with the #454
             // ProcessMapFx placement path so the two can't drift.
             // #1076 Phase 6.5: frame-typed projection — OverlayPixel out, no re-tag.
-            GhostPins.Add(new GhostPin(r.Name, c.ToOverlay(r.World)));
+            GhostPins.Add(new GhostPin(r.Name, c.Value.ToOverlay(r.World)));
         }
         _logger?.LogInformation(
             "ProjectLandmarks: projected {Count} ghost pins from {Refs} refs ({Skipped} already placed).",

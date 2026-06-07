@@ -187,7 +187,8 @@ public sealed class LegolasModule : IMithrilModule
             new CalibrationSessionViewModel(
                 sp.GetRequiredService<IAreaCalibrationService>(),
                 sp.GetService<IDomainEventSubscriber>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()));
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>(),
+                sp.GetService<Mithril.Overlay.IComposedOverlayCalibrationResolver>()));   // mithril#1096
 
         services.AddSingleton<LegolasPanelView>(sp => new LegolasPanelView
         {
