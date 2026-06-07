@@ -641,14 +641,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         var sw = Stopwatch.StartNew();
 
         CalibrationGhosts.Clear();
-        if (_areaCalibration?.CurrentOverlayCalibration is not { } cal)
+        // mithril#1096: route through the shared composed-cal resolver when wired
+        // (so a texture-frame-only record renders pink dots via composition) and
+        // fall back to direct-overlay-only when not wired (legacy test contracts).
+        var (cal, path, missReason) = ResolveOverlayCal();
+        if (cal is null)
         {
             // #1093 D4 + §5.3 skip path: the dedup helper is the "human-readable
             // explanation" (one Trace per (area, callSite, reason)); the meter
             // is the "how often" answer (every call). Use the live scene's
             // MapAssetKey as the area; fall back when no scene resolved yet.
             var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
-            LogCalibrationFallback(skippedArea, "RebuildCalibrationGhosts", "no_overlay_cal");
+            LogCalibrationFallback(skippedArea, "RebuildCalibrationGhosts", missReason ?? "no_overlay_cal");
             MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                 new KeyValuePair<string, object?>("consumer", "ghosts"),
                 new KeyValuePair<string, object?>("area", skippedArea));
@@ -659,10 +663,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // mithril#1095: layer-2 composition — resolve the live MapViewFix for this
         // area and pass it to GhostLabelDeclutter.Build. If no fix is available yet,
         // fall back to canonical projection (no layer-2 applied).
-        var areaKey = _areaCalibration.CurrentScene?.MapAssetKey ?? "<unknown>";
+        var areaKey = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
         var ghostFix = areaKey != "<unknown>" ? _liveView?.GetCurrent(areaKey) : null;
-        var refs = _areaCalibration.CurrentAreaReferences;
-        foreach (var g in GhostLabelDeclutter.Build(refs, cal, ghostFix))
+        var refs = _areaCalibration!.CurrentAreaReferences;
+        foreach (var g in GhostLabelDeclutter.Build(refs, cal.Value, ghostFix))
             CalibrationGhosts.Add(g);
         OnPropertyChanged(nameof(CalibrationValidationStatus));
 
@@ -681,7 +685,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         act?.SetTag("area", areaKey);
         act?.SetTag("refs_count", refs.Count);
         act?.SetTag("ghosts_built", CalibrationGhosts.Count);
-        act?.SetTag("cal.path", "direct_overlay");
+        act?.SetTag("cal.path", path switch
+        {
+            CalPath.DirectOverlay => "direct_overlay",
+            CalPath.ComposedFromTexture => "composed_from_texture",
+            _ => "none",
+        });
         act?.SetTag("cal.source", source);
         act?.SetTag("cal.residual_px", residual);
 
