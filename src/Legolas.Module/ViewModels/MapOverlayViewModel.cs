@@ -1234,16 +1234,6 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _calibrationMarkers[marker] = _markers.AddMarker(areaKey, world.X, world.Z, style);
     }
 
-    /// <summary>Trace one calibration-marker early-return per
-    /// (area, callSite, reason) so silent fallbacks are observable in production
-    /// without flooding the trace on a busy area. Mirrors
-    /// <c>OverlayWindowService._projectionMissAreasLogged</c>.
-    /// <para>#1093 D4 generalisation: the original helper hardcoded the
-    /// <c>RefreshCalibrationMarker</c> call-site name; every VM projection
-    /// path (RebuildCalibrationGhosts, MotherlodeMarkerPixels,
-    /// MotherlodeGuidanceOverlay, RefreshSurveyPlayerAnchor) calls in with
-    /// its own <paramref name="callSite"/> so a triager can read which
-    /// path silently dropped.</para></summary>
     /// <summary>mithril#1096 — single point of policy for "give me a usable
     /// overlay-frame calibration for the current scene." When the composer +
     /// overlay window are wired (production, new tests), routes through the
@@ -1270,6 +1260,16 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             : (null, CalPath.None, "no_overlay_cal");
     }
 
+    /// <summary>Trace one calibration-marker early-return per
+    /// (area, callSite, reason) so silent fallbacks are observable in production
+    /// without flooding the trace on a busy area. Mirrors
+    /// <c>OverlayWindowService._projectionMissAreasLogged</c>.
+    /// <para>#1093 D4 generalisation: the original helper hardcoded the
+    /// <c>RefreshCalibrationMarker</c> call-site name; every VM projection
+    /// path (RebuildCalibrationGhosts, MotherlodeMarkerPixels,
+    /// MotherlodeGuidanceOverlay, RefreshSurveyPlayerAnchor) calls in with
+    /// its own <paramref name="callSite"/> so a triager can read which
+    /// path silently dropped.</para></summary>
     private void LogCalibrationFallback(string areaKey, string callSite, string reason)
     {
         var dedupKey = areaKey + "|" + callSite + "|" + reason;
