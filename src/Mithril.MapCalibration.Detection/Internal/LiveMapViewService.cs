@@ -52,16 +52,11 @@ public sealed class LiveMapViewService : ILiveMapViewService
 
     public Task RefreshAsync(string mapAssetKey, CancellationToken ct = default)
     {
-        // GetOrAdd may call the factory more than once under contention but
-        // only one result wins; we therefore call a non-factory overload that
-        // is guaranteed to call the factory exactly once via the lock-free
-        // compare-and-swap that AddOrUpdate provides.
-        // Using GetOrAdd: factory is called speculatively but the winner is
-        // deterministic — if the key is already present the extra Task.Run
-        // is wasted but the second caller still gets the right in-flight task.
-        // For dedup correctness, the returned task must be the first-inserted
-        // one. GetOrAdd does that.
-        var task = _inflight.GetOrAdd(mapAssetKey, key => RunProbe(key, ct));
+        var task = _inflight.GetOrAdd(mapAssetKey, key =>
+        {
+            _logger?.LogTrace("RefreshAsync({Area}): kicking off probe.", key);
+            return RunProbe(key, ct);
+        });
         return task.ContinueWith(
             _ => _inflight.TryRemove(new KeyValuePair<string, Task>(mapAssetKey, task)),
             CancellationToken.None,
@@ -79,13 +74,28 @@ public sealed class LiveMapViewService : ILiveMapViewService
         await Task.Run(() =>
         {
             var screenshot = _capture.Capture();
-            if (screenshot is null) { status = LiveMapViewStatus.FailedNoCapture; return; }
+            if (screenshot is null)
+            {
+                status = LiveMapViewStatus.FailedNoCapture;
+                _logger?.LogWarning("Probe({Area}): IOverlayCaptureSource.Capture returned null — overlay window not realised, or capture exception (see Mithril.Overlay.Capture warnings).", mapAssetKey);
+                return;
+            }
 
             var baseTex = _textures.TryGetBaseTexture(mapAssetKey);
-            if (baseTex is null) { status = LiveMapViewStatus.FailedNoBaseTexture; return; }
+            if (baseTex is null)
+            {
+                status = LiveMapViewStatus.FailedNoBaseTexture;
+                _logger?.LogWarning("Probe({Area}): IBaseTextureProvider.TryGetBaseTexture returned null — area not in bundled CanonicalAssetHashes / texture catalogue. Live-view detection cannot run; ghosts + survey-anchor will fall back to canonical projection (wrong scale on overlay surface — mithril#1107).", mapAssetKey);
+                return;
+            }
 
             fix = _probe.TryProbe(screenshot, baseTex);
             status = fix.HasValue ? LiveMapViewStatus.Detected : LiveMapViewStatus.FailedLowConfidence;
+            if (fix is { } f)
+                _logger?.LogInformation("Probe({Area}): detected — pan=({PanX:0},{PanY:0})tex viewScale={Scale:0.000} conf={Conf:0.00}.",
+                    mapAssetKey, f.PanTexPxX, f.PanTexPxY, f.ViewScale, f.Confidence);
+            else
+                _logger?.LogWarning("Probe({Area}): IMapViewProbe.TryProbe returned null — cross-correlation didn't meet confidence threshold.", mapAssetKey);
         }, ct).ConfigureAwait(false);
 
         if (fix.HasValue) _fixes[mapAssetKey] = fix.Value;

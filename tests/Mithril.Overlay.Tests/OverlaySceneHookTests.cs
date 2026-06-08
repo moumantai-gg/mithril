@@ -36,33 +36,23 @@ public sealed class OverlaySceneHookTests
         FakeMapCalibrationService calibration,
         StubAreaState areaState,
         StubLiveMapViewService? liveView = null,
-        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null,
-        IMapTextureDimensions? dims = null)   // mithril#1081 Task 11: optional dims
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
     {
         var markers = new WorldOverlayMarkers();
         var renderer = new MarkerSceneRenderer();
         var position = new StubPositionState();
-        // mithril#1041: OverlayWindowService now takes IMapState +
-        // ISceneAssetCache + IDomainEventSubscriber so it can resolve the
-        // composite MapSceneRef on the live render path. The scene-hook tests
-        // drive via DriveSceneForTest (which synths a scene from areaKey when
-        // IMapState.CurrentMapScene is null) so these can be no-op stubs.
         var mapState = new StubMapState();
         var sceneCache = new StubSceneAssetCache();
         var bus = new StubDomainEventSubscriber();
+        // mithril#1096 / #1107: composer takes only the calibration service —
+        // post-#1107 review fix dropped IMapTextureDimensions from the resolver
+        // because the new shape is a direct rebrand of the texture cal.
+        var composedResolver = new ComposedOverlayCalibrationResolver(calibration);
         return new OverlayWindowService(
             markers, renderer, calibration, areaState, mapState, sceneCache, bus,
             position, liveView ?? new StubLiveMapViewService(),
-            textureDimensions: dims ?? new NullMapTextureDimensions(),  // mithril#1081
+            composedResolver: composedResolver,    // mithril#1096
             loggerFactory);
-    }
-
-    /// <summary>mithril#1081 — no-op dims stub; null dims → composed-from-texture
-    /// path returns null, matching the prior null-projection-on-uncalibrated
-    /// behaviour so existing tests are unaffected.</summary>
-    private sealed class NullMapTextureDimensions : IMapTextureDimensions
-    {
-        public (int Width, int Height)? TryGetSizeBySha(string? sha) => null;
     }
 
     [Fact]
@@ -343,58 +333,9 @@ public sealed class OverlaySceneHookTests
             "the stack trace is the only thing that lets the user (or maintainer) find the bug.");
     }
 
-    /// <summary>
-    /// mithril#1081 Task 11 — texture-frame composition integration fact.
-    /// <para>Skipped because <see cref="OverlayWindowService.DriveSceneForTest"/>
-    /// doesn't realize the overlay surface — <c>_window</c> is null in tests, so
-    /// <c>ResolveOverlaySurfaceSize</c> returns (0,0), and F2 in
-    /// <c>ResolveComposedOverlayCalibration</c> short-circuits to
-    /// <c>CalPath.None</c> before the texture-frame path can be exercised.
-    /// The decision-table coverage for the composition path lives in
-    /// <see cref="ResolveComposedOverlayCalibrationTests"/> (Task 8), which
-    /// exercises the logic directly without a live surface. That is the
-    /// substantive net; this test would be a duplicate of its integration seam
-    /// rather than an independent check.</para>
-    /// </summary>
-    [Fact(Skip =
-        "DriveSceneForTest doesn't realize the overlay surface; composed-from-texture " +
-        "path is exercised through ResolveComposedOverlayCalibrationTests (Task 8) " +
-        "which covers the decision table without a live surface.")]
-    public void Project_composes_texture_frame_when_only_AutoCal_record_exists()
-    {
-        var calibration = new FakeMapCalibrationService();
-        calibration.CalibratedAreas.Add("Map_A");
-        calibration.OverlayCalForScene = _ => null; // no overlay-frame record
-        calibration.TextureCalForScene = _ =>
-            new WorldToTextureCalibration(
-                OriginX: 0, OriginY: 0, Scale: 1.0,
-                RotationRadians: 0, MirrorNorth: false)
-            {
-                PixelSha256 = "test-sha",
-            };
-
-        var stubDims = new StubMapTextureDimensions((1000, 1000));
-        var areaState = new StubAreaState { CurrentArea = "Map_A" };
-        var service = BuildService(calibration, areaState, dims: stubDims);
-
-        var projected = new List<OverlayPixel?>();
-        using var h = ((IOverlayWindow)service).RegisterScene(ctx =>
-        {
-            projected.Add(ctx.Project(100, 200));
-        });
-
-        service.DriveSceneForTest(null!, null!, "Map_A");
-
-        projected.Single().Should().NotBeNull(
-            because: "Project must compose the texture-frame record onto the overlay " +
-            "surface via WorldToTextureCalibration.ProjectThroughOverlay with dims " +
-            "from IMapTextureDimensions. A null return here means #1081's composition " +
-            "path is broken or the overlay-surface size lookup returned 0.");
-    }
-
-    private sealed class StubMapTextureDimensions((int W, int H)? result) : IMapTextureDimensions
-    {
-        public (int Width, int Height)? TryGetSizeBySha(string? sha) => result;
-    }
-
+    // mithril#1107 review fix: the skipped Project_composes_texture_frame_when_only_AutoCal_record_exists
+    // test was deleted along with the underlying ProjectThroughOverlay / IMapTextureDimensions
+    // dependency. Post-#1107 the composer is a direct rebrand of the texture cal, so
+    // no surface-size lookup, no catalogue lookup, no F2 short-circuit. The rebrand
+    // decision table is exercised by ComposedOverlayCalibrationResolverTests.
 }

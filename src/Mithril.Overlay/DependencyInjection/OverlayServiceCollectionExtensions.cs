@@ -50,6 +50,10 @@ public static class OverlayServiceCollectionExtensions
             return new MarkerSceneRenderer(loggerFactory?.CreateLogger("Mithril.Overlay"));
         });
 
+        // mithril#1096 — composed-cal resolver lifted from OverlayWindowService internal.
+        // Shared by VM consumers (Legolas) + OverlayWindowService (parity).
+        services.TryAddSingleton<IComposedOverlayCalibrationResolver, ComposedOverlayCalibrationResolver>();
+
         // Overlay window service — singleton, surfaced under three contracts
         // (one instance, multiple lookups). Per CLAUDE.md GameState pattern:
         // the hosted-service registration is the lifecycle hook; the

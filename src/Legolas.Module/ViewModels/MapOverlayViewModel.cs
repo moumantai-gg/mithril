@@ -34,6 +34,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     private readonly MotherlodeMeasurementCoordinator? _motherlode;
     private readonly ICharacterPinAnchor? _characterPin;
     private readonly ILiveMapViewService? _liveView;
+    private readonly IComposedOverlayCalibrationResolver? _composedResolver;   // mithril#1096; post-#1107 takes no surface dims
     private readonly IDisposable? _positionSub;
 
     // #835 step 3: shared Mithril.Overlay marker registry. Survey pins are
@@ -66,7 +67,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null, ILiveMapViewService? liveView = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null, ILiveMapViewService? liveView = null, IComposedOverlayCalibrationResolver? composedResolver = null)
     {
         _session = session;
         _projector = projector;
@@ -83,6 +84,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _areaState = areaState;
         _logger = loggerFactory?.CreateLogger("Legolas.MapOverlay");
         _liveView = liveView;
+        _composedResolver = composedResolver;   // mithril#1096; post-#1107 takes no surface dims
         if (_liveView is not null)
             _liveView.Changed += OnLiveViewChanged;
         if (_motherlode is not null)
@@ -317,14 +319,16 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // Information level is safe here. Skip path uses LogCalibrationFallback +
         // ProjectionSkipped(consumer=survey_anchor) so the projection-miss
         // counter family stays uniform across consumers.
-        var overlayCal = _areaCalibration?.CurrentOverlayCalibration;
+        // mithril#1096: route through the shared composed-cal resolver so the
+        // survey "you-are-here" anchor projects on texture-frame-only scenes.
+        var (overlayCal, _, missReason) = ResolveOverlayCal();
         if (overlayCal is null && _latestTrackerFix is not null)
         {
             // Only count as a "skip" when there WAS a tracker fix to project
             // — without one, ResolveSurveyAnchor returns Cleared by design
             // (no tracker = no anchor, unrelated to calibration presence).
             var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
-            LogCalibrationFallback(skippedArea, "RefreshSurveyPlayerAnchor", "no_overlay_cal");
+            LogCalibrationFallback(skippedArea, "RefreshSurveyPlayerAnchor", missReason ?? "no_overlay_cal");
             MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                 new KeyValuePair<string, object?>("consumer", "survey_anchor"),
                 new KeyValuePair<string, object?>("area", skippedArea));
@@ -333,6 +337,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // mithril#1095: resolve live-view fix for layer-2 composition.
         var anchorArea = _areaCalibration?.CurrentScene?.MapAssetKey;
         var liveFix = anchorArea is not null ? _liveView?.GetCurrent(anchorArea) : null;
+
+        // mithril#1107 review-fix-3: when ILiveMapViewService is wired but no fix is
+        // available, REFUSE to project (mirror RebuildCalibrationGhosts / MotherlodeMarkerPixels).
+        // ResolveSurveyAnchor's no-fix branch falls back to canonical (texture-pixel) coords,
+        // which post-#1107 rebrand renders the "you are here" anchor at off-screen
+        // texture pixels — exactly the (-102,1102)-style coords seen in 4fe128da verify logs.
+        // When _liveView is null (legacy test ctors) keep the canonical fallback.
+        if (_liveView is not null && liveFix is null && _latestTrackerFix is not null)
+        {
+            LogCalibrationFallback(anchorArea ?? "<unknown>", "RefreshSurveyPlayerAnchor", "no_live_fix");
+            return;
+        }
 
         var res = ResolveSurveyAnchor(
             _latestTrackerFix,
@@ -587,7 +603,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         var area = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
         var scene = _areaCalibration?.CurrentScene;
         var isCalibrated = IsCurrentAreaCalibrated;
-        var overlayCalPresent = _areaCalibration?.CurrentOverlayCalibration is not null;
+        // mithril#1096: "usable" now means "present-OR-composable" — the resolver
+        // returns non-null when either the direct overlay-frame cal exists OR a
+        // texture-frame record composes onto the live surface.
+        var overlayCalUsable = ResolveOverlayCal().Cal is not null;
         string action;
 
         if (on)
@@ -595,10 +614,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             _mapVisibleBeforeValidation = _session.IsMapVisible;
             ShowCalibrationGhosts = true;
             _session.IsMapVisible = true;
-            RebuildCalibrationGhosts();
-            // #1095: trigger a fresh live-view probe so the ghosts render
-            // against the current pan/zoom without requiring a manual hotkey.
+            // mithril#1107 review-fix-2: trigger the probe FIRST so its async
+            // completion races with — and likely lands during — the rebuild
+            // chain. RebuildCalibrationGhosts itself also calls TriggerLiveViewRefresh
+            // when no fix is available, so this is belt-and-suspenders for the
+            // case where the user has been on this area before (cached fix may
+            // still be present, in which case the rebuild succeeds immediately
+            // and the probe just refreshes for staleness).
             TriggerLiveViewRefresh();
+            RebuildCalibrationGhosts();
             action = "shown_and_rebuilt";
         }
         else
@@ -613,8 +637,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CalibrationValidationStatus));
 
         _logger?.LogInformation(
-            "SetCalibrationValidation(on={On}, area={Area}, scene={Scene}, isCalibrated={IsCalibrated}, overlayCalPresent={OverlayCalPresent}): {Action} → ghostsBuilt={GhostsBuilt}.",
-            on, area, scene?.SceneFriendlyName ?? "<none>", isCalibrated, overlayCalPresent, action, CalibrationGhosts.Count);
+            "SetCalibrationValidation(on={On}, area={Area}, scene={Scene}, isCalibrated={IsCalibrated}, overlayCalUsable={OverlayCalUsable}): {Action} → ghostsBuilt={GhostsBuilt}.",
+            on, area, scene?.SceneFriendlyName ?? "<none>", isCalibrated, overlayCalUsable, action, CalibrationGhosts.Count);
     }
 
     /// <summary>#495: the wizard calls this when the user enters a step where
@@ -637,14 +661,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         var sw = Stopwatch.StartNew();
 
         CalibrationGhosts.Clear();
-        if (_areaCalibration?.CurrentOverlayCalibration is not { } cal)
+        // mithril#1096: route through the shared composed-cal resolver when wired
+        // (so a texture-frame-only record renders pink dots via composition) and
+        // fall back to direct-overlay-only when not wired (legacy test contracts).
+        var (cal, path, missReason) = ResolveOverlayCal();
+        if (cal is null)
         {
             // #1093 D4 + §5.3 skip path: the dedup helper is the "human-readable
             // explanation" (one Trace per (area, callSite, reason)); the meter
             // is the "how often" answer (every call). Use the live scene's
             // MapAssetKey as the area; fall back when no scene resolved yet.
             var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
-            LogCalibrationFallback(skippedArea, "RebuildCalibrationGhosts", "no_overlay_cal");
+            LogCalibrationFallback(skippedArea, "RebuildCalibrationGhosts", missReason ?? "no_overlay_cal");
             MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                 new KeyValuePair<string, object?>("consumer", "ghosts"),
                 new KeyValuePair<string, object?>("area", skippedArea));
@@ -653,12 +681,44 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             return;
         }
         // mithril#1095: layer-2 composition — resolve the live MapViewFix for this
-        // area and pass it to GhostLabelDeclutter.Build. If no fix is available yet,
-        // fall back to canonical projection (no layer-2 applied).
-        var areaKey = _areaCalibration.CurrentScene?.MapAssetKey ?? "<unknown>";
+        // area and pass it to GhostLabelDeclutter.Build.
+        //
+        // mithril#1107 review-fix-2: when the ILiveMapViewService IS wired but no
+        // fix has been measured yet, REFUSE to build (mirror MotherlodeMarkerPixels
+        // behaviour). Pre-fix the code fell back to canonical (texture-pixel)
+        // projection which renders at the WRONG scale on the overlay surface —
+        // exactly the "rendered but wrong scale" symptom the manual verify caught.
+        // The ILiveMapViewService.Changed event triggers OnLiveViewChanged below,
+        // which now re-invokes RebuildCalibrationGhosts when ghosts are showing,
+        // so the rebuild lands with a valid fix as soon as the probe completes.
+        //
+        // When _liveView is null (legacy test ctors that don't wire the service)
+        // we keep the canonical-projection fallback so existing test fixtures
+        // stay green — they were never in the wrong-scale failure mode because
+        // they don't render to a real overlay surface.
+        var areaKey = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
         var ghostFix = areaKey != "<unknown>" ? _liveView?.GetCurrent(areaKey) : null;
-        var refs = _areaCalibration.CurrentAreaReferences;
-        foreach (var g in GhostLabelDeclutter.Build(refs, cal, ghostFix))
+        if (_liveView is not null && ghostFix is null)
+        {
+            // mithril#1107 review-fix-3: DO NOT TriggerLiveViewRefresh from here.
+            // OnLiveViewChanged re-invokes RebuildCalibrationGhosts when the probe
+            // raises Changed, so a probe-failed → Changed → rebuild → no fix →
+            // trigger-refresh → probe-failed cycle is a tight loop on the UI thread
+            // (RaiseChanged marshals via the dispatcher, and the LiveMapViewService
+            // has no logger so the loop is invisible in boot.log). User-action sites
+            // (SetCalibrationValidation toggle, area-change, RedetectMapViewHotkey)
+            // are the canonical triggers; if the probe consistently fails, leave it
+            // failed and let the user re-trigger via the hotkey.
+            LogCalibrationFallback(areaKey, "RebuildCalibrationGhosts", "no_live_fix");
+            MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
+                new KeyValuePair<string, object?>("consumer", "ghosts"),
+                new KeyValuePair<string, object?>("area", areaKey));
+            act?.SetTag("cal.path", "none");
+            act?.SetTag("area", areaKey);
+            return;
+        }
+        var refs = _areaCalibration!.CurrentAreaReferences;
+        foreach (var g in GhostLabelDeclutter.Build(refs, cal.Value, ghostFix))
             CalibrationGhosts.Add(g);
         OnPropertyChanged(nameof(CalibrationValidationStatus));
 
@@ -677,7 +737,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         act?.SetTag("area", areaKey);
         act?.SetTag("refs_count", refs.Count);
         act?.SetTag("ghosts_built", CalibrationGhosts.Count);
-        act?.SetTag("cal.path", "direct_overlay");
+        act?.SetTag("cal.path", path switch
+        {
+            CalPath.DirectOverlay => "direct_overlay",
+            CalPath.ComposedFromTexture => "composed_from_texture",
+            _ => "none",
+        });
         act?.SetTag("cal.source", source);
         act?.SetTag("cal.residual_px", residual);
 
@@ -730,15 +795,33 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
     /// <summary>Raised by <see cref="ILiveMapViewService.Changed"/> (UI thread)
     /// after a fresh view-fix probe completes. Marks projection-dependent
-    /// collections dirty so their getters re-read the new fix. The actual
-    /// re-projection is delegated to the getters / rebuild methods wired in
-    /// P2.4.</summary>
+    /// collections dirty so their getters re-read the new fix.
+    ///
+    /// <para>mithril#1107 review-fix-2: when calibration ghosts are showing,
+    /// also call <see cref="RebuildCalibrationGhosts"/> directly — the previous
+    /// "raise PropertyChanged and hope the consumer re-reads" pattern didn't
+    /// re-evaluate the <see cref="CalibrationGhosts"/> ObservableCollection
+    /// (which is a backing field, not a derived getter), so a fix arriving
+    /// AFTER the first <see cref="SetCalibrationValidation"/> toggle never
+    /// rebuilt the ghosts at the now-valid scale.</para></summary>
     private void OnLiveViewChanged(string area)
     {
+        // mithril#1107 review-fix-4 logging: surface that Changed actually
+        // arrived (the underlying probe completed). Pair this Trace with the
+        // LiveMapViewService.Probe(...) log to confirm end-to-end delivery.
+        _logger?.LogTrace("OnLiveViewChanged({Area}): fix={Fix} status={Status} ShowGhosts={ShowGhosts}.",
+            area,
+            _liveView?.GetCurrent(area) is { } f ? $"pan=({f.PanTexPxX:0},{f.PanTexPxY:0}) scale={f.ViewScale:0.000}" : "<null>",
+            _liveView?.GetStatus(area).ToString() ?? "<no_service>",
+            ShowCalibrationGhosts);
         OnPropertyChanged(nameof(CalibrationGhosts));
         OnPropertyChanged(nameof(MotherlodeMarkerPixels));
         OnPropertyChanged(nameof(MotherlodeGuidanceOverlay));
         OnPropertyChanged(nameof(LiveViewStatusText));
+        // mithril#1107 review-fix-2: rebuild ghosts when a fix arrives, otherwise
+        // a first toggle with no fix yet leaves CalibrationGhosts empty forever.
+        if (ShowCalibrationGhosts)
+            RebuildCalibrationGhosts();
     }
 
     /// <summary>
@@ -782,7 +865,17 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     private void TriggerLiveViewRefresh()
     {
         var area = _areaCalibration?.CurrentScene?.MapAssetKey;
-        if (string.IsNullOrEmpty(area) || _liveView is null) return;
+        if (string.IsNullOrEmpty(area))
+        {
+            _logger?.LogTrace("TriggerLiveViewRefresh: no current scene; skipping.");
+            return;
+        }
+        if (_liveView is null)
+        {
+            _logger?.LogTrace("TriggerLiveViewRefresh({Area}): no ILiveMapViewService wired; skipping.", area);
+            return;
+        }
+        _logger?.LogTrace("TriggerLiveViewRefresh({Area}): calling RefreshAsync.", area);
         _ = _liveView.RefreshAsync(area);
     }
 
@@ -1195,6 +1288,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             LogCalibrationFallback(areaKey, "RefreshCalibrationMarker", "No IAreaCalibrationService injected — marker cannot anchor.");
             return;
         }
+        // mithril#1096 NOT MIGRATED: this site reads CurrentOverlayCalibration directly
+        // (not via ResolveOverlayCal) because the Pair-phase pixel→world inverse is
+        // an overlay-frame-only operation by design — there is no overlay-frame cal yet
+        // during the calibration walkthrough that BUILDS it, so texture-frame composition
+        // doesn't apply. The IsPairing gate above means we only reach here when an
+        // overlay-frame seed already exists (from a prior solve / community sync /
+        // bundled baseline). Spec §2.
         var cal = _areaCalibration.CurrentOverlayCalibration;
         if (cal is null)
         {
@@ -1214,6 +1314,31 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
         var style = BuildCalibrationMarkerStyle(marker.IsSelected);
         _calibrationMarkers[marker] = _markers.AddMarker(areaKey, world.X, world.Z, style);
+    }
+
+    /// <summary>mithril#1096 — single point of policy for "give me a usable
+    /// overlay-frame calibration for the current scene." When the composer is wired
+    /// (production + new tests), routes through the shared
+    /// <see cref="IComposedOverlayCalibrationResolver"/> so texture-frame-only
+    /// records are rebranded into overlay-frame cals (post-#1107 layer-1 semantic,
+    /// parity with OverlayWindowService). When null (legacy test ctors that don't
+    /// wire it), falls back to the pre-#1096 direct-overlay-only read so every
+    /// existing test stays green. Returns <c>(Cal, Path, MissReason)</c>; consumers
+    /// feed MissReason into <see cref="LogCalibrationFallback"/>'s dedup key.</summary>
+    private (WorldToOverlayCalibration? Cal, CalPath Path, string? MissReason) ResolveOverlayCal()
+    {
+        if (_composedResolver is not null)
+        {
+            var r = _composedResolver.Resolve(_areaCalibration?.CurrentScene);
+            return (r.Calibration, r.Path, r.MissReason);
+        }
+        // Legacy path: pre-#1096 direct-overlay-only behaviour. Mirrors what every
+        // call site did before this migration; preserves the contract for test
+        // ctors that don't wire the new dependency.
+        var direct = _areaCalibration?.CurrentOverlayCalibration;
+        return direct is not null
+            ? (direct, CalPath.DirectOverlay, null)
+            : (null, CalPath.None, "no_overlay_cal");
     }
 
     /// <summary>Trace one calibration-marker early-return per
@@ -1404,7 +1529,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         {
             if (_session.Mode != SessionMode.Motherlode || _motherlode is null)
                 return Array.Empty<OverlayPixel>();
-            if (_areaCalibration?.CurrentOverlayCalibration is not { } cal)
+            // mithril#1096: route through the shared composed-cal resolver so a
+            // texture-frame-only record lights the motherlode markers via composition.
+            var (cal, _, missReason) = ResolveOverlayCal();
+            if (cal is null)
             {
                 // #1093 §5.3: per-frame getter — meter + first-time-Trace
                 // skip log, NO success log (would flood at ~60 Hz). The mode
@@ -1412,7 +1540,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 // by design; only the calibration-null branch is the
                 // "silent fallback worth surfacing" case.
                 var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
-                LogCalibrationFallback(skippedArea, "MotherlodeMarkerPixels", "no_overlay_cal");
+                LogCalibrationFallback(skippedArea, "MotherlodeMarkerPixels", missReason ?? "no_overlay_cal");
                 MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                     new KeyValuePair<string, object?>("consumer", "motherlode_markers"),
                     new KeyValuePair<string, object?>("area", skippedArea));
@@ -1421,7 +1549,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
             // mithril#1095: layer-2 composition — resolve live MapViewFix.
             // If no fix is available yet, return empty (refuse to render stale pixels).
-            var markerArea = _areaCalibration.CurrentScene?.MapAssetKey;
+            var markerArea = _areaCalibration?.CurrentScene?.MapAssetKey;
             if (string.IsNullOrEmpty(markerArea)) return Array.Empty<OverlayPixel>();
             var markerFix = _liveView?.GetCurrent(markerArea);
             if (markerFix is null)
@@ -1436,7 +1564,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 {
                     // mithril#1095: layer-2 composition — project through canonical
                     // calibration then apply live fix.
-                    (list ??= new()).Add(cal.ToLiveOverlay(w, markerFix.Value));
+                    (list ??= new()).Add(cal.Value.ToLiveOverlay(w, markerFix.Value));
                 }
             return list ?? (IReadOnlyList<OverlayPixel>)Array.Empty<OverlayPixel>();
         }
@@ -1452,13 +1580,16 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         {
             if (_session.Mode != SessionMode.Motherlode || _motherlode is null)
                 return null;
-            if (_areaCalibration?.CurrentOverlayCalibration is not { } cal)
+            // mithril#1096: route through the shared composed-cal resolver so a
+            // texture-frame-only record draws the guidance ring via composition.
+            var (cal, _, missReason) = ResolveOverlayCal();
+            if (cal is null)
             {
                 // #1093 §5.3: per-frame getter — meter + first-time-Trace
                 // skip log, NO success log. See MotherlodeMarkerPixels above
                 // for the rationale; identical shape, distinct consumer tag.
                 var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
-                LogCalibrationFallback(skippedArea, "MotherlodeGuidanceOverlay", "no_overlay_cal");
+                LogCalibrationFallback(skippedArea, "MotherlodeGuidanceOverlay", missReason ?? "no_overlay_cal");
                 MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                     new KeyValuePair<string, object?>("consumer", "motherlode_guidance"),
                     new KeyValuePair<string, object?>("area", skippedArea));
@@ -1470,7 +1601,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
             // mithril#1095: layer-2 composition — resolve live MapViewFix.
             // If no fix is available yet, return null (refuse to render stale ring).
-            var guidanceArea = _areaCalibration.CurrentScene?.MapAssetKey;
+            var guidanceArea = _areaCalibration?.CurrentScene?.MapAssetKey;
             if (string.IsNullOrEmpty(guidanceArea)) return null;
             var guidanceFix = _liveView?.GetCurrent(guidanceArea);
             if (guidanceFix is null)
@@ -1481,8 +1612,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
             // mithril#1095: project center through layer-2 composition; scale
             // the radius using the live ViewScale instead of the retired zoomFactor.
-            var center = cal.ToLiveOverlay(next.SuggestedWorld, guidanceFix.Value);
-            var radiusPx = next.ToleranceRadiusMetres * cal.Scale * guidanceFix.Value.ViewScale;
+            var center = cal.Value.ToLiveOverlay(next.SuggestedWorld, guidanceFix.Value);
+            var radiusPx = next.ToleranceRadiusMetres * cal.Value.Scale * guidanceFix.Value.ViewScale;
             return new MotherlodeGuidanceCircle(center, radiusPx, _brushes.RouteLine.Color);
         }
     }

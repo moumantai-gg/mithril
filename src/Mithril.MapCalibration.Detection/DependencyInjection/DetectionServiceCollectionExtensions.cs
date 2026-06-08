@@ -90,7 +90,14 @@ public static class DetectionServiceCollectionExtensions
                 logger: sp.GetService<ILogger<CompositeMapRegionRefiner>>()));
 
         // mithril#1095 Phase 1 — live view detector infra.
-        services.TryAddSingleton<IMapViewProbe, CrossCorrelationMapViewProbe>();
+        // mithril#1107: delegates to the locator pipeline (registered IMapRegionRefiner,
+        // i.e. CompositeMapRegionRefiner = ORB + Sobel-NCC fallback). Replaces the
+        // hand-rolled CrossCorrelationMapViewProbe whose math estimate was 10x off
+        // and whose "screenshot is just-the-map" assumption didn't survive the
+        // real overlay capture (chrome around the map area). Verified on
+        // outdoor (Serbule) + indoor (KhyruleksCrypt) bundles. See
+        // LocatorBackedMapViewProbe.cs.
+        services.TryAddSingleton<IMapViewProbe, LocatorBackedMapViewProbe>();
 
         return services;
     }

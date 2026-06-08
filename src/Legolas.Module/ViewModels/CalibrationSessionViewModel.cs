@@ -8,6 +8,8 @@ using Legolas.Services;
 using Arda.Contracts;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration;
+using Mithril.Overlay;
 using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Reference;
 
@@ -530,7 +532,12 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     }
 
     /// <summary>Ghost every *unplaced* landmark at its calibrated position
-    /// (pure world→pixel; never feeds the solve).</summary>
+    /// (pure world→pixel; never feeds the solve).
+    ///
+    /// <para>mithril#1107: Task 10's resolver migration was reverted because the
+    /// wizard is being retired (separate follow-up). This call site stays on the
+    /// direct CurrentOverlayCalibration read so the wizard's existing behaviour
+    /// is preserved verbatim until the wizard itself is deleted.</para></summary>
     [RelayCommand]
     private void ProjectLandmarks()
     {

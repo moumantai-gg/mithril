@@ -9,6 +9,7 @@ using Legolas.Flow;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
 using Mithril.MapCalibration;
+using Mithril.Overlay;
 using Mithril.Shared.Diagnostics.Telemetry;
 
 namespace Legolas.Services;
@@ -52,6 +53,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private readonly IDomainEventSubscriber _bus;
     private readonly IAreaCalibrationService _areaCalibration;
     private readonly ILiveMapViewService? _liveView;
+    private readonly IComposedOverlayCalibrationResolver? _composedResolver;   // mithril#1096; post-#1107 takes no surface dims
     private readonly SurveyFlowController _flow;
     private readonly SessionState _session;
     private readonly MotherlodeMeasurementCoordinator _motherlode;
@@ -76,11 +78,13 @@ public sealed class PlayerLogIngestionService : BackgroundService
         MotherlodeMeasurementCoordinator motherlode,
         LegolasSettings settings,
         ILoggerFactory? loggerFactory = null,
-        ILiveMapViewService? liveView = null)
+        ILiveMapViewService? liveView = null,
+        IComposedOverlayCalibrationResolver? composedResolver = null)   // mithril#1096; post-#1107 takes no surface dims
     {
         _bus = bus;
         _areaCalibration = areaCalibration;
         _liveView = liveView;
+        _composedResolver = composedResolver;
         _flow = flow;
         _session = session;
         _motherlode = motherlode;
@@ -207,14 +211,15 @@ public sealed class PlayerLogIngestionService : BackgroundService
             return;
         }
 
-        if (_areaCalibration.CurrentOverlayCalibration is not { } cal)
+        var (calNullable, missReason) = ResolveOverlayCal();
+        if (calNullable is not { } cal)
         {
             _session.LastLogEvent =
                 $"Map target: {cleanName} @ ({world.X:0},{world.Z:0}) → area not calibrated; run pin calibration";
             var skippedArea = _areaCalibration?.CurrentScene?.MapAssetKey ?? "<unknown>";
             _logger?.LogInformation(
-                "HandleMapTarget {Name}@({X:0},{Z:0}) area={Area}: dropped — area not calibrated.",
-                cleanName, world.X, world.Z, skippedArea);
+                "HandleMapTarget {Name}@({X:0},{Z:0}) area={Area} reason={Reason}: dropped — area not calibrated.",
+                cleanName, world.X, world.Z, skippedArea, missReason ?? "no_overlay_cal");
             MithrilMeters.LegolasCalibration.ProjectionSkipped.Add(1,
                 new KeyValuePair<string, object?>("consumer", "survey_pin"),
                 new KeyValuePair<string, object?>("area", skippedArea));
@@ -304,5 +309,19 @@ public sealed class PlayerLogIngestionService : BackgroundService
             d.Invoke(action);
         else
             action();
+    }
+
+    /// <summary>mithril#1096 — same pattern as MapOverlayViewModel.ResolveOverlayCal:
+    /// route through the composer when wired; fall back to direct-overlay-only
+    /// behaviour when not (preserves existing tests).</summary>
+    private (WorldToOverlayCalibration? Cal, string? MissReason) ResolveOverlayCal()
+    {
+        if (_composedResolver is not null)
+        {
+            var r = _composedResolver.Resolve(_areaCalibration.CurrentScene);
+            return (r.Calibration, r.MissReason);
+        }
+        var direct = _areaCalibration.CurrentOverlayCalibration;
+        return direct is not null ? (direct, null) : (null, "no_overlay_cal");
     }
 }

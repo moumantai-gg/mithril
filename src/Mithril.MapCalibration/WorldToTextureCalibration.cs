@@ -24,9 +24,10 @@ public readonly record struct WorldToTextureCalibration(
     /// <summary>
     /// SHA-256 (lowercase hex) of the base texture this calibration was solved
     /// against. Mirrors <see cref="AreaCalibration.PixelSha256"/> — see that
-    /// doc. Read by the Legolas overlay (mithril#1081) to look up the
-    /// texture's native pixel dimensions via <see cref="IMapTextureDimensions"/>
-    /// when composing through <see cref="ProjectThroughOverlay(MapRect)"/>.
+    /// doc. Originally consumed by <c>ProjectThroughOverlay</c> for catalogue
+    /// dim lookup (#1081); post-#1107 the composer is a direct rebrand of the
+    /// texture-frame transform so the sha is informational only (kept for
+    /// drift-check / catalogue-versioning consumers).
     /// </summary>
     public string? PixelSha256 { get; init; }
 
@@ -41,22 +42,16 @@ public readonly record struct WorldToTextureCalibration(
         AreaProjectionCore.Unproject(
             OriginX, OriginY, Scale, RotationRadians, MirrorNorth, pixel.X, pixel.Y);
 
-    /// <summary>
-    /// Compose this texture-frame calibration with a base-texture placement on
-    /// the overlay window, yielding the equivalent overlay-frame calibration.
-    /// This is the ONE named place where texture-frame and overlay-frame
-    /// calibrations talk to each other (spec §6.2); rendering an
-    /// AutoCalibration-derived calibration onto the overlay goes through here.
-    /// </summary>
-    public WorldToOverlayCalibration ProjectThroughOverlay(MapRect overlayRect)
-    {
-        var sx = overlayRect.Width / (double)overlayRect.TextureWidth;
-        var sy = overlayRect.Height / (double)overlayRect.TextureHeight;
-        return new WorldToOverlayCalibration(
-            OriginX: overlayRect.OriginX + OriginX * sx,
-            OriginY: overlayRect.OriginY + OriginY * sy,
-            Scale: Scale * sx,
-            RotationRadians: RotationRadians,
-            MirrorNorth: MirrorNorth);
-    }
+    // mithril#1107 review fix: ProjectThroughOverlay was deleted. Pre-#1107 it scaled
+    // the texture cal by surfaceWidth/textureWidth, producing a "surface-scaled"
+    // overlay-frame cal whose ToOverlay returned current-surface pixels. That fought
+    // #1095's layer model: the wizard-solved overlay-frame cal's ToOverlay returns
+    // CANONICAL-TEXTURE-pixel coords, and ToLiveOverlay applies the layer-2 fix
+    // (pan + viewScale) to translate texture-pixel → live-overlay-pixel. The two
+    // shapes disagreed, causing double-scaling whenever a composed-from-texture cal
+    // was fed to ToLiveOverlay. Post-#1107 the composer is a direct rebrand: the
+    // texture cal's fields are constructed into a WorldToOverlayCalibration as-is
+    // (same Scale, Origin, rotation, mirror), so ToOverlay returns texture-pixel
+    // coords and ToLiveOverlay handles surface scaling via the fix. The composer
+    // therefore no longer needs surface dims or IMapTextureDimensions.
 }
