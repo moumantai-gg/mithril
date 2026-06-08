@@ -44,28 +44,31 @@ internal sealed class OverlayWindowCaptureSource : IOverlayCaptureSource
         try
         {
             // mithril#1107 review fix: Capture() runs on a Task.Run thread per
-            // LiveMapViewService.RunProbe, but Window.Left/Top/Width/Height are
-            // WPF dispatcher-affined — accessing them off the dispatcher throws
+            // LiveMapViewService.RunProbe, but WPF visual properties are
+            // dispatcher-affined — accessing them off the dispatcher throws
             // InvalidOperationException. Pre-fix: every probe failed with "calling
             // thread cannot access this object", the live-view detector never
             // produced a fix, and consumers fell back to canonical projection.
             // Marshal the read to the dispatcher (with CheckAccess for the rare
             // case the probe IS on the UI thread).
+            //
+            // mithril#1107 manual-verify fix #2: capture the D2DOverlaySurface's
+            // screen rect, NOT the window's. The OverlayWindow has chrome — a
+            // 1px Border + a ~25px HeaderChrome bar with the status label —
+            // sitting above the rendering surface (OverlayWindow.xaml:27-71).
+            // If we capture from window.Top, the probe's recovered (pan, scale)
+            // bakes the chrome offset into the live-view fix; markers later
+            // drawn onto the D2DOverlaySurface end up ~25px too low vertically
+            // (and ~1px right) relative to PG's actual map content. PointToScreen
+            // handles DPI-aware coordinate conversion (DIPs → screen pixels)
+            // correctly regardless of monitor scale.
             int x, y, w, h;
-            if (window.Dispatcher.CheckAccess())
-            {
-                x = (int)window.Left; y = (int)window.Top;
-                w = (int)window.Width; h = (int)window.Height;
-            }
-            else
-            {
-                var (rx, ry, rw, rh) = window.Dispatcher.Invoke(() =>
-                    ((int)window.Left, (int)window.Top, (int)window.Width, (int)window.Height));
-                x = rx; y = ry; w = rw; h = rh;
-            }
+            (x, y, w, h) = window.Dispatcher.CheckAccess()
+                ? ComputeSurfaceScreenRect(window)
+                : window.Dispatcher.Invoke(() => ComputeSurfaceScreenRect(window));
             if (w <= 0 || h <= 0)
             {
-                _logger?.LogTrace("Capture: window has non-positive dims ({W}x{H} at {X},{Y}); skipping.", w, h, x, y);
+                _logger?.LogTrace("Capture: surface has non-positive dims ({W}x{H} at {X},{Y}); skipping.", w, h, x, y);
                 return null;
             }
             _logger?.LogTrace("Capture: copying screen region {W}x{H} at ({X},{Y}).", w, h, x, y);
@@ -102,5 +105,31 @@ internal sealed class OverlayWindowCaptureSource : IOverlayCaptureSource
             _logger?.LogWarning(ex, "Overlay capture failed — safe-degrade to null fix.");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Compute the D2DOverlaySurface's screen rect in device pixels. Must be
+    /// called on the WPF dispatcher (Window/UIElement properties + PointToScreen
+    /// are dispatcher-affined). Returns all-zeros when the window isn't an
+    /// OverlayWindow, the surface isn't realised, or it has degenerate dims.
+    /// </summary>
+    private static (int X, int Y, int W, int H) ComputeSurfaceScreenRect(Window window)
+    {
+        if (window is not OverlayWindow overlay) return (0, 0, 0, 0);
+        var surface = overlay.OverlaySurface;
+        if (surface.ActualWidth <= 0 || surface.ActualHeight <= 0) return (0, 0, 0, 0);
+
+        // PointToScreen translates WPF logical units (DIPs) into device pixels
+        // accounting for DPI scaling. Two corners give us the actual rendered
+        // screen rect rather than relying on Window.Left + a hardcoded chrome
+        // offset (which would drift if the header layout ever changes).
+        var topLeft = surface.PointToScreen(new System.Windows.Point(0, 0));
+        var bottomRight = surface.PointToScreen(
+            new System.Windows.Point(surface.ActualWidth, surface.ActualHeight));
+        return (
+            (int)topLeft.X,
+            (int)topLeft.Y,
+            (int)(bottomRight.X - topLeft.X),
+            (int)(bottomRight.Y - topLeft.Y));
     }
 }
