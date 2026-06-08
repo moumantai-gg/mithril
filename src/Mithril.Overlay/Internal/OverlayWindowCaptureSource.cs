@@ -117,7 +117,20 @@ internal sealed class OverlayWindowCaptureSource : IOverlayCaptureSource
     {
         if (window is not OverlayWindow overlay) return (0, 0, 0, 0);
         var surface = overlay.OverlaySurface;
-        if (surface.ActualWidth <= 0 || surface.ActualHeight <= 0) return (0, 0, 0, 0);
+
+        // mithril#1107 manual-verify fix #3 (first-toggle race): on the very first
+        // probe attempt after the overlay is shown, the surface element may be
+        // in the visual tree but not yet measured/arranged — ActualWidth/Height
+        // are zero and PointToScreen returns degenerate coords. Forcing a
+        // layout pass here drives WPF's measure + arrange on the surface
+        // (and its containing chain) synchronously. If the dims are still
+        // zero afterwards, the window genuinely isn't realised yet — return
+        // zero and let the caller log "non-positive dims".
+        if (surface.ActualWidth <= 0 || surface.ActualHeight <= 0)
+        {
+            surface.UpdateLayout();
+            if (surface.ActualWidth <= 0 || surface.ActualHeight <= 0) return (0, 0, 0, 0);
+        }
 
         // PointToScreen translates WPF logical units (DIPs) into device pixels
         // accounting for DPI scaling. Two corners give us the actual rendered
