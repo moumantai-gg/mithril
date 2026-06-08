@@ -37,6 +37,17 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
     private Task? _activationTask;
     private bool _isInApp = true;
 
+    // mithril#1114 — Probe for "WPF Application is tearing down" so OnWinEvent
+    // can bail before cascading into lazy OverlayWindow construction. Default
+    // reads Dispatcher.HasShutdownStarted; tests inject a constant since the
+    // static Dispatcher state can't be faked.
+    private Func<bool> _shutdownProbe = DefaultShutdownProbe;
+    private static bool DefaultShutdownProbe() =>
+        Application.Current?.Dispatcher.HasShutdownStarted ?? false;
+
+    // mithril#1114 — Cached so UninstallHook can detach symmetrically.
+    private ExitEventHandler? _applicationExitHandler;
+
     public ForegroundFocusGate(ModuleGates gates, GameConfig gameConfig)
     {
         _gates = gates;
@@ -110,6 +121,18 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
         // a corrected name take effect.
         _gameConfig.PropertyChanged += OnSettingsPropertyChanged;
 
+        // mithril#1114 — Tear the hook down inside the WPF teardown sequence
+        // rather than waiting for IHostedService.StopAsync, which Program.cs
+        // only runs in its finally block AFTER app.Run() returns. By then WPF
+        // has already finished shutting down and any foreground event
+        // delivered during teardown has already cascaded through OverlayController
+        // into Application.LoadComponent (which throws once IsShuttingDown).
+        if (Application.Current is { } app)
+        {
+            _applicationExitHandler = (_, _) => UninstallHook();
+            app.Exit += _applicationExitHandler;
+        }
+
         // Hook delivery is event-driven, so seed the gate from the current
         // foreground window — otherwise IsInApp stays at its default until the
         // next focus change.
@@ -119,6 +142,11 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
     private void UninstallHook()
     {
         if (_hookHandle == IntPtr.Zero) return;
+        if (_applicationExitHandler is not null && Application.Current is { } app)
+        {
+            app.Exit -= _applicationExitHandler;
+        }
+        _applicationExitHandler = null;
         _gameConfig.PropertyChanged -= OnSettingsPropertyChanged;
         User32Focus.UnhookWinEvent(_hookHandle);
         _hookHandle = IntPtr.Zero;
@@ -141,14 +169,40 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
         uint dwmsEventTime)
     {
         if (eventType != User32Focus.EVENT_SYSTEM_FOREGROUND) return;
+        // mithril#1114 — Race backstop for any foreground event already in the
+        // dispatcher queue when Application.Exit fires (Exit runs AFTER
+        // IsShuttingDown is set). Without this, OverlayController.SyncMap
+        // would lazily construct an OverlayWindow whose InitializeComponent
+        // calls Application.LoadComponent and throws.
+        if (_shutdownProbe()) return;
         EvaluateForeground(hwnd);
     }
 
     private void EvaluateForeground(IntPtr hwnd)
     {
+        EvaluateForegroundCallsForTest++;
         if (hwnd == IntPtr.Zero) return;
         IsInApp = IsForegroundInApp(hwnd);
     }
+
+    // ---- mithril#1114 test seams (not part of the production surface) ----
+
+    /// <summary>Test seam — count of EvaluateForeground entries. Lets the
+    /// shutdown-guard test assert that OnWinEvent's early-return BEFORE
+    /// EvaluateForeground is what stops the cascade (vs. the existing
+    /// hwnd==IntPtr.Zero early-return inside EvaluateForeground).</summary>
+    internal int EvaluateForegroundCallsForTest { get; private set; }
+
+    /// <summary>Test seam — override the "Application is shutting down" probe.
+    /// Production reads <see cref="System.Windows.Threading.Dispatcher.HasShutdownStarted"/>,
+    /// which is sealed on the static dispatcher and can't be faked.</summary>
+    internal void SetShutdownProbeForTest(Func<bool> probe) =>
+        _shutdownProbe = probe ?? throw new ArgumentNullException(nameof(probe));
+
+    /// <summary>Test seam — drive <see cref="OnWinEvent"/> directly with the
+    /// foreground-changed event type, bypassing the Win32 hook dispatch.</summary>
+    internal void TestSimulateForegroundChanged(IntPtr hwnd) =>
+        OnWinEvent(IntPtr.Zero, User32Focus.EVENT_SYSTEM_FOREGROUND, hwnd, 0, 0, 0, 0);
 
     private bool IsForegroundInApp(IntPtr hwnd)
     {
