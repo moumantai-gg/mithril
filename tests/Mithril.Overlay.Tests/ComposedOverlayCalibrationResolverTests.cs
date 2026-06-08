@@ -88,14 +88,21 @@ public sealed class ComposedOverlayCalibrationResolverTests
     }
 
     [Fact]
-    public void BothFramesPresent_PrefersDirectOverlay()
+    public void BothFramesPresent_PrefersComposedFromTexture()
     {
+        // mithril#1107 manual-verify fix: Texture-frame is the right input space
+        // for ToLiveOverlay's layer-2 fix. Pre-#1095 wizard Overlay-frame cals
+        // are in canonical-overlay-pixel units, which produces a unit mismatch
+        // when fed through ToLiveOverlay (markers projected at ~2x wrong scale
+        // for a typical Serbule-shaped overlay). Texture-frame wins when both
+        // exist — see the resolver's type doc for the unit rationale.
         var r = Make(overlayCal: MakeOverlayCal(), textureCal: MakeTexCal()).Resolve(Scene);
 
         r.Calibration.Should().NotBeNull();
-        r.Path.Should().Be(CalPath.DirectOverlay);
+        r.Path.Should().Be(CalPath.ComposedFromTexture);
         r.MissReason.Should().BeNull();
-        r.Calibration!.Value.OriginX.Should().Be(100);
+        r.Calibration!.Value.OriginX.Should().Be(50);
+        r.Calibration!.Value.Scale.Should().Be(2.0);
     }
 
     [Fact]
