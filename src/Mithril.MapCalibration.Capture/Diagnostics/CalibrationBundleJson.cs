@@ -17,7 +17,10 @@ public sealed record AttemptJson(
     // rejected-map-not-located so the bundle is self-triaging for future
     // close-miss-vs-catastrophic-mismatch rejections. Null when the locator never
     // ran (early pre-locate rejects) or the captured frame had no viable fit.
-    LocatorBestJson? LocatorBest = null);
+    LocatorBestJson? LocatorBest = null,
+    // Per-attempt synthesis-J snapshot (#1117). Null when SynthesisRerankMode == Off
+    // or when this bundle was written by a pre-#1117 engine version (schema v1/v2).
+    SynthesisJson? Synthesis = null);
 
 /// <summary>
 /// Carries the locator's raw fit rect (gate-pass-or-not), the per-algorithm
@@ -103,6 +106,27 @@ public sealed record RecoveredCalibrationJson(
     string Source,
     IReadOnlyList<InlierJson> Inliers);
 
+/// <summary>
+/// Bundle wire-format mirror of <see cref="Mithril.MapCalibration.Detection.SynthesisDiagnostics"/>.
+/// SchemaVersion 1 — first persisted version. Null on <see cref="AttemptJson.Synthesis"/>
+/// when synthesis did not run (<c>SynthesisRerankMode == Off</c>) or when the bundle was
+/// written by a pre-#1117 engine version (schema v1/v2 AttemptJson).
+/// </summary>
+public sealed record SynthesisJson(
+    int SchemaVersion,
+    string Mode,
+    bool? Rotate180,
+    double? J,
+    double JMin,
+    int? RefsAboveHalf,
+    int? RefsTotal,
+    int? RefsOffCrop,
+    int NMin,
+    string Verdict,
+    string GateVerdict,
+    bool Disagree,
+    string? DisagreeChange);
+
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,
@@ -112,4 +136,5 @@ public sealed record RecoveredCalibrationJson(
 [JsonSerializable(typeof(MapRectJson))]
 [JsonSerializable(typeof(DetectionsJson))]
 [JsonSerializable(typeof(RecoveredCalibrationJson))]
+[JsonSerializable(typeof(SynthesisJson))]
 public partial class CalibrationBundleJsonContext : JsonSerializerContext;

@@ -243,7 +243,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         {
             var finalized = DateTimeOffset.UtcNow;
             var dto = new AttemptJson(
-                SchemaVersion: 2,
+                SchemaVersion: 3,
                 Area: ctx.Area,
                 AttemptStartedUtc: ctx.StartedUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
                 AttemptFinalizedUtc: finalized.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
@@ -251,7 +251,8 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 RejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo,
                 EngineVersion: AssemblyVersion,
                 Files: files,
-                LocatorBest: ToLocatorBestJson(ctx));
+                LocatorBest: ToLocatorBestJson(ctx),
+                Synthesis: ToSynthesisJson(ctx.Result?.Synthesis));
             WriteJson(dir, "01-attempt.json", dto, CalibrationBundleJsonContext.Default.AttemptJson);
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "01-attempt.json header write failed for {Outcome}", ctx.Outcome); }
@@ -299,6 +300,28 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             Algorithm: isFallback ? "sobel-padded-pyramid" : "orb-lowe",
             FallbackNcc: isFallback ? metrics.Confidence : null,
             PadPx: padPx);
+    }
+
+    // #1117: field-by-field translation from the engine-layer SynthesisDiagnostics
+    // to the bundle wire-format SynthesisJson. Null in → null out so pre-#1117
+    // solve results (or mode == Off) produce v3 bundles with synthesis: null.
+    private static SynthesisJson? ToSynthesisJson(SynthesisDiagnostics? d)
+    {
+        if (d is null) return null;
+        return new SynthesisJson(
+            SchemaVersion: 1,
+            Mode: d.Mode,
+            Rotate180: d.Rotate180,
+            J: d.J,
+            JMin: d.JMin,
+            RefsAboveHalf: d.RefsAboveHalf,
+            RefsTotal: d.RefsTotal,
+            RefsOffCrop: d.RefsOffCrop,
+            NMin: d.NMin,
+            Verdict: d.Verdict,
+            GateVerdict: d.GateVerdict,
+            Disagree: d.Disagree,
+            DisagreeChange: d.DisagreeChange);
     }
 
     private static string WritePng(string dir, string name, BitmapSource src)

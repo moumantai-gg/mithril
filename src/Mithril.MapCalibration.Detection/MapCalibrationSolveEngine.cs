@@ -123,7 +123,23 @@ public sealed class MapCalibrationSolveEngine
             {
                 _logger?.LogInformation("Auto-calibration rejected: {Reason}.", legacyResult.RejectReason);
             }
-            return legacyResult;
+            // #1117: Shadow-mode synthesis-J mirror. Fires only when synthesis ran AND produced
+            // a winner (mode == Shadow with bestSynthesis != null). Off skips synthesis entirely;
+            // Enabled's own accept/reject lines at 146-148 / 156 already log J. See spec D7.
+            if (mode == SynthesisRerankMode.Shadow && bestSynthesis is not null)
+            {
+                var (synthVerdict, _, disagree, _) = ComputeVerdicts(bestSynthesis, legacyResult, mode);
+                _logger?.LogInformation(
+                    "Synthesis-J (shadow, rotate180={Rotate180}): J={J:0.00} (min {Jmin:0.00}), "
+                    + "refs>=0.5 {Refs}/{Total} (min {Nmin}), off-crop {OffCrop}, "
+                    + "would-{Verdict}, disagrees-with-gate={Disagree}.",
+                    bestSynthesis.Rotate180,
+                    bestSynthesis.J, _options.SynthesisJMin,
+                    bestSynthesis.RefsAboveHalf, bestSynthesis.RefsTotal, _options.SynthesisNMin,
+                    bestSynthesis.RefsOffCrop,
+                    synthVerdict, disagree);
+            }
+            return legacyResult with { Synthesis = BuildSynthesisDiagnostics(bestSynthesis, legacyResult, mode) };
         }
 
         // Enabled: synthesis-J IS the gate.
@@ -132,6 +148,7 @@ public sealed class MapCalibrationSolveEngine
             _logger?.LogInformation("Auto-calibration rejected (synthesis): no synthesis-J winner.");
             var noWinner = new CalibrationSolveResult(null, 0, "no synthesis-J winner",
                 legacyResult.Inliers) { Detections = legacyResult.Detections };
+            noWinner = noWinner with { Synthesis = BuildSynthesisDiagnostics(bestSynthesis, noWinner, mode) };
             EmitSynthesisRerankTelemetry(mode, bestSynthesis, noWinner);
             return noWinner;
         }
@@ -143,6 +160,7 @@ public sealed class MapCalibrationSolveEngine
             finalResult = new CalibrationSolveResult(
                 bestSynthesis.Calibration, bestSynthesis.Inliers.Count, null, bestSynthesis.Inliers)
                 { Detections = legacyResult.Detections };
+            finalResult = finalResult with { Synthesis = BuildSynthesisDiagnostics(bestSynthesis, finalResult, mode) };
             _logger?.LogInformation(
                 "Auto-calibration accepted (synthesis-J): J={J:0.00}, refs>=0.5 {Refs}/{Total}.",
                 bestSynthesis.J, bestSynthesis.RefsAboveHalf, bestSynthesis.RefsTotal);
@@ -153,6 +171,7 @@ public sealed class MapCalibrationSolveEngine
                        + $"OR refs>=0.5 {bestSynthesis.RefsAboveHalf} < {_options.SynthesisNMin})";
             finalResult = new CalibrationSolveResult(null, bestSynthesis.Inliers.Count, reason, bestSynthesis.Inliers)
                 { Detections = legacyResult.Detections };
+            finalResult = finalResult with { Synthesis = BuildSynthesisDiagnostics(bestSynthesis, finalResult, mode) };
             _logger?.LogInformation("Auto-calibration rejected (synthesis): {Reason}.", reason);
         }
         EmitSynthesisRerankTelemetry(mode, bestSynthesis, finalResult);
@@ -182,57 +201,32 @@ public sealed class MapCalibrationSolveEngine
         using var span = MapCalibrationDiagnostics.ActivitySource.StartActivity("calibration.synthesis_rerank");
         if (span is null && !HasAnyMeterListener()) return;
 
-        // The legacy gate's verdict, derived from finalResult when mode==Shadow
-        // (legacy is source-of-truth, accept iff Calibration is not null) — or, when
-        // mode==Enabled, computed against the *winner's* AreaCalibration + inlier
-        // count so we can still report disagreement between the gates even though
-        // synthesis-J is doing the final accept.
-        bool legacyAccept;
+        // Verdicts (incl. disagree-change) shared with the bundle-population path
+        // and the Shadow-mode Serilog mirror (#1117).
+        var (synthVerdict, gateVerdict, disagree, changeOrNull) = ComputeVerdicts(winner, finalResult, mode);
+        var change = changeOrNull ?? "none";  // preserve existing span tag literal
+
+        // Residual + inlier count stay inline because they're not verdict-related —
+        // they feed the meter records below, not the helper.
         int legacyInlierCount;
         double? legacyResidualPx;
         if (mode == SynthesisRerankMode.Shadow)
         {
-            legacyAccept = finalResult.Calibration is not null;
             legacyInlierCount = finalResult.InlierCount;
             legacyResidualPx = finalResult.Calibration?.ResidualPixels;
         }
+        else if (winner is not null)
+        {
+            // Enabled with a winner: report the winner's residual + inlier count.
+            legacyInlierCount = winner.Inliers.Count;
+            legacyResidualPx = winner.Calibration.ResidualPixels;
+        }
         else
         {
-            // Enabled: re-run the legacy gate on the synthesis winner's fit so the
-            // disagreement counter remains meaningful.
-            if (winner is not null
-                && _gate.Accept(winner.Calibration, winner.Inliers.Count, out _))
-            {
-                legacyAccept = true;
-                legacyInlierCount = winner.Inliers.Count;
-                legacyResidualPx = winner.Calibration.ResidualPixels;
-            }
-            else if (winner is not null)
-            {
-                legacyAccept = false;
-                legacyInlierCount = winner.Inliers.Count;
-                legacyResidualPx = winner.Calibration.ResidualPixels;
-            }
-            else
-            {
-                legacyAccept = false;
-                legacyInlierCount = 0;
-                legacyResidualPx = null;
-            }
+            // Enabled with no winner: nothing to report.
+            legacyInlierCount = 0;
+            legacyResidualPx = null;
         }
-
-        bool synthesisAccept = mode == SynthesisRerankMode.Enabled
-            ? finalResult.Calibration is not null
-            : winner is not null
-              && winner.J >= _options.SynthesisJMin
-              && winner.RefsAboveHalf >= _options.SynthesisNMin;
-
-        var synthVerdict = synthesisAccept ? "accept" : "reject";
-        var gateVerdict = legacyAccept ? "accept" : "reject";
-        var disagree = synthesisAccept != legacyAccept;
-        var change = disagree
-            ? (synthesisAccept ? "reject_to_accept" : "accept_to_reject")
-            : "none";
 
         if (span is not null)
         {
@@ -265,6 +259,83 @@ public sealed class MapCalibrationSolveEngine
             MapCalibrationDiagnostics.Meters.SynthesisDisagree.Add(1,
                 new KeyValuePair<string, object?>("change", change));
         }
+    }
+
+    /// <summary>
+    /// Resolve synth/gate/disagree/change for a single solve attempt. Shared by the
+    /// span/meter emit (<see cref="EmitSynthesisRerankTelemetry"/>), the bundle
+    /// SynthesisDiagnostics population, and the Shadow-mode Serilog mirror (#1117).
+    ///
+    /// <para>Returns <c>DisagreeChange == null</c> when the two gates agree (the existing
+    /// span tag <c>disagree.would_change</c> renders this as the literal string
+    /// <c>"none"</c> — the conversion happens at the span call site, not here, so the
+    /// helper's contract is the semantic truth).</para>
+    /// </summary>
+    private (string SynthVerdict, string GateVerdict, bool Disagree, string? DisagreeChange)
+        ComputeVerdicts(
+            SynthesisOrientationWinner? winner,
+            CalibrationSolveResult finalResult,
+            SynthesisRerankMode mode)
+    {
+        bool legacyAccept;
+        if (mode == SynthesisRerankMode.Shadow)
+        {
+            // Shadow: legacy gate is source of truth; finalResult.Calibration reflects its verdict.
+            legacyAccept = finalResult.Calibration is not null;
+        }
+        else
+        {
+            // Enabled: re-run the legacy gate against the synthesis winner so the disagreement
+            // counter remains meaningful even though synthesis-J is doing the final accept.
+            legacyAccept = winner is not null
+                && _gate.Accept(winner.Calibration, winner.Inliers.Count, out _);
+        }
+
+        bool synthAccept = mode == SynthesisRerankMode.Enabled
+            ? finalResult.Calibration is not null
+            : winner is not null
+              && winner.J >= _options.SynthesisJMin
+              && winner.RefsAboveHalf >= _options.SynthesisNMin;
+
+        var synthVerdict = synthAccept ? "accept" : "reject";
+        var gateVerdict = legacyAccept ? "accept" : "reject";
+        var disagree = synthAccept != legacyAccept;
+        var change = disagree
+            ? (synthAccept ? "reject_to_accept" : "accept_to_reject")
+            : (string?)null;
+        return (synthVerdict, gateVerdict, disagree, change);
+    }
+
+    /// <summary>
+    /// Build the per-attempt <see cref="SynthesisDiagnostics"/> snapshot that
+    /// <see cref="Solve"/> attaches to every <see cref="CalibrationSolveResult"/>
+    /// whenever synthesis ran (mode != Off). Returns null when mode == Off (record
+    /// is meaningless in that case). When <paramref name="winner"/> is null
+    /// (Enabled no-winner path), <see cref="SynthesisDiagnostics.Verdict"/> is
+    /// <c>"no_winner"</c>; otherwise it mirrors the synthesis accept/reject
+    /// resolved by <see cref="ComputeVerdicts"/>.
+    /// </summary>
+    private SynthesisDiagnostics? BuildSynthesisDiagnostics(
+        SynthesisOrientationWinner? winner,
+        CalibrationSolveResult finalResult,
+        SynthesisRerankMode mode)
+    {
+        if (mode == SynthesisRerankMode.Off) return null;
+
+        var (synthVerdict, gateVerdict, disagree, change) = ComputeVerdicts(winner, finalResult, mode);
+        return new SynthesisDiagnostics(
+            Mode: mode == SynthesisRerankMode.Enabled ? "enabled" : "shadow",
+            Rotate180: winner?.Rotate180,
+            J: winner?.J,
+            JMin: _options.SynthesisJMin,
+            RefsAboveHalf: winner?.RefsAboveHalf,
+            RefsTotal: winner?.RefsTotal,
+            RefsOffCrop: winner?.RefsOffCrop,
+            NMin: _options.SynthesisNMin,
+            Verdict: winner is null ? "no_winner" : synthVerdict,
+            GateVerdict: gateVerdict,
+            Disagree: disagree,
+            DisagreeChange: change);
     }
 
     /// <summary>
@@ -503,7 +574,29 @@ public sealed record CalibrationSolveResult(
     IReadOnlyList<TypeAwareRansacSolver.AssignedReference>? Inliers = null)
 {
     public IReadOnlyList<TypedDetection>? Detections { get; init; }
+    public SynthesisDiagnostics? Synthesis { get; init; }   // #1117
 }
+
+/// <summary>
+/// Per-attempt diagnostic snapshot of the synthesis-J re-rank result. Populated
+/// on <see cref="CalibrationSolveResult.Synthesis"/> whenever synthesis ran
+/// (mode != Off), regardless of which gate drove the outcome. Surfaced to both
+/// the diagnostic bundle (01-attempt.json synthesis section, #1117) and the
+/// Shadow-mode Serilog mirror — one engine population, two consumers.
+/// </summary>
+public sealed record SynthesisDiagnostics(
+    string Mode,              // "shadow" | "enabled"  (never "off" — record is null in that case)
+    bool? Rotate180,          // null when no orientation produced a winner
+    double? J,                // null when no winner
+    double JMin,
+    int? RefsAboveHalf,       // null when no winner
+    int? RefsTotal,           // null when no winner
+    int? RefsOffCrop,         // null when no winner
+    int NMin,
+    string Verdict,           // "accept" | "reject" | "no_winner"
+    string GateVerdict,       // legacy gate verdict, "accept" | "reject"
+    bool Disagree,            // synthesis verdict differs from legacy gate verdict
+    string? DisagreeChange);  // "reject_to_accept" | "accept_to_reject" | null
 
 /// <summary>
 /// Per-orientation synthesis-J winner, used by
