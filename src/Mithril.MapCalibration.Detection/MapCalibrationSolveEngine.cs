@@ -51,7 +51,16 @@ public sealed class MapCalibrationSolveEngine
         foreach (var rotate180 in new[] { false, true })
         {
             var texture = rotate180 ? ImageOps.Rotate180(request.BaseTexture) : request.BaseTexture;
-            var req = request with { BaseTexture = texture };
+            // mithril#1121: wrap the caller's blob-score sink so the orientation
+            // flag is set per pass. The detector emits with Rotate180=false
+            // (it has no knowledge of which orientation pass it's in); the
+            // wrapper rewrites that field before forwarding to the original sink.
+            var orientationFlag = rotate180;
+            var callerSink = request.BlobScoreSink;
+            var wrappedSink = callerSink is null
+                ? null
+                : (Action<BlobTemplateScore>)(score => callerSink(score with { Rotate180 = orientationFlag }));
+            var req = request with { BaseTexture = texture, BlobScoreSink = wrappedSink };
 
             var detections = _detector.Detect(req);
             LogDetectSummary(rotate180, detections, references);

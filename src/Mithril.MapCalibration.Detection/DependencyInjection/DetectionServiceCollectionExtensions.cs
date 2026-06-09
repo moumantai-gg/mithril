@@ -42,7 +42,9 @@ public static class DetectionServiceCollectionExtensions
                 pgVersion,
                 loggerFactory?.CreateLogger("Mithril.MapCalibration.BaseTexture"));
         });
-        services.AddSingleton<ICalibrationDetector, DeviationBlobCalibrationDetector>();
+        services.AddSingleton<ICalibrationDetector>(sp =>
+            new DeviationBlobCalibrationDetector(
+                sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Detection")));
         services.AddSingleton<ICalibrationConfidenceGate, CalibrationConfidenceGate>();
         services.TryAddSingleton<MapCalibrationSolverOptions>();
         services.AddSingleton(sp => new MapCalibrationSolveEngine(

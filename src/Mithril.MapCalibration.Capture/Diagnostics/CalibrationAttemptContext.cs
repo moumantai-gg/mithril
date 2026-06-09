@@ -46,6 +46,16 @@ public sealed class CalibrationAttemptContext
     public IReadOnlyList<TypedDetection>? Detections { get; set; }
     public CalibrationSolveResult? Result { get; set; }
 
+    /// <summary>
+    /// Per-blob × per-template NCC observations from the deviation-blob detector
+    /// (mithril#1121). Populated by AutoCalibrationEngine when the engine wires
+    /// <see cref="DetectionRequest.BlobScoreSink"/> for the attempt. <c>null</c>
+    /// (default) when the diagnostic sink wasn't wired or when the underlying
+    /// detector doesn't emit (whole-image fallback path); empty when the wiring
+    /// fired but the deviation map produced zero blobs.
+    /// </summary>
+    public IReadOnlyList<BlobTemplateScore>? BlobTemplateScores { get; set; }
+
     // Outcome is set explicitly by the engine — either at each Fail() site, at
     // the end of the success path, or in the catch (exception → "error").
     public string Outcome { get; set; } = "unknown";
