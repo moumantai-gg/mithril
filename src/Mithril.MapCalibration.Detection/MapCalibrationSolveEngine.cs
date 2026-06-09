@@ -123,6 +123,22 @@ public sealed class MapCalibrationSolveEngine
             {
                 _logger?.LogInformation("Auto-calibration rejected: {Reason}.", legacyResult.RejectReason);
             }
+            // #1117: Shadow-mode synthesis-J mirror. Fires only when synthesis ran AND produced
+            // a winner (mode == Shadow with bestSynthesis != null). Off skips synthesis entirely;
+            // Enabled's own accept/reject lines at 146-148 / 156 already log J. See spec D7.
+            if (mode == SynthesisRerankMode.Shadow && bestSynthesis is not null)
+            {
+                var (synthVerdict, _, disagree, _) = ComputeVerdicts(bestSynthesis, legacyResult, mode);
+                _logger?.LogInformation(
+                    "Synthesis-J (shadow, rotate180={Rotate180}): J={J:0.00} (min {Jmin:0.00}), "
+                    + "refs>=0.5 {Refs}/{Total} (min {Nmin}), off-crop {OffCrop}, "
+                    + "would-{Verdict}, disagrees-with-gate={Disagree}.",
+                    bestSynthesis.Rotate180,
+                    bestSynthesis.J, _options.SynthesisJMin,
+                    bestSynthesis.RefsAboveHalf, bestSynthesis.RefsTotal, _options.SynthesisNMin,
+                    bestSynthesis.RefsOffCrop,
+                    synthVerdict, disagree);
+            }
             return legacyResult with { Synthesis = BuildSynthesisDiagnostics(bestSynthesis, legacyResult, mode) };
         }
 
