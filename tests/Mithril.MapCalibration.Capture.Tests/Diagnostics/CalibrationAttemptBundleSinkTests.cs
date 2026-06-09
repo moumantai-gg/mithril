@@ -382,6 +382,45 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         parsed.Synthesis.Should().BeNull();
     }
 
+    [Fact]
+    public void V3_code_reads_pre_v3_bundle_with_null_synthesis()
+    {
+        // Hand-write a v2 bundle JSON (no `synthesis` field at all). This is exactly
+        // what a pre-#1117 engine version wrote to disk; users may have these
+        // bundles from before they updated.
+        const string preV3Json = """
+        {
+          "schemaVersion": 2,
+          "area": "Map_Test",
+          "attemptStartedUtc": "2026-06-08T19:37:13.0000000Z",
+          "attemptFinalizedUtc": "2026-06-08T19:37:14.0000000Z",
+          "outcome": "accepted",
+          "rejectReason": null,
+          "engineVersion": "3.0.0.103+pre1117",
+          "files": {
+            "rawScreenshot": null,
+            "grayScreenshot": null,
+            "mapRect": null,
+            "baseTextureResampled": null,
+            "alignedScreenshot": null,
+            "deviation": null,
+            "detectionsImage": null,
+            "projectionOverlay": null,
+            "detections": null,
+            "recoveredCalibration": null
+          },
+          "locatorBest": null
+        }
+        """;
+
+        var parsed = JsonSerializer.Deserialize(preV3Json, CalibrationBundleJsonContext.Default.AttemptJson);
+
+        parsed.Should().NotBeNull();
+        parsed!.SchemaVersion.Should().Be(2);   // we preserve the on-disk value
+        parsed.Area.Should().Be("Map_Test");
+        parsed.Synthesis.Should().BeNull();     // missing field → default → null
+    }
+
     /// <summary>
     /// Test-only stub that implements the interface directly and throws on all methods,
     /// exercising the sink's per-method swallow contract.
