@@ -182,57 +182,32 @@ public sealed class MapCalibrationSolveEngine
         using var span = MapCalibrationDiagnostics.ActivitySource.StartActivity("calibration.synthesis_rerank");
         if (span is null && !HasAnyMeterListener()) return;
 
-        // The legacy gate's verdict, derived from finalResult when mode==Shadow
-        // (legacy is source-of-truth, accept iff Calibration is not null) — or, when
-        // mode==Enabled, computed against the *winner's* AreaCalibration + inlier
-        // count so we can still report disagreement between the gates even though
-        // synthesis-J is doing the final accept.
-        bool legacyAccept;
+        // Verdicts (incl. disagree-change) shared with the bundle-population path
+        // and the Shadow-mode Serilog mirror (#1117).
+        var (synthVerdict, gateVerdict, disagree, changeOrNull) = ComputeVerdicts(winner, finalResult, mode);
+        var change = changeOrNull ?? "none";  // preserve existing span tag literal
+
+        // Residual + inlier count stay inline because they're not verdict-related —
+        // they feed the meter records below, not the helper.
         int legacyInlierCount;
         double? legacyResidualPx;
         if (mode == SynthesisRerankMode.Shadow)
         {
-            legacyAccept = finalResult.Calibration is not null;
             legacyInlierCount = finalResult.InlierCount;
             legacyResidualPx = finalResult.Calibration?.ResidualPixels;
         }
+        else if (winner is not null)
+        {
+            // Enabled with a winner: report the winner's residual + inlier count.
+            legacyInlierCount = winner.Inliers.Count;
+            legacyResidualPx = winner.Calibration.ResidualPixels;
+        }
         else
         {
-            // Enabled: re-run the legacy gate on the synthesis winner's fit so the
-            // disagreement counter remains meaningful.
-            if (winner is not null
-                && _gate.Accept(winner.Calibration, winner.Inliers.Count, out _))
-            {
-                legacyAccept = true;
-                legacyInlierCount = winner.Inliers.Count;
-                legacyResidualPx = winner.Calibration.ResidualPixels;
-            }
-            else if (winner is not null)
-            {
-                legacyAccept = false;
-                legacyInlierCount = winner.Inliers.Count;
-                legacyResidualPx = winner.Calibration.ResidualPixels;
-            }
-            else
-            {
-                legacyAccept = false;
-                legacyInlierCount = 0;
-                legacyResidualPx = null;
-            }
+            // Enabled with no winner: nothing to report.
+            legacyInlierCount = 0;
+            legacyResidualPx = null;
         }
-
-        bool synthesisAccept = mode == SynthesisRerankMode.Enabled
-            ? finalResult.Calibration is not null
-            : winner is not null
-              && winner.J >= _options.SynthesisJMin
-              && winner.RefsAboveHalf >= _options.SynthesisNMin;
-
-        var synthVerdict = synthesisAccept ? "accept" : "reject";
-        var gateVerdict = legacyAccept ? "accept" : "reject";
-        var disagree = synthesisAccept != legacyAccept;
-        var change = disagree
-            ? (synthesisAccept ? "reject_to_accept" : "accept_to_reject")
-            : "none";
 
         if (span is not null)
         {
@@ -265,6 +240,51 @@ public sealed class MapCalibrationSolveEngine
             MapCalibrationDiagnostics.Meters.SynthesisDisagree.Add(1,
                 new KeyValuePair<string, object?>("change", change));
         }
+    }
+
+    /// <summary>
+    /// Resolve synth/gate/disagree/change for a single solve attempt. Shared by the
+    /// span/meter emit (<see cref="EmitSynthesisRerankTelemetry"/>), the bundle
+    /// SynthesisDiagnostics population, and the Shadow-mode Serilog mirror (#1117).
+    ///
+    /// <para>Returns <c>DisagreeChange == null</c> when the two gates agree (the existing
+    /// span tag <c>disagree.would_change</c> renders this as the literal string
+    /// <c>"none"</c> — the conversion happens at the span call site, not here, so the
+    /// helper's contract is the semantic truth).</para>
+    /// </summary>
+    private (string SynthVerdict, string GateVerdict, bool Disagree, string? DisagreeChange)
+        ComputeVerdicts(
+            SynthesisOrientationWinner? winner,
+            CalibrationSolveResult finalResult,
+            SynthesisRerankMode mode)
+    {
+        bool legacyAccept;
+        if (mode == SynthesisRerankMode.Shadow)
+        {
+            // Shadow: legacy gate is source of truth; finalResult.Calibration reflects its verdict.
+            legacyAccept = finalResult.Calibration is not null;
+        }
+        else
+        {
+            // Enabled: re-run the legacy gate against the synthesis winner so the disagreement
+            // counter remains meaningful even though synthesis-J is doing the final accept.
+            legacyAccept = winner is not null
+                && _gate.Accept(winner.Calibration, winner.Inliers.Count, out _);
+        }
+
+        bool synthAccept = mode == SynthesisRerankMode.Enabled
+            ? finalResult.Calibration is not null
+            : winner is not null
+              && winner.J >= _options.SynthesisJMin
+              && winner.RefsAboveHalf >= _options.SynthesisNMin;
+
+        var synthVerdict = synthAccept ? "accept" : "reject";
+        var gateVerdict = legacyAccept ? "accept" : "reject";
+        var disagree = synthAccept != legacyAccept;
+        var change = disagree
+            ? (synthAccept ? "reject_to_accept" : "accept_to_reject")
+            : (string?)null;
+        return (synthVerdict, gateVerdict, disagree, change);
     }
 
     /// <summary>
