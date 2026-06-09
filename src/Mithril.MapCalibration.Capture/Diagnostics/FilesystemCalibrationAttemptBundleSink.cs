@@ -238,10 +238,16 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         catch (Exception ex) { _logger?.LogWarning(ex, "11-recovered-cal write failed"); return null; }
     }
 
-    // mithril#1121: per-blob × per-template NCC observation dump. Written only
-    // when the engine populated the context (i.e., the diagnostic sink was wired).
-    // Skipped when null or empty so a non-#1121-aware caller doesn't get an empty
-    // file written alongside their bundles.
+    // mithril#1121: per-blob × per-template NCC observation dump. Omitted in two
+    // cases:
+    //   - null: synthetic test paths only — AutoCalibrationEngine always assigns
+    //     the list (even empty) before calling the sink. Production bundles
+    //     never see null here.
+    //   - empty: legitimate runtime state when the deviation map produced zero
+    //     blobs. Matches the existing per-file convention (RecoveredCalibration
+    //     and ProjectionOverlay also omit on "no data produced") rather than
+    //     emitting an empty array.
+    // Use 07-deviation.png alongside this file's absence to distinguish the two.
     private string? TryWriteBlobTemplateScoresJson(string dir, CalibrationAttemptContext ctx)
     {
         try

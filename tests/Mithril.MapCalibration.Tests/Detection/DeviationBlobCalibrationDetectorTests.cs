@@ -163,4 +163,57 @@ public sealed class DeviationBlobCalibrationDetectorTests
         var act = () => detector.Detect(req);
         act.Should().NotThrow();
     }
+
+    // mithril#1121: the skip path fires when a template's dimensions exceed the
+    // blob's padded crop (rare in production at RenderSizePx=16 + outdoor maps,
+    // but real on degenerate inputs). The default-sized fixture never trips this
+    // branch, so the per-blob test asserts conditional NaN; this test exercises
+    // it directly so the skip-side semantic stays under coverage.
+    [Fact]
+    public void Diagnostic_sink_records_skip_path_when_template_exceeds_padded_crop()
+    {
+        // 24x24 image with a small painted square at the centre — the deviation
+        // map produces one blob. The default templates' max dimension is 40 px
+        // (medipillar) and the image is only 24 px, so every template's height
+        // dimension exceeds the padded crop and all four hit the skip branch.
+        // RenderSizePx left null so IconRenderScaler doesn't downscale (templates
+        // are already below ScaleSearchThresholdPx = 64).
+        const int W = 24, H = 24;
+        var texPixels = new byte[W * H];
+        var shotPixels = new byte[W * H];
+        for (int y = 10; y < 14; y++)
+            for (int x = 10; x < 14; x++)
+                shotPixels[y * W + x] = 255;
+
+        var shot = new GrayImage(W, H, shotPixels);
+        var tex = new GrayImage(W, H, texPixels);
+
+        var templates = SyntheticMap.BuildTemplates(SyntheticMap.DefaultIcons);
+        var rect = new MapRect(0, 0, W, H, W, H);
+        var opts = new BlobOptions(MinArea: 4, MaxIconArea: 1500, MinSolidity: 0.10, MaxAspect: 4.0, MinPeak: 0.3);
+        var request = new DetectionRequest(shot, tex, rect, templates, RimMaskMode.None,
+            LowNcc: 0.3, TypeFloor: 0.45, BlobOptions: opts)
+        {
+            RenderSizePx = null,
+        };
+
+        var collected = new List<BlobTemplateScore>();
+        request = request with { BlobScoreSink = collected.Add };
+
+        new DeviationBlobCalibrationDetector().Detect(request);
+
+        var skipped = collected.Where(s => s.Skipped).ToArray();
+        skipped.Should().NotBeEmpty(
+            "templates whose max dim (40 px) exceeds the 24x24 image must skip the per-template NCC");
+
+        // Skipped records preserve the original template dims (so triage can see
+        // WHICH dim exceeded the crop) and carry the NaN sentinel.
+        skipped.Should().AllSatisfy(s =>
+        {
+            double.IsNaN(s.Score).Should().BeTrue();
+            s.AboveFloor.Should().BeFalse();
+            s.TemplateWidth.Should().BeGreaterThan(0);
+            s.TemplateHeight.Should().BeGreaterThan(0);
+        });
+    }
 }
