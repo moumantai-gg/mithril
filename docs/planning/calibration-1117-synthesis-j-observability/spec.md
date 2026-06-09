@@ -1,6 +1,6 @@
 # Shadow-mode synthesis-J observability — spec
 
-**Issue:** [mithril#1117](https://github.com/moumantai-gg/mithril/issues/1117). **Status:** active. **Blocks:** path 1 of [mithril#1116](https://github.com/moumantai-gg/mithril/issues/1116) (synthesis-J as the auto-cal gate with per-area thresholds) — until this lands we cannot measure what synthesis-J actually scores sparse-interior cals at, and any threshold-tuning recommendation is speculation.
+**Issue:** [mithril#1117](https://github.com/moumantai-gg/mithril/issues/1117) · **PR:** [mithril#1118](https://github.com/moumantai-gg/mithril/pull/1118). **Status:** shipped. **Blocks:** path 1 of [mithril#1116](https://github.com/moumantai-gg/mithril/issues/1116) (synthesis-J as the auto-cal gate with per-area thresholds) — until this lands we cannot measure what synthesis-J actually scores sparse-interior cals at, and any threshold-tuning recommendation is speculation.
 
 ## 1. Problem
 
