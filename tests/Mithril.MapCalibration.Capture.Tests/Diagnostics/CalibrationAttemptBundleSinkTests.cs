@@ -51,6 +51,28 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         return ctx;
     }
 
+    private static CalibrationAttemptContext PopulatedAcceptedWithShadowSynthesis()
+    {
+        var ctx = PopulatedAccepted();
+        ctx.Result = ctx.Result! with
+        {
+            Synthesis = new SynthesisDiagnostics(
+                Mode: "shadow",
+                Rotate180: false,
+                J: 7.5,
+                JMin: 8.0,
+                RefsAboveHalf: 6,
+                RefsTotal: 11,
+                RefsOffCrop: 2,
+                NMin: 8,
+                Verdict: "reject",
+                GateVerdict: "accept",
+                Disagree: true,
+                DisagreeChange: "accept_to_reject"),
+        };
+        return ctx;
+    }
+
     [Fact]
     public void Writes_per_attempt_subdir_with_expected_name_on_accepted()
     {
@@ -319,6 +341,45 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
 
         // Nothing was written anywhere.
         Directory.Exists(_root).Should().BeFalse();
+    }
+
+    [Fact]
+    public void V3_bundle_has_synthesis_section_when_synthesis_ran()
+    {
+        var ctx = PopulatedAcceptedWithShadowSynthesis();
+        NewSink().Write(ctx);
+
+        var dir = Directory.GetDirectories(_root).Single();
+        var path = Path.Combine(dir, "01-attempt.json");
+        using var fs = File.OpenRead(path);
+        var parsed = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
+
+        parsed.Should().NotBeNull();
+        parsed!.SchemaVersion.Should().Be(3);
+        parsed.Synthesis.Should().NotBeNull();
+        parsed.Synthesis!.Mode.Should().Be("shadow");
+        parsed.Synthesis.J.Should().Be(7.5);
+        parsed.Synthesis.RefsAboveHalf.Should().Be(6);
+        parsed.Synthesis.Verdict.Should().Be("reject");
+        parsed.Synthesis.GateVerdict.Should().Be("accept");
+        parsed.Synthesis.Disagree.Should().BeTrue();
+        parsed.Synthesis.DisagreeChange.Should().Be("accept_to_reject");
+    }
+
+    [Fact]
+    public void V3_bundle_omits_synthesis_when_mode_was_off()
+    {
+        // PopulatedAccepted leaves Result.Synthesis null — same as mode == Off.
+        var ctx = PopulatedAccepted();
+        NewSink().Write(ctx);
+
+        var dir = Directory.GetDirectories(_root).Single();
+        var path = Path.Combine(dir, "01-attempt.json");
+        using var fs = File.OpenRead(path);
+        var parsed = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
+
+        parsed!.SchemaVersion.Should().Be(3);
+        parsed.Synthesis.Should().BeNull();
     }
 
     /// <summary>
