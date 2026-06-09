@@ -72,7 +72,8 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 DetectionsImage: TryWriteDetectionsImage(subdir, context),
                 ProjectionOverlay: TryWriteProjectionOverlay(subdir, context),
                 Detections: TryWriteDetectionsJson(subdir, context),
-                RecoveredCalibration: TryWriteRecoveredCalibrationJson(subdir, context));
+                RecoveredCalibration: TryWriteRecoveredCalibrationJson(subdir, context),
+                BlobTemplateScores: TryWriteBlobTemplateScoresJson(subdir, context));
 
             WriteAttemptJson(subdir, context, files);
         }
@@ -235,6 +236,38 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             return WriteJson(dir, "11-recovered-cal.json", dto, CalibrationBundleJsonContext.Default.RecoveredCalibrationJson);
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "11-recovered-cal write failed"); return null; }
+    }
+
+    // mithril#1121: per-blob × per-template NCC observation dump. Written only
+    // when the engine populated the context (i.e., the diagnostic sink was wired).
+    // Skipped when null or empty so a non-#1121-aware caller doesn't get an empty
+    // file written alongside their bundles.
+    private string? TryWriteBlobTemplateScoresJson(string dir, CalibrationAttemptContext ctx)
+    {
+        try
+        {
+            if (ctx.BlobTemplateScores is not { Count: > 0 } scores) return null;
+            var dtos = scores.Select(s => new BlobTemplateScoreJson(
+                BlobIndex: s.BlobIndex,
+                BlobMinX: s.BlobMinX,
+                BlobMinY: s.BlobMinY,
+                BlobWidth: s.BlobWidth,
+                BlobHeight: s.BlobHeight,
+                BlobArea: s.BlobArea,
+                TemplateName: s.TemplateName,
+                TemplateLandmarkType: s.TemplateLandmarkType,
+                TemplateWidth: s.TemplateWidth,
+                TemplateHeight: s.TemplateHeight,
+                Score: s.Score,
+                TypeFloor: s.TypeFloor,
+                AboveFloor: s.AboveFloor,
+                Skipped: s.Skipped,
+                Rotate180: s.Rotate180)).ToArray();
+            var dto = new BlobTemplateScoresJson(SchemaVersion: 1, Scores: dtos);
+            return WriteJson(dir, "10b-blob-template-scores.json", dto,
+                CalibrationBundleJsonContext.Default.BlobTemplateScoresJson);
+        }
+        catch (Exception ex) { _logger?.LogWarning(ex, "10b-blob-template-scores write failed"); return null; }
     }
 
     private void WriteAttemptJson(string dir, CalibrationAttemptContext ctx, AttemptFilesJson files)

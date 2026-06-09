@@ -1,5 +1,4 @@
-using System;
-using System.Collections.Generic;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.MapCalibration.Detection;
 
@@ -21,9 +20,27 @@ namespace Mithril.MapCalibration.Detection;
 ///         per-blob TypeFloor" pairing — deviation-rim alone is not enough).</item>
 /// </list>
 /// BCL-only.
+///
+/// <para><b>Diagnostic observability (mithril#1121).</b> When the request carries
+/// a <see cref="DetectionRequest.BlobScoreSink"/>, every (blob, template) pair
+/// considered emits a <see cref="BlobTemplateScore"/> — both the skip path
+/// (template too large for the padded crop) and the scored path (absolute best
+/// NCC peak in the crop, irrespective of <see cref="DetectionRequest.TypeFloor"/>).
+/// The same data is mirrored to <see cref="LogLevel.Trace"/> via the optional
+/// logger. Used to pick between three different NPC-pip-recall fixes (threshold
+/// vs template-quality vs pipeline-bug) instead of inferring from end-state.
+/// Producer cost is zero when the sink is null and no Trace listener is
+/// attached.</para>
 /// </summary>
 public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
 {
+    private readonly ILogger? _logger;
+
+    public DeviationBlobCalibrationDetector(ILogger? logger = null)
+    {
+        _logger = logger;
+    }
+
     public IReadOnlyDictionary<string, IReadOnlyList<TypedDetection>> Detect(DetectionRequest request)
     {
         int w = request.Screenshot.Width;
@@ -51,6 +68,13 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
         // already small (the synthetic-fixture path).
         var templates = IconRenderScaler.RenderSized(request.Screenshot, request.Templates.Templates, request.TypeFloor, request.RenderSizePx);
 
+        // mithril#1121: diagnostic sink fires when wired. We use the unfiltered
+        // best NCC peak (minScore = -1) for the diagnostic so a 0.78-just-below-floor
+        // blob is distinguishable from a 0.30-way-below-floor blob — see
+        // BlobTemplateScore. The detection-decision NCC stays gated by TypeFloor.
+        var sink = request.BlobScoreSink;
+        int blobIndex = 0;
+
         foreach (var blob in blobs)
         {
             // Search region: blob bbox padded so a template centred near a blob
@@ -67,16 +91,35 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
             double bestScore = double.NegativeInfinity;
             foreach (var t in templates)
             {
-                if (t.Gray.Width > cw || t.Gray.Height > ch) continue;
-                var hit = NccTemplateMatch.FindBest(crop, t.Gray, t.Alpha, request.TypeFloor);
-                if (hit is null) continue;
-                if (hit.Value.Score > bestScore)
+                if (t.Gray.Width > cw || t.Gray.Height > ch)
                 {
-                    bestScore = hit.Value.Score;
-                    bestDet = hit.Value;
+                    EmitDiagnostic(sink, blob, blobIndex, t,
+                        score: double.NaN, typeFloor: request.TypeFloor,
+                        aboveFloor: false, skipped: true);
+                    continue;
+                }
+                // mithril#1121: probe the unfiltered best NCC peak so the diagnostic
+                // surfaces the actual score, not just "below floor → null." The
+                // detection decision still uses TypeFloor via the explicit compare
+                // on line below.
+                var diagHit = NccTemplateMatch.FindBest(crop, t.Gray, t.Alpha, minScore: -1.0);
+                var hitScore = diagHit?.Score ?? double.NaN;
+                var clearedFloor = diagHit is not null && hitScore >= request.TypeFloor;
+
+                EmitDiagnostic(sink, blob, blobIndex, t,
+                    score: hitScore, typeFloor: request.TypeFloor,
+                    aboveFloor: clearedFloor, skipped: false);
+
+                if (!clearedFloor) continue;
+                if (hitScore > bestScore)
+                {
+                    bestScore = hitScore;
+                    bestDet = diagHit!.Value;
                     bestIcon = t;
                 }
             }
+
+            blobIndex++;
             if (bestIcon is null) continue;
 
             var (cx, cy) = bestDet.Centre(bestIcon.Gray.Width, bestIcon.Gray.Height);
@@ -94,5 +137,49 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
         var result = new Dictionary<string, IReadOnlyList<TypedDetection>>(byType.Count, StringComparer.Ordinal);
         foreach (var kv in byType) result[kv.Key] = kv.Value;
         return result;
+    }
+
+    // mithril#1121: emit the per-(blob, template) observation to the sink + Trace
+    // log. Rotate180 is left default-false; the SolveEngine's two-orientation
+    // wrapper rewrites it via `with { Rotate180 = ... }` before appending — the
+    // detector itself has no knowledge of which orientation pass it's running in.
+    private void EmitDiagnostic(
+        Action<BlobTemplateScore>? sink,
+        BlobFeat blob, int blobIndex, IconTemplate template,
+        double score, double typeFloor, bool aboveFloor, bool skipped)
+    {
+        if (skipped)
+        {
+            _logger?.LogTrace(
+                "Blob #{Idx} ({Mx},{My},{W},{H}) area={A}: skipped template {T} ({Tt}) — too large ({Tw}x{Th}).",
+                blobIndex, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
+                template.Name, template.LandmarkType, template.Gray.Width, template.Gray.Height);
+        }
+        else
+        {
+            _logger?.LogTrace(
+                "Blob #{Idx} ({Mx},{My},{W},{H}) area={A}: template {T} ({Tt}) score={S:0.000} floor={F:0.00} {Outcome}.",
+                blobIndex, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
+                template.Name, template.LandmarkType, score, typeFloor,
+                aboveFloor ? "above" : "below");
+        }
+
+        if (sink is null) return;
+        sink(new BlobTemplateScore(
+            BlobIndex: blobIndex,
+            BlobMinX: blob.MinX,
+            BlobMinY: blob.MinY,
+            BlobWidth: blob.W,
+            BlobHeight: blob.H,
+            BlobArea: blob.Area,
+            TemplateName: template.Name,
+            TemplateLandmarkType: template.LandmarkType,
+            TemplateWidth: template.Gray.Width,
+            TemplateHeight: template.Gray.Height,
+            Score: score,
+            TypeFloor: typeFloor,
+            AboveFloor: aboveFloor,
+            Skipped: skipped,
+            Rotate180: false));
     }
 }

@@ -660,6 +660,12 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         attempt.AlignedTexture = alignedTexture;
         attempt.BaseTextureResampled = alignedTexture; // same data, distinct semantic slot per spec
 
+        // mithril#1121: collect per-blob × per-template NCC scores for the
+        // diagnostic bundle. Engine layer creates the buffer; the detector layer
+        // (via the SolveEngine's rotate180 wrapper) appends one record per
+        // (blob, template, orientation). null sink → zero producer cost; the
+        // detector skips both the LogTrace path and the per-record allocation.
+        var blobScores = new List<BlobTemplateScore>();
         var request = new DetectionRequest(
             Screenshot: crop,
             BaseTexture: alignedTexture,
@@ -671,6 +677,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             BlobOptions: BlobOpts)
         {
             RenderSizePx = RenderSizePx,
+            BlobScoreSink = blobScores.Add,
         };
 
         _logger?.LogInformation(
@@ -696,6 +703,10 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 
         attempt.Detections = result.Detections;
         attempt.Result = result;
+        // mithril#1121: surface the per-blob × per-template observations to the
+        // bundle sink. Always assigned (even empty) so the dump distinguishes "no
+        // blobs detected" from "diagnostic wiring missing."
+        attempt.BlobTemplateScores = blobScores;
 
         if (result.Calibration is null)
         {

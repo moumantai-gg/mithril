@@ -164,6 +164,108 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
     }
 
     /// <summary>
+    /// mithril#1121: per-blob × per-template NCC observation dump. When the
+    /// AutoCalibrationEngine wires the diagnostic sink, the resulting context
+    /// carries a populated list and the bundle writer emits
+    /// <c>10b-blob-template-scores.json</c> alongside the existing files.
+    /// </summary>
+    [Fact]
+    public void Writes_blobTemplateScores_when_context_populated()
+    {
+        var ctx = PopulatedAccepted();
+        ctx.BlobTemplateScores = new[]
+        {
+            new BlobTemplateScore(
+                BlobIndex: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
+                BlobArea: 230,
+                TemplateName: "landmark_npc", TemplateLandmarkType: "Npc",
+                TemplateWidth: 15, TemplateHeight: 16,
+                Score: 0.78, TypeFloor: 0.80, AboveFloor: false, Skipped: false,
+                Rotate180: false),
+            new BlobTemplateScore(
+                BlobIndex: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
+                BlobArea: 230,
+                TemplateName: "landmark_portal", TemplateLandmarkType: "Portal",
+                TemplateWidth: 16, TemplateHeight: 16,
+                Score: 0.65, TypeFloor: 0.80, AboveFloor: false, Skipped: false,
+                Rotate180: false),
+            new BlobTemplateScore(
+                BlobIndex: 1, BlobMinX: 249, BlobMinY: 149, BlobWidth: 16, BlobHeight: 17,
+                BlobArea: 220,
+                TemplateName: "landmark_telepad", TemplateLandmarkType: "TeleportationPlatform",
+                TemplateWidth: 0, TemplateHeight: 0,
+                Score: double.NaN, TypeFloor: 0.80, AboveFloor: false, Skipped: true,
+                Rotate180: true),
+        };
+
+        NewSink().Write(ctx);
+
+        var dir = Directory.GetDirectories(_root).Single();
+        var files = Directory.GetFiles(dir).Select(Path.GetFileName).ToArray();
+        files.Should().Contain("10b-blob-template-scores.json");
+
+        var path = Path.Combine(dir, "10b-blob-template-scores.json");
+        using var fs = File.OpenRead(path);
+        var dto = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.BlobTemplateScoresJson);
+        dto.Should().NotBeNull();
+        dto!.SchemaVersion.Should().Be(1);
+        dto.Scores.Should().HaveCount(3);
+
+        // First record round-trips faithfully.
+        dto.Scores[0].BlobIndex.Should().Be(0);
+        dto.Scores[0].TemplateName.Should().Be("landmark_npc");
+        dto.Scores[0].TemplateLandmarkType.Should().Be("Npc");
+        dto.Scores[0].Score.Should().BeApproximately(0.78, 1e-9);
+        dto.Scores[0].TypeFloor.Should().BeApproximately(0.80, 1e-9);
+        dto.Scores[0].AboveFloor.Should().BeFalse();
+        dto.Scores[0].Skipped.Should().BeFalse();
+
+        // Skip path round-trips with NaN score.
+        dto.Scores[2].Skipped.Should().BeTrue();
+        dto.Scores[2].Score.Should().Match(d => double.IsNaN(d));
+        dto.Scores[2].Rotate180.Should().BeTrue();
+
+        // 01-attempt.json carries the new file slot.
+        var attemptPath = Path.Combine(dir, "01-attempt.json");
+        using var attemptFs = File.OpenRead(attemptPath);
+        var attempt = JsonSerializer.Deserialize(attemptFs, CalibrationBundleJsonContext.Default.AttemptJson);
+        attempt!.Files.BlobTemplateScores.Should().Be("10b-blob-template-scores.json");
+    }
+
+    /// <summary>
+    /// mithril#1121: when the context's blob-score list is null OR empty, the
+    /// sink omits the dump file. Distinguishes "diagnostic wiring not active"
+    /// from "diagnostic ran but found nothing" — both produce no file (the
+    /// detector emits zero records only on the empty-deviation-map path, which
+    /// is observable elsewhere via 07-deviation.png).
+    /// </summary>
+    [Fact]
+    public void Omits_blobTemplateScores_when_context_null_or_empty()
+    {
+        var nullCtx = PopulatedAccepted();
+        nullCtx.BlobTemplateScores = null;
+        NewSink().Write(nullCtx);
+        var nullDir = Directory.GetDirectories(_root).Single();
+        Directory.GetFiles(nullDir).Select(Path.GetFileName)
+            .Should().NotContain("10b-blob-template-scores.json");
+
+        // Re-run with empty list.
+        Directory.Delete(nullDir, recursive: true);
+        var emptyCtx = PopulatedAccepted();
+        emptyCtx.BlobTemplateScores = Array.Empty<BlobTemplateScore>();
+        NewSink().Write(emptyCtx);
+        var emptyDir = Directory.GetDirectories(_root).Single();
+        Directory.GetFiles(emptyDir).Select(Path.GetFileName)
+            .Should().NotContain("10b-blob-template-scores.json");
+
+        // The 01-attempt.json's Files.BlobTemplateScores field is null in both cases.
+        var attemptPath = Path.Combine(emptyDir, "01-attempt.json");
+        using var attemptFs = File.OpenRead(attemptPath);
+        var attempt = JsonSerializer.Deserialize(attemptFs, CalibrationBundleJsonContext.Default.AttemptJson);
+        attempt!.Files.BlobTemplateScores.Should().BeNull();
+    }
+
+    /// <summary>
     /// Observability: on a <c>rejected-map-not-located</c> outcome the bundle's
     /// <c>01-attempt.json</c> must carry the coarse locator's best origin+size (under
     /// <c>LocatorBest</c>), so triaging close-miss vs catastrophic-mismatch via the

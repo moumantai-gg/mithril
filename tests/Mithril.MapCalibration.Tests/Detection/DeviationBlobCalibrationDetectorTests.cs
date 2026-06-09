@@ -70,4 +70,97 @@ public sealed class DeviationBlobCalibrationDetectorTests
 
         byType.Values.Sum(v => v.Count).Should().Be(0);
     }
+
+    // mithril#1121: the diagnostic sink fires for every (blob, template) pair the
+    // detector considers — both the gated decision path (above-floor / below-floor)
+    // and the skip path (template too large for the padded crop). Used by the
+    // calibration bundle to distinguish "blob NCC was 0.78 just below floor"
+    // (threshold problem) from "blob NCC was 0.30" (template-vs-rendering problem).
+    [Fact]
+    public void Diagnostic_sink_fires_per_blob_per_template_when_wired()
+    {
+        var (shot, tex) = BuildPair();
+        var detector = new DeviationBlobCalibrationDetector();
+        var collected = new List<BlobTemplateScore>();
+        var request = Request(shot, tex) with { BlobScoreSink = collected.Add };
+
+        detector.Detect(request);
+
+        collected.Should().NotBeEmpty("at least one synthetic icon should produce a blob");
+
+        // Every record must reference one of the 4 placed templates.
+        collected.Select(s => s.TemplateName).Distinct()
+            .Should().BeSubsetOf(["landmark_portal", "landmark_telepad", "landmark_medipillar", "landmark_npc"]);
+
+        // For each distinct blob index, we expect a record per template the detector
+        // considered (skips + scored). This is the per-blob fan-out the bundle dump
+        // reflects.
+        var byBlob = collected.GroupBy(s => s.BlobIndex).ToList();
+        byBlob.Should().NotBeEmpty();
+        foreach (var grp in byBlob)
+        {
+            grp.Select(s => s.TemplateName).Distinct().Count()
+                .Should().BeGreaterThanOrEqualTo(1,
+                    "each blob considers at least one template (skipped or scored)");
+        }
+
+        // Scored records carry a finite score in [-1, 1]; skipped records carry NaN.
+        // Whether any skip records exist depends on the test fixture (small synthetic
+        // templates don't trigger the "template > crop" skip path), so the skip-side
+        // assertion is conditional — when skips DO occur their score must be NaN.
+        collected.Where(s => !s.Skipped).Select(s => s.Score)
+            .Should().OnlyContain(v => !double.IsNaN(v) && v >= -1.0 && v <= 1.0001);
+        foreach (var skipped in collected.Where(s => s.Skipped))
+        {
+            double.IsNaN(skipped.Score).Should().BeTrue(
+                "skip-path records must carry the NaN sentinel");
+        }
+
+        // AboveFloor is the gate verdict: score >= TypeFloor on non-skipped records.
+        collected.Where(s => !s.Skipped).Should().AllSatisfy(s =>
+            s.AboveFloor.Should().Be(s.Score >= s.TypeFloor));
+
+        // Rotate180 is left default-false at the detector layer — the SolveEngine
+        // wrapper rewrites it per orientation pass. The detector by itself emits
+        // rotate180=false.
+        collected.Should().AllSatisfy(s => s.Rotate180.Should().BeFalse(
+            "the detector doesn't know about orientation passes; that's the SolveEngine wrapper's job"));
+    }
+
+    // mithril#1121: backward-compat — without a sink, output is byte-identical to
+    // the pre-#1121 detector. Any change to the detection-decision logic would
+    // surface as a behavioural delta here.
+    [Fact]
+    public void Detector_output_is_identical_with_and_without_sink()
+    {
+        var (shot, tex) = BuildPair();
+        var detector = new DeviationBlobCalibrationDetector();
+        var baseRequest = Request(shot, tex);
+
+        var withoutSink = detector.Detect(baseRequest);
+        var collected = new List<BlobTemplateScore>();
+        var withSink = detector.Detect(baseRequest with { BlobScoreSink = collected.Add });
+
+        withSink.Keys.Should().BeEquivalentTo(withoutSink.Keys);
+        foreach (var key in withoutSink.Keys)
+        {
+            withSink[key].Should().BeEquivalentTo(withoutSink[key],
+                "wiring the sink must not change the gated detection decision");
+        }
+    }
+
+    // mithril#1121: when the sink is null, the detector skips all per-blob/per-template
+    // diagnostic work (zero producer cost). This is a contract guarantee, not just
+    // an observation — null-sink path doesn't allocate the BlobTemplateScore record.
+    [Fact]
+    public void Null_sink_path_does_not_throw()
+    {
+        var (shot, tex) = BuildPair();
+        var detector = new DeviationBlobCalibrationDetector();
+        var req = Request(shot, tex);
+        req.BlobScoreSink.Should().BeNull();
+
+        var act = () => detector.Detect(req);
+        act.Should().NotThrow();
+    }
 }

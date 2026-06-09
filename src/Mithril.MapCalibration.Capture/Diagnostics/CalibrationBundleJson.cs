@@ -63,7 +63,13 @@ public sealed record AttemptFilesJson(
     string? DetectionsImage,
     string? ProjectionOverlay,
     string? Detections,
-    string? RecoveredCalibration);
+    string? RecoveredCalibration,
+    // mithril#1121: per-blob × per-template NCC observation dump
+    // (10b-blob-template-scores.json). Default-null so pre-#1121 readers
+    // round-trip unchanged; populated when the deviation-blob detector
+    // emitted any blob scores (it always does in the production AutoCalibrationEngine
+    // path).
+    string? BlobTemplateScores = null);
 
 public sealed record MapRectJson(
     int SchemaVersion,
@@ -127,9 +133,48 @@ public sealed record SynthesisJson(
     bool Disagree,
     string? DisagreeChange);
 
+/// <summary>
+/// Per-blob × per-template NCC observation in the
+/// <c>10b-blob-template-scores.json</c> bundle dump (mithril#1121).
+/// Wire-format mirror of <see cref="Mithril.MapCalibration.BlobTemplateScore"/>;
+/// see that type's doc for field semantics (<c>Score</c> is <c>NaN</c> on the
+/// skip path; <c>aboveFloor</c> is the gate verdict; <c>rotate180</c>
+/// disambiguates the two orientation passes the engine runs).
+/// </summary>
+public sealed record BlobTemplateScoreJson(
+    int BlobIndex,
+    int BlobMinX,
+    int BlobMinY,
+    int BlobWidth,
+    int BlobHeight,
+    int BlobArea,
+    string TemplateName,
+    string TemplateLandmarkType,
+    int TemplateWidth,
+    int TemplateHeight,
+    double Score,
+    double TypeFloor,
+    bool AboveFloor,
+    bool Skipped,
+    bool Rotate180);
+
+/// <summary>
+/// Top-level shape of the <c>10b-blob-template-scores.json</c> bundle dump
+/// (mithril#1121). The list is grouped client-side by <c>blobIndex</c> /
+/// <c>rotate180</c>; the wire format is a flat array so downstream jq /
+/// pandas pipelines stay straightforward.
+/// </summary>
+public sealed record BlobTemplateScoresJson(
+    int SchemaVersion,
+    IReadOnlyList<BlobTemplateScoreJson> Scores);
+
+// mithril#1121: AllowNamedFloatingPointLiterals lets BlobTemplateScore.Score
+// round-trip its NaN sentinel (the skip-path marker) as the JSON token "NaN".
+// Existing DTOs in this context don't carry NaN values, so this is additive.
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,
+    NumberHandling = System.Text.Json.Serialization.JsonNumberHandling.AllowNamedFloatingPointLiterals,
     DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
 [JsonSerializable(typeof(AttemptJson))]
 [JsonSerializable(typeof(LocatorBestJson))]
@@ -137,4 +182,5 @@ public sealed record SynthesisJson(
 [JsonSerializable(typeof(DetectionsJson))]
 [JsonSerializable(typeof(RecoveredCalibrationJson))]
 [JsonSerializable(typeof(SynthesisJson))]
+[JsonSerializable(typeof(BlobTemplateScoresJson))]
 public partial class CalibrationBundleJsonContext : JsonSerializerContext;
