@@ -123,7 +123,7 @@ public sealed class MapCalibrationSolveEngine
             {
                 _logger?.LogInformation("Auto-calibration rejected: {Reason}.", legacyResult.RejectReason);
             }
-            return legacyResult;
+            return legacyResult with { Synthesis = BuildSynthesisDiagnostics(bestSynthesis, legacyResult, mode) };
         }
 
         // Enabled: synthesis-J IS the gate.
@@ -132,6 +132,7 @@ public sealed class MapCalibrationSolveEngine
             _logger?.LogInformation("Auto-calibration rejected (synthesis): no synthesis-J winner.");
             var noWinner = new CalibrationSolveResult(null, 0, "no synthesis-J winner",
                 legacyResult.Inliers) { Detections = legacyResult.Detections };
+            noWinner = noWinner with { Synthesis = BuildSynthesisDiagnostics(bestSynthesis, noWinner, mode) };
             EmitSynthesisRerankTelemetry(mode, bestSynthesis, noWinner);
             return noWinner;
         }
@@ -143,6 +144,7 @@ public sealed class MapCalibrationSolveEngine
             finalResult = new CalibrationSolveResult(
                 bestSynthesis.Calibration, bestSynthesis.Inliers.Count, null, bestSynthesis.Inliers)
                 { Detections = legacyResult.Detections };
+            finalResult = finalResult with { Synthesis = BuildSynthesisDiagnostics(bestSynthesis, finalResult, mode) };
             _logger?.LogInformation(
                 "Auto-calibration accepted (synthesis-J): J={J:0.00}, refs>=0.5 {Refs}/{Total}.",
                 bestSynthesis.J, bestSynthesis.RefsAboveHalf, bestSynthesis.RefsTotal);
@@ -153,6 +155,7 @@ public sealed class MapCalibrationSolveEngine
                        + $"OR refs>=0.5 {bestSynthesis.RefsAboveHalf} < {_options.SynthesisNMin})";
             finalResult = new CalibrationSolveResult(null, bestSynthesis.Inliers.Count, reason, bestSynthesis.Inliers)
                 { Detections = legacyResult.Detections };
+            finalResult = finalResult with { Synthesis = BuildSynthesisDiagnostics(bestSynthesis, finalResult, mode) };
             _logger?.LogInformation("Auto-calibration rejected (synthesis): {Reason}.", reason);
         }
         EmitSynthesisRerankTelemetry(mode, bestSynthesis, finalResult);
@@ -285,6 +288,38 @@ public sealed class MapCalibrationSolveEngine
             ? (synthAccept ? "reject_to_accept" : "accept_to_reject")
             : (string?)null;
         return (synthVerdict, gateVerdict, disagree, change);
+    }
+
+    /// <summary>
+    /// Build the per-attempt <see cref="SynthesisDiagnostics"/> snapshot that
+    /// <see cref="Solve"/> attaches to every <see cref="CalibrationSolveResult"/>
+    /// whenever synthesis ran (mode != Off). Returns null when mode == Off (record
+    /// is meaningless in that case). When <paramref name="winner"/> is null
+    /// (Enabled no-winner path), <see cref="SynthesisDiagnostics.Verdict"/> is
+    /// <c>"no_winner"</c>; otherwise it mirrors the synthesis accept/reject
+    /// resolved by <see cref="ComputeVerdicts"/>.
+    /// </summary>
+    private SynthesisDiagnostics? BuildSynthesisDiagnostics(
+        SynthesisOrientationWinner? winner,
+        CalibrationSolveResult finalResult,
+        SynthesisRerankMode mode)
+    {
+        if (mode == SynthesisRerankMode.Off) return null;
+
+        var (synthVerdict, gateVerdict, disagree, change) = ComputeVerdicts(winner, finalResult, mode);
+        return new SynthesisDiagnostics(
+            Mode: mode == SynthesisRerankMode.Enabled ? "enabled" : "shadow",
+            Rotate180: winner?.Rotate180,
+            J: winner?.J,
+            JMin: _options.SynthesisJMin,
+            RefsAboveHalf: winner?.RefsAboveHalf,
+            RefsTotal: winner?.RefsTotal,
+            RefsOffCrop: winner?.RefsOffCrop,
+            NMin: _options.SynthesisNMin,
+            Verdict: winner is null ? "no_winner" : synthVerdict,
+            GateVerdict: gateVerdict,
+            Disagree: disagree,
+            DisagreeChange: change);
     }
 
     /// <summary>
