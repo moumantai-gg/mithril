@@ -503,7 +503,29 @@ public sealed record CalibrationSolveResult(
     IReadOnlyList<TypeAwareRansacSolver.AssignedReference>? Inliers = null)
 {
     public IReadOnlyList<TypedDetection>? Detections { get; init; }
+    public SynthesisDiagnostics? Synthesis { get; init; }   // #1117
 }
+
+/// <summary>
+/// Per-attempt diagnostic snapshot of the synthesis-J re-rank result. Populated
+/// on <see cref="CalibrationSolveResult.Synthesis"/> whenever synthesis ran
+/// (mode != Off), regardless of which gate drove the outcome. Surfaced to both
+/// the diagnostic bundle (01-attempt.json synthesis section, #1117) and the
+/// Shadow-mode Serilog mirror — one engine population, two consumers.
+/// </summary>
+public sealed record SynthesisDiagnostics(
+    string Mode,              // "shadow" | "enabled"  (never "off" — record is null in that case)
+    bool? Rotate180,          // null when no orientation produced a winner
+    double? J,                // null when no winner
+    double JMin,
+    int? RefsAboveHalf,       // null when no winner
+    int? RefsTotal,           // null when no winner
+    int? RefsOffCrop,         // null when no winner
+    int NMin,
+    string Verdict,           // "accept" | "reject" | "no_winner"
+    string GateVerdict,       // legacy gate verdict, "accept" | "reject"
+    bool Disagree,            // synthesis verdict differs from legacy gate verdict
+    string? DisagreeChange);  // "reject_to_accept" | "accept_to_reject" | null
 
 /// <summary>
 /// Per-orientation synthesis-J winner, used by
