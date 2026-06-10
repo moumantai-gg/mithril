@@ -347,6 +347,41 @@ public sealed class DeviationBlobCalibrationDetectorTests
         blobs[1].Ordinal.Should().Be(1);
     }
 
+    // mithril#1123 D3.a: the unified-ordinal-space contract — every
+    // BlobTemplateScore.BlobOrdinal value (#1121's per-(blob, template) sink,
+    // serialised as 10b) corresponds to exactly one BlobClassification.BlobOrdinal
+    // value (#1123's per-blob sink, serialised as 10c) where BlobClass == "Icon".
+    // This guards the v1→v2 schema bump's promise: 10b is sparse over the same
+    // ordinal space as 10c, so cross-file lookup by ordinal is sound.
+    [Fact]
+    public void BlobOrdinal_cross_refs_10b_and_10c()
+    {
+        var (shot, tex) = BuildPair();
+        var detector = new DeviationBlobCalibrationDetector();
+        var blobScores = new List<BlobTemplateScore>();
+        var blobClasses = new List<BlobClassification>();
+        var hooks = new DetectionDiagnosticHooks(
+            OnDeviation: null,
+            OnRimMask: null,
+            OnMorph: null,
+            OnBlobClassified: blobClasses.Add);
+
+        var request = Request(shot, tex) with { BlobScoreSink = blobScores.Add, Diagnostics = hooks };
+        detector.Detect(request);
+
+        var iconOrdinals = blobClasses
+            .Where(c => c.BlobClass == "Icon")
+            .Select(c => c.BlobOrdinal)
+            .ToHashSet();
+        var scoreOrdinals = blobScores.Select(s => s.BlobOrdinal).ToHashSet();
+
+        scoreOrdinals.Should().NotBeEmpty(
+            "at least one synthetic icon should produce a scored blob");
+        scoreOrdinals.Should().BeSubsetOf(iconOrdinals,
+            "every BlobTemplateScore.BlobOrdinal must correspond to a "
+            + "BlobClassification record with BlobClass == \"Icon\"");
+    }
+
     [Fact]
     public void Diagnostic_sink_records_skip_path_when_template_exceeds_padded_crop()
     {
