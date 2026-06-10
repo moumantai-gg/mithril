@@ -30,6 +30,11 @@ public sealed record AttemptJson(
 /// <see cref="FallbackNcc"/>, <see cref="PadPx"/>. Readers should treat absence
 /// of these as v1 ORB-only (default <c>Algorithm = "orb-lowe"</c>, others
 /// null).</para>
+///
+/// <para><b>Schema v3 (mithril#1070):</b> adds <see cref="BlurAppliedSigma"/>
+/// — the σ (px) of the Gaussian blur applied to the Sobel template at the
+/// recovered scale in the fallback's full-resolution stage. Readers should
+/// treat absence of this field as v2 (null).</para>
 /// </summary>
 public sealed record LocatorBestJson(
     int SchemaVersion,
@@ -51,7 +56,12 @@ public sealed record LocatorBestJson(
     string? GateRejectReason,
     string Algorithm = "orb-lowe",
     double? FallbackNcc = null,
-    int? PadPx = null);
+    int? PadPx = null,
+    // mithril#1070: σ (px) of the Gaussian blur applied to the Sobel template
+    // at the recovered scale (the matchTemplate call that drove the recovered
+    // Tx/Ty). Null on ORB primary or when RendererBlurEnabled=false. Zero when
+    // the σ-curve clamped to 0 at the recovered scale.
+    double? BlurAppliedSigma = null);
 
 public sealed record AttemptFilesJson(
     string? RawScreenshot,

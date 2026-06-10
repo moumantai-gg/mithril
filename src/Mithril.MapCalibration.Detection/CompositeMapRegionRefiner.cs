@@ -65,6 +65,10 @@ public sealed class CompositeMapRegionRefiner : IMapRegionRefiner, IAreaContextu
             {
                 if (m.Confidence is double ncc) fallbackAct?.SetTag("ncc", ncc);
                 fallbackAct?.SetTag("scale", m.Scale);
+                // mithril#1070: surface the σ applied at the final
+                // matchTemplate so a Seq/OTLP triager can correlate fallback
+                // NCC with the blur-aware template's σ.
+                if (m.BlurAppliedSigma is double sigma) fallbackAct?.SetTag("blur.sigma", sigma);
             }
             // Outcome classifier derives from contract, not from the option default:
             // SobelPaddedPyramidRefiner only populates Confidence when it produced a

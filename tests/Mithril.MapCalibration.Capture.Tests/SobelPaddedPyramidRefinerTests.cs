@@ -62,10 +62,21 @@ public sealed class SobelPaddedPyramidRefinerTests
     {
         // Two independent RichNoise patches — no structural overlap.
         // NCC peak should sit below the default floor (0.20).
+        //
+        // mithril#1070: disables the blur-aware template path explicitly so
+        // this regression-lock continues to exercise the floor-mechanism only.
+        // With blur on at the production σ-curve, a heavy σ on small-template
+        // rungs (at very low scale) can smooth the unrelated-noise response
+        // enough to push the peak above 0.20 — that's expected (the gain over
+        // mithril#1070's target case), but it's orthogonal to "is the floor
+        // gate wired correctly?" — the question this test asks.
         var texture = TestPatterns.RichNoise(width: 256, height: 256, seed: 1);
         var screenshot = TestPatterns.RichNoise(width: 640, height: 480, seed: 2);
 
-        var result = BuildRefiner().Refine(screenshot, texture);
+        var result = BuildRefiner(new MapCalibrationLocateOptions
+        {
+            RendererBlurEnabled = false,
+        }).Refine(screenshot, texture);
 
         result.AcceptedRect.Should().BeNull(
             "unrelated noise → NCC below floor → engine surfaces low-confidence reject");

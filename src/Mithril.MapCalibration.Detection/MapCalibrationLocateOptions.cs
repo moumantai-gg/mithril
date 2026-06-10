@@ -22,28 +22,32 @@ namespace Mithril.MapCalibration.Detection;
 /// </summary>
 public sealed class MapCalibrationLocateOptions : INotifyPropertyChanged, IVersionedState<MapCalibrationLocateOptions>
 {
-    public const int Version = 1;
+    public const int Version = 2;
     public static int CurrentVersion => Version;
 
     /// <summary>
     /// Persisted schema version. Defaults to <c>1</c> so a v1 JSON file (no
     /// pre-existing schema field) deserialises as v1; fresh in-memory instances
-    /// also start at <c>1</c> — <see cref="Migrate"/> is a no-op for v1.
+    /// also start at <c>1</c> — <see cref="Migrate"/> is a no-op for v1→v2 (additive).
     ///
     /// <para>Future deltas document themselves in this comment block, mirroring
     /// the <c>LegolasSettings</c> convention. The first time a property is
     /// renamed/removed or a new dependent default needs back-filling, bump
     /// <see cref="Version"/> and add a branch to <see cref="Migrate"/>.</para>
+    ///
+    /// <para><b>v1 → v2 (mithril#1070):</b> additive — five new RendererBlur*
+    /// knobs gating the blur-aware Sobel template at the fallback's
+    /// full-resolution stage. Loading a v1 file leaves the new properties at
+    /// their constructor defaults (the measured σ-curve).</para>
     /// </summary>
     public int SchemaVersion { get; set; } = 1;
 
     /// <summary>
-    /// v1 is the first persisted version. Identity passthrough today; future
-    /// schema changes add branches here (e.g. v1 → v2: rename
-    /// <c>FallbackPadPx</c> → <c>FallbackPaddingPx</c> would carry the old
-    /// value into the new property name). Caller (the versioned-settings
-    /// loader) writes the bumped <see cref="SchemaVersion"/> back after this
-    /// returns, so Migrate doesn't need to stamp it.
+    /// Identity passthrough for v1 → v2 (mithril#1070, additive — new
+    /// RendererBlur* properties initialise from constructor defaults). Caller
+    /// (the versioned-settings loader) writes the bumped
+    /// <see cref="SchemaVersion"/> back after this returns, so Migrate doesn't
+    /// need to stamp it.
     /// </summary>
     public static MapCalibrationLocateOptions Migrate(MapCalibrationLocateOptions loaded)
     {
@@ -65,6 +69,24 @@ public sealed class MapCalibrationLocateOptions : INotifyPropertyChanged, IVersi
     private int _minScaledDim = 20;
     private int _minScaledDimHalf = 10;
     private int _minScaledDimCoarse = 5;
+    // mithril#1070: blur-aware Sobel template at the fallback's full-resolution
+    // stage. Defaults below come from the Plan Task 0 measurement experiment —
+    // linear-fit of σ_needed vs (1/scale) on the 5-bundle Hogan's corpus
+    // (scales 0.12 / 0.14 / 0.28 / 0.78 / 0.94). The MinSigma=0 floor clamps
+    // the model to zero at moderate-to-high zooms where the template is
+    // already softer than the screenshot (no template-side blur helps); the
+    // MaxSigma=3.0 ceiling bounds the implicit Gaussian kernel diameter
+    // (~19 px) so degenerate inputs at the very-low-zoom corner can't degrade
+    // the per-rung GaussianBlur cost. Residuals on the measurement corpus
+    // exceed the 10% gate (relative max ~1.26); the linear model is the
+    // smallest-blast-radius shape that captures the "blur grows at very low
+    // scale" direction. A piecewise-linear table fallback is a follow-up if
+    // production data reveals a regime the linear model under-fits.
+    private bool _rendererBlurEnabled = true;
+    private double _rendererBlurIntercept = -1.5643;
+    private double _rendererBlurSlope = 1.0043;
+    private double _rendererBlurMinSigma = 0.0;
+    private double _rendererBlurMaxSigma = 3.0;
 
     /// <summary>Reject any fit with fewer than this many RANSAC inliers. Default 50.</summary>
     public int InlierFloor
@@ -171,6 +193,68 @@ public sealed class MapCalibrationLocateOptions : INotifyPropertyChanged, IVersi
     {
         get => _minScaledDimCoarse;
         set { if (_minScaledDimCoarse != value) { _minScaledDimCoarse = value; OnChanged(); } }
+    }
+
+    /// <summary>
+    /// Apply renderer-blur-aware matched Gaussian to the Sobel template at the
+    /// fallback's full-resolution stage (mithril#1070). When <c>true</c>, the
+    /// refiner derives σ via the linear σ-curve below and convolves the
+    /// resized template with a Gaussian of that σ before <c>matchTemplate</c>.
+    /// Setting <c>false</c> disables the blur path and forces σ = 0 — pre-#1070
+    /// behaviour for the same fallback. Default <c>true</c>.
+    /// </summary>
+    public bool RendererBlurEnabled
+    {
+        get => _rendererBlurEnabled;
+        set { if (_rendererBlurEnabled != value) { _rendererBlurEnabled = value; OnChanged(); } }
+    }
+
+    /// <summary>
+    /// Intercept term of the linear σ-curve σ = <see cref="RendererBlurIntercept"/>
+    /// + <see cref="RendererBlurSlope"/> × (1 / scale) (mithril#1070). Negative
+    /// by default — the floor clamp at <see cref="RendererBlurMinSigma"/> keeps
+    /// σ at zero for moderate-to-high zoom levels where the template is already
+    /// softer than the captured frame. Default −1.5643 (Plan Task 0 fit).
+    /// </summary>
+    public double RendererBlurIntercept
+    {
+        get => _rendererBlurIntercept;
+        set { if (_rendererBlurIntercept != value) { _rendererBlurIntercept = value; OnChanged(); } }
+    }
+
+    /// <summary>
+    /// Slope term of the linear σ-curve σ = <see cref="RendererBlurIntercept"/>
+    /// + <see cref="RendererBlurSlope"/> × (1 / scale) (mithril#1070). The
+    /// "blur grows as 1/scale" relationship per spec §1.2. Default 1.0043
+    /// (Plan Task 0 fit).
+    /// </summary>
+    public double RendererBlurSlope
+    {
+        get => _rendererBlurSlope;
+        set { if (_rendererBlurSlope != value) { _rendererBlurSlope = value; OnChanged(); } }
+    }
+
+    /// <summary>
+    /// Lower bound on the σ-curve output (mithril#1070). The linear model may
+    /// produce negative σ at moderate-to-high zoom; clamping to 0 there
+    /// short-circuits the <c>Cv2.GaussianBlur</c> call entirely. Default 0.0.
+    /// </summary>
+    public double RendererBlurMinSigma
+    {
+        get => _rendererBlurMinSigma;
+        set { if (_rendererBlurMinSigma != value) { _rendererBlurMinSigma = value; OnChanged(); } }
+    }
+
+    /// <summary>
+    /// Upper bound on the σ-curve output (mithril#1070). Caps the implicit
+    /// Gaussian kernel diameter (~6 σ + 1, so 19 px at σ=3) so the per-rung
+    /// blur cost is bounded even at very-low-zoom corners where the linear
+    /// model extrapolates aggressively. Default 3.0.
+    /// </summary>
+    public double RendererBlurMaxSigma
+    {
+        get => _rendererBlurMaxSigma;
+        set { if (_rendererBlurMaxSigma != value) { _rendererBlurMaxSigma = value; OnChanged(); } }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

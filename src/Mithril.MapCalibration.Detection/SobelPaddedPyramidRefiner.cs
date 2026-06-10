@@ -65,6 +65,17 @@ public sealed class SobelPaddedPyramidRefiner : IMapRegionRefiner
         int minDimHalf = _options.MinScaledDimHalf;
         int minDimCoarse = _options.MinScaledDimCoarse;
 
+        // mithril#1070: blur-aware template at the full-resolution stage.
+        // Lifecycle milestone — emit once per attempt so a triager knows
+        // whether the σ-curve was active for this refine pass.
+        _logger?.LogInformation(
+            "Sobel-padded-pyramid locate: starting (RendererBlurEnabled={Enabled}, "
+            + "BlurIntercept={Intercept:0.0000}, BlurSlope={Slope:0.0000}, "
+            + "BlurMin={Min:0.00}, BlurMax={Max:0.00}).",
+            _options.RendererBlurEnabled, _options.RendererBlurIntercept,
+            _options.RendererBlurSlope, _options.RendererBlurMinSigma,
+            _options.RendererBlurMaxSigma);
+
         using var capMat = ToMat8U(capturedGray);
         using var texMat = ToMat8U(baseTexture);
         using var capSobel = SobelMagnitudeHelpers.SobelMagnitude8U(capMat);
@@ -87,7 +98,9 @@ public sealed class SobelPaddedPyramidRefiner : IMapRegionRefiner
             return MapRegionRefineResult.None;
 
         // Stage 3: narrow ladder at full resolution centred on L1 winner.
-        var fineLadder = NarrowLadderWithLoc(capPadded, texSobel, l1Scale, minDimFull, scaleStep);
+        // mithril#1070 INSERTION POINT A — NarrowLadderWithLoc applies the
+        // blur-aware σ per rung; each ladder entry carries the σ it ran with.
+        var fineLadder = NarrowLadderWithLoc(capPadded, texSobel, l1Scale, minDimFull, scaleStep, _options, _logger);
         if (fineLadder.Count == 0)
             return MapRegionRefineResult.None;
 
@@ -97,6 +110,9 @@ public sealed class SobelPaddedPyramidRefiner : IMapRegionRefiner
         double refinedTx = fineWinner.Loc.X - pad;
         double refinedTy = fineWinner.Loc.Y - pad;
         double refinedNcc = fineWinner.Score;
+        // mithril#1070: ladder-winner's σ — superseded by the post-parabolic
+        // re-match's σ if that branch fires (insertion point B below).
+        double bestSigma = fineWinner.Sigma;
 
         // Stage 4: parabolic scale refinement around the fine winner, then sub-pixel
         // translation refinement on the re-matched response map at the refined scale.
@@ -120,6 +136,15 @@ public sealed class SobelPaddedPyramidRefiner : IMapRegionRefiner
                         using var scaled = new Mat();
                         Cv2.Resize(texSobel, scaled, new Size(sw, sh),
                             interpolation: InterpolationFlags.Area);
+                        // mithril#1070 INSERTION POINT B — the post-parabolic
+                        // re-match. Without the σ applied here, the re-match
+                        // convolves an un-blurred template against the (already-
+                        // blurred-by-PG) capture, producing a different NCC peak
+                        // shape than the ladder's pre-parabolic shape and
+                        // partially undoing the gain. Spec §5.2 D.
+                        double parabolicSigma = RendererBlurModel.SigmaFor(candidate, _options);
+                        if (parabolicSigma > 0.0)
+                            Cv2.GaussianBlur(scaled, scaled, new Size(0, 0), parabolicSigma, parabolicSigma);
                         using var result = new Mat();
                         Cv2.MatchTemplate(capPadded, scaled, result, TemplateMatchModes.CCoeffNormed);
                         Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
@@ -128,6 +153,11 @@ public sealed class SobelPaddedPyramidRefiner : IMapRegionRefiner
                         refinedTx = maxLoc.X + sdx - pad;
                         refinedTy = maxLoc.Y + sdy - pad;
                         refinedNcc = maxVal;
+                        bestSigma = parabolicSigma;
+                        _logger?.LogTrace(
+                            "Sobel-padded-pyramid locate: parabolic re-match — scale={Scale:0.000}, "
+                            + "ncc={Ncc:0.000}, sigma={Sigma:0.000}, loc=({Tx:0.0},{Ty:0.0}).",
+                            refinedScale, refinedNcc, bestSigma, refinedTx, refinedTy);
                     }
                 }
             }
@@ -149,22 +179,26 @@ public sealed class SobelPaddedPyramidRefiner : IMapRegionRefiner
             Scale: refinedScale, RotationDegrees: 0, Mirror: false,
             Tx: refinedTx, Ty: refinedTy, ResidualPixels: 0,
             Provenance: LocateProvenance.SobelPaddedPyramid,
-            Confidence: refinedNcc);
+            Confidence: refinedNcc,
+            // mithril#1070: surfaces the σ actually applied at the matchTemplate
+            // call that drove (refinedTx, refinedTy) — i.e. point-B's σ when
+            // parabolic refinement fired, otherwise the ladder-winner's σ.
+            BlurAppliedSigma: bestSigma);
 
         if (refinedNcc < _options.FallbackNccFloor)
         {
             _logger?.LogInformation(
                 "Sobel-padded-pyramid locate: rejected — NCC={Ncc:0.000} < floor={Floor:0.000} "
-                + "(scale={Scale:0.000}, tx={Tx:0.0}, ty={Ty:0.0}).",
-                refinedNcc, _options.FallbackNccFloor, refinedScale, refinedTx, refinedTy);
+                + "(scale={Scale:0.000}, tx={Tx:0.0}, ty={Ty:0.0}, sigma={Sigma:0.000}).",
+                refinedNcc, _options.FallbackNccFloor, refinedScale, refinedTx, refinedTy, bestSigma);
             return new MapRegionRefineResult(
                 AcceptedRect: null, RawFitRect: rawFit, Metrics: metrics);
         }
 
         _logger?.LogInformation(
             "Sobel-padded-pyramid locate: accepted — NCC={Ncc:0.000}, scale={Scale:0.000}, "
-            + "tx={Tx:0.0}, ty={Ty:0.0}.",
-            refinedNcc, refinedScale, refinedTx, refinedTy);
+            + "tx={Tx:0.0}, ty={Ty:0.0}, sigma={Sigma:0.000}.",
+            refinedNcc, refinedScale, refinedTx, refinedTy, bestSigma);
         return new MapRegionRefineResult(
             AcceptedRect: rawFit, RawFitRect: rawFit, Metrics: metrics);
     }
@@ -223,10 +257,16 @@ public sealed class SobelPaddedPyramidRefiner : IMapRegionRefiner
         return true;
     }
 
-    private static List<(double Scale, double Score, Point Loc)> NarrowLadderWithLoc(
-        Mat cap, Mat tex, double centreScale, int minDim, double scaleStep)
+    // mithril#1070 INSERTION POINT A: each rung's matchTemplate runs against a
+    // blur-aware template — the σ derived from RendererBlurModel.SigmaFor at the
+    // rung's candidate scale. Each ladder entry carries the σ it ran with so
+    // the caller can plumb the winner's σ to LocateMetrics.BlurAppliedSigma
+    // without recomputing.
+    private static List<(double Scale, double Score, Point Loc, double Sigma)> NarrowLadderWithLoc(
+        Mat cap, Mat tex, double centreScale, int minDim, double scaleStep,
+        MapCalibrationLocateOptions options, ILogger? logger)
     {
-        var ladder = new List<(double Scale, double Score, Point Loc)>(8);
+        var ladder = new List<(double Scale, double Score, Point Loc, double Sigma)>(8);
         for (double s = centreScale - 2 * scaleStep; s <= centreScale + 2 * scaleStep + 1e-6; s += scaleStep)
         {
             if (s <= 0) continue;
@@ -235,15 +275,24 @@ public sealed class SobelPaddedPyramidRefiner : IMapRegionRefiner
             if (sw < minDim || sh < minDim || sw > cap.Width || sh > cap.Height) continue;
             using var scaled = new Mat();
             Cv2.Resize(tex, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+            double sigma = RendererBlurModel.SigmaFor(s, options);
+            if (sigma > 0.0)
+            {
+                Cv2.GaussianBlur(scaled, scaled, new Size(0, 0), sigma, sigma);
+                logger?.LogTrace(
+                    "Sobel-padded-pyramid locate: blur applied — scale={Scale:0.000}, "
+                    + "sigma={Sigma:0.000}, dims={Width}x{Height}.",
+                    s, sigma, sw, sh);
+            }
             using var result = new Mat();
             Cv2.MatchTemplate(cap, scaled, result, TemplateMatchModes.CCoeffNormed);
             Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
-            ladder.Add((s, maxVal, maxLoc));
+            ladder.Add((s, maxVal, maxLoc, sigma));
         }
         return ladder;
     }
 
-    private static int ArgMax(List<(double Scale, double Score, Point Loc)> ladder)
+    private static int ArgMax(List<(double Scale, double Score, Point Loc, double Sigma)> ladder)
     {
         int idx = 0;
         for (int i = 1; i < ladder.Count; i++)

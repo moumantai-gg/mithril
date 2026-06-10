@@ -18,4 +18,13 @@
     <ProjectReference Include="..\..\src\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
     <ProjectReference Include="..\..\src\Mithril.MapCalibration.Detection\Mithril.MapCalibration.Detection.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- mithril#1070: blur-aware corpus PNGs ship with the test binary so
+         HogansBlurAwareCorpusTests can read them via the test's output dir.
+         These are gray-only PG-derived assets (no UI chrome / no character
+         name) — see blur_aware_corpus/README.md for the extraction recipe. -->
+    <None Include="Detection\blur_aware_corpus\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

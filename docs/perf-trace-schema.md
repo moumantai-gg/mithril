@@ -331,6 +331,7 @@ Per-branch spans from `CompositeMapRegionRefiner` — the locate-stage dispatche
 | both | `outcome` | string | Primary: `"accepted"` / `"rejected"` / `"no_fit"`. Fallback: `"accepted"` / `"rejected_low_confidence"` / `"rejected"` / `"no_fit"`. |
 | `calibration.refine.fallback` only | `ncc` | double | NCC peak from the L0 refined re-match (the floor-gated confidence number). Only emitted when `LocateMetrics.Confidence` is non-null. |
 | `calibration.refine.fallback` only | `scale` | double | Recovered scale parameter (texture display size = texture-native × scale). |
+| `calibration.refine.fallback` only | `blur.sigma` | double | σ (px) of the Gaussian blur applied to the Sobel template at the recovered scale in the fallback's full-resolution stage (mithril#1070). Zero when `RendererBlurEnabled = false` or when the σ-curve clamped to 0 at the recovered scale. Only emitted when `LocateMetrics.BlurAppliedSigma` is non-null — null on ORB primary success. |
 
 ```powershell
 # Fallback hit-rate per area-attempt across a session

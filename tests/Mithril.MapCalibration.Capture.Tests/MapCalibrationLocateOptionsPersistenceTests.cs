@@ -24,7 +24,13 @@ public sealed class MapCalibrationLocateOptionsPersistenceTests
             var loaded = store.Load();
 
             loaded.Should().NotBeNull();
-            loaded.SchemaVersion.Should().Be(MapCalibrationLocateOptions.Version);
+            // Raw store returns `new T()` when the file is absent — that picks
+            // up the type's default SchemaVersion (1), not the current Version.
+            // The versioned-settings DI wrapper bumps to CurrentVersion via
+            // Migrate; that's covered separately in
+            // MapCalibrationLocateOptionsV2MigrateTests in the Detection test
+            // project. mithril#1070 bumped Version from 1 → 2.
+            loaded.SchemaVersion.Should().Be(1);
             loaded.FallbackNccFloor.Should().Be(0.20);
             loaded.ScaleMin.Should().Be(0.20);
             loaded.OrbNFeatures.Should().Be(8000);
@@ -67,7 +73,11 @@ public sealed class MapCalibrationLocateOptionsPersistenceTests
     [Fact]
     public void Migrate_returns_loaded_instance_unchanged_at_current_version()
     {
-        var loaded = new MapCalibrationLocateOptions { FallbackNccFloor = 0.42 };
+        var loaded = new MapCalibrationLocateOptions
+        {
+            SchemaVersion = MapCalibrationLocateOptions.Version,
+            FallbackNccFloor = 0.42,
+        };
         var migrated = MapCalibrationLocateOptions.Migrate(loaded);
         migrated.FallbackNccFloor.Should().Be(0.42);
         migrated.SchemaVersion.Should().Be(MapCalibrationLocateOptions.Version);

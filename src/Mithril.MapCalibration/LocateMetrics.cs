@@ -24,7 +24,14 @@ public sealed record LocateMetrics(
     double Ty,
     double ResidualPixels,
     LocateProvenance Provenance = LocateProvenance.OrbRansac,
-    double? Confidence = null)
+    double? Confidence = null,
+    // mithril#1070: σ (px) of the Gaussian blur applied to the Sobel template
+    // at the recovered scale at the final matchTemplate site. Null on ORB
+    // primary (blur is a sparse-locate-fallback concept) and on
+    // RendererBlurEnabled=false. Zero when blur was disabled or the σ-curve
+    // clamped to 0 at the recovered scale. Diagnostic surface only — no
+    // engine-side gate reads this.
+    double? BlurAppliedSigma = null)
 {
     /// <summary>
     /// The located map rect's origin within the captured frame, as a typed
