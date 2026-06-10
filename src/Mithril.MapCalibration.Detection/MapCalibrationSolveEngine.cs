@@ -133,10 +133,10 @@ public sealed class MapCalibrationSolveEngine
 
             // mithril#1123: pass rotate180 + diagnostic hooks so the synthesis-J
             // rim-mask sink fires per orientation (matches the blob-detection
-            // sink cadence). Task 6 extends Solve's wrap to all four sinks; this
-            // call site uses the unwrapped request.Diagnostics for the synth-J
-            // path (the synth-J path's only sink is OnRimMask, and the rotate180
-            // flag is set explicitly at this call site).
+            // sink cadence). req.Diagnostics already carries the orientation-
+            // rewriting wrap from above, but the synth-J path emits with the
+            // explicit rotate180 flag set, so the wrap's `with { Rotate180 = ... }`
+            // overwrite is a no-op of the same value — semantically identical.
             var fields = BuildLikelihoodFieldsFromDeviation(
                 req.Screenshot, req.BaseTexture, req.Templates,
                 req.TypeFloor, req.RenderSizePx,
