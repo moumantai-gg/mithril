@@ -346,9 +346,12 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 .ToArray();
 
             // Pixels payload is render-only — not serialised here. mithril#1125:
-            // BlobClass is an enum in memory; the DTO emits the enum-name string
-            // ("Icon"/"Noise"/"Fog"/"Structure") so the wire format is identical
-            // to pre-#1125.
+            // BlobClass is an enum in memory; the DTO emits the wire-format
+            // string via ToWire (symmetric with RimMaskPipeline). Decoupling the
+            // wire from Enum.ToString() means a future rename like
+            // BlobClass.Icon -> BlobClass.IconCandidate keeps "Icon" on the wire
+            // (the switch arm calls it out explicitly) rather than silently
+            // breaking downstream JSON readers + bundle replay tools.
             var blobDtos = (blobClasses ?? Array.Empty<BlobClassification>())
                 .Select(b => new BlobJson(
                     Rotate180: b.Rotate180,
@@ -358,7 +361,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                     Cx: b.Cx, Cy: b.Cy,
                     MeanDev: b.MeanDev, PeakDev: b.PeakDev,
                     Solidity: b.Solidity, Aspect: b.Aspect,
-                    BlobClass: b.BlobClass.ToString()))
+                    BlobClass: ToWire(b.BlobClass)))
                 .ToArray();
 
             var dto = new BlobPipelineJson(
@@ -455,8 +458,12 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             {
                 // Colour map: Icon=green, Fog=blue-ish, Structure=red, Noise=dim-grey.
                 // Triager can spot the NPC-pip cluster region by colour at a glance.
-                // mithril#1125: BlobClass is now the typed enum — the switch is
-                // enum-exhaustive, so a future enum addition triggers a compile error.
+                // mithril#1125 (clarified post-review): BlobClass is the typed
+                // enum, but the `_` arm here is defensive against rogue
+                // (BlobClass)N casts — NOT exhaustive at compile time. A future
+                // BlobClass member would silently fall through to the default
+                // colour instead of producing a compile error; update this
+                // switch explicitly when adding values.
                 var (b, g, r) = c.BlobClass switch
                 {
                     BlobClass.Icon      => ((byte)0,   (byte)200, (byte)0),
@@ -582,6 +589,21 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         RimMaskPipeline.BlobDetection => "blob_detection",
         RimMaskPipeline.SynthesisJ => "synthesis_j",
         _ => throw new ArgumentOutOfRangeException(nameof(pipeline)),
+    };
+
+    // mithril#1125: project BlobClass to its wire-format string. Symmetric with
+    // ToWire(RimMaskPipeline). The wire strings happen to match the enum-member
+    // names today, but stating them as literals decouples the contract: a
+    // future BlobClass member rename keeps the wire stable until the switch arm
+    // is updated, and the unreachable default arm throws on a rogue cast
+    // instead of silently emitting Enum.ToString()'s numeric fallback.
+    private static string ToWire(BlobClass blobClass) => blobClass switch
+    {
+        BlobClass.Icon => "Icon",
+        BlobClass.Noise => "Noise",
+        BlobClass.Fog => "Fog",
+        BlobClass.Structure => "Structure",
+        _ => throw new ArgumentOutOfRangeException(nameof(blobClass)),
     };
 
     private static string WritePng(string dir, string name, BitmapSource src)
