@@ -102,19 +102,22 @@ public static class DeviationBlobDetector
         if (rim == RimMaskMode.DeviationFlood)
         {
             var rimMask = DeviationFloodRimMask.Build(dev, w, h, devThr);
-            int rimCount = 0, survivorCount = 0;
-            for (int i = 0; i < n; i++)
-            {
-                if (rimMask[i])
-                {
-                    rimCount++;
-                    fg[i] = false;
-                }
-                if (fg[i]) survivorCount++;
-            }
 
+            // Hot inner loop kept at minimum cost on the null-hook path: rim
+            // subtract is unconditional (it's a real decision branch), but the
+            // diagnostic counters only tally when the sink is wired.
             if (hooks?.OnRimMask is not null)
             {
+                int rimCount = 0, survivorCount = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    if (rimMask[i])
+                    {
+                        rimCount++;
+                        fg[i] = false;
+                    }
+                    if (fg[i]) survivorCount++;
+                }
                 hooks.OnRimMask(new RimMaskSnapshot(
                     Pipeline: "blob_detection",
                     Rotate180: false,
@@ -127,6 +130,10 @@ public static class DeviationBlobDetector
                 logger?.LogTrace(
                     "RimMask (rotate180=False, pipeline=blob_detection): rim={Rim} of {Total} px, fg pre={Pre} post={Post}.",
                     rimCount, n, aboveThresholdCount, survivorCount);
+            }
+            else
+            {
+                for (int i = 0; i < n; i++) if (rimMask[i]) fg[i] = false;
             }
         }
 
