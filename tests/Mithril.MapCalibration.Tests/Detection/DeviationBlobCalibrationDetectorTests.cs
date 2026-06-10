@@ -216,7 +216,7 @@ public sealed class DeviationBlobCalibrationDetectorTests
         snap.ForegroundBuffer.Length.Should().Be(TexW * TexH);
         snap.Width.Should().Be(TexW);
         snap.Height.Should().Be(TexW * TexH / TexW);  // TexH, but readable
-        int trueCount = snap.ForegroundBuffer.Count(b => b);
+        int trueCount = CountTrue(snap.ForegroundBuffer);
         snap.AboveThresholdCount.Should().Be(trueCount);
         // The detector itself emits rotate180=false; the SolveEngine wrapper rewrites.
         snap.Rotate180.Should().BeFalse();
@@ -239,11 +239,12 @@ public sealed class DeviationBlobCalibrationDetectorTests
 
         rimSnaps.Should().HaveCount(1);
         var rim = rimSnaps[0];
-        rim.Pipeline.Should().Be("blob_detection");
+        rim.Pipeline.Should().Be(RimMaskPipeline.BlobDetection);
         rim.RimMaskBuffer.Length.Should().Be(TexW * TexH);
-        // Input/survivor stay populated on the blob_detection path (synthesis_j uses -1 sentinels).
+        // mithril#1125: input/survivor stay populated (non-null) on the blob-detection
+        // path; synthesis-J supplies null instead.
         rim.FgInputCount.Should().Be(devSnaps[0].AboveThresholdCount);
-        rim.FgSurvivorCount.Should().BeLessThanOrEqualTo(rim.FgInputCount);
+        rim.FgSurvivorCount!.Value.Should().BeLessThanOrEqualTo(rim.FgInputCount!.Value);
         rim.FgSurvivorCount.Should().Be(rim.FgInputCount - rim.RimPixelCount);
     }
 
@@ -267,7 +268,7 @@ public sealed class DeviationBlobCalibrationDetectorTests
         m.CloseRadius.Should().Be(1);  // production default
         m.FgInputCount.Should().Be(rimSnaps[0].FgSurvivorCount);
         m.FgAfterMorphBuffer.Length.Should().Be(TexW * TexH);
-        m.FgOutputCount.Should().Be(m.FgAfterMorphBuffer.Count(b => b));
+        m.FgOutputCount.Should().Be(CountTrue(m.FgAfterMorphBuffer));
     }
 
     // mithril#1123: OnBlobClassified fires for ALL comps, not just Icons — the
@@ -305,20 +306,52 @@ public sealed class DeviationBlobCalibrationDetectorTests
         var (shot, tex) = BuildPair();
         var detector = new DeviationBlobCalibrationDetector();
 
+        // mithril#1127: capture every buffer at first-Detect, then drive a SECOND
+        // Detect and assert byte-equality. The original "count stable" check
+        // wouldn't catch an aliased buffer with the same true-count; SequenceEqual
+        // catches any single-byte mutation. Extended to all four buffers
+        // (Foreground/RimMask/FgAfterMorph/Pixels) so the clone contract is
+        // covered for every per-stage emission, not just OnDeviation.
         bool[]? firstFg = null;
+        bool[]? firstRim = null;
+        bool[]? firstMorph = null;
+        int[]? firstPixels = null;
         var hooks1 = new DetectionDiagnosticHooks(
-            OnDeviation: s => firstFg ??= s.ForegroundBuffer,
-            OnRimMask: null, OnMorph: null, OnBlobClassified: null);
+            OnDeviation: s => firstFg ??= s.ForegroundBuffer.ToArray(),
+            OnRimMask: s => firstRim ??= s.RimMaskBuffer.ToArray(),
+            OnMorph: s => firstMorph ??= s.FgAfterMorphBuffer.ToArray(),
+            OnBlobClassified: c => firstPixels ??= c.Pixels.ToArray());
         detector.Detect(Request(shot, tex) with { Diagnostics = hooks1 });
         firstFg.Should().NotBeNull();
-        var snapshotCount = firstFg!.Count(b => b);
+        firstRim.Should().NotBeNull();
+        firstMorph.Should().NotBeNull();
+        firstPixels.Should().NotBeNull();
 
-        // Drive a second detect — it must not alias the captured buffer.
+        // Snapshot each captured array's exact bytes BEFORE the second run.
+        var fgSnapshot = (bool[])firstFg!.Clone();
+        var rimSnapshot = (bool[])firstRim!.Clone();
+        var morphSnapshot = (bool[])firstMorph!.Clone();
+        var pixSnapshot = (int[])firstPixels!.Clone();
+
+        // Drive a second detect — captured arrays must not alias the new run's
+        // working buffers (which mutate as the orchestrator advances stages).
         detector.Detect(Request(shot, tex) with { Diagnostics = hooks1 });
 
-        // Snapshot from the first run must still match its own AboveThresholdCount tally.
-        firstFg!.Count(b => b).Should().Be(snapshotCount,
-            "the snapshot buffer must be a clone — orchestrator mutations to fg must not bleed through");
+        firstFg!.SequenceEqual(fgSnapshot).Should().BeTrue(
+            "ForegroundBuffer must be cloned at emission — orchestrator mutations to fg must not bleed through");
+        firstRim!.SequenceEqual(rimSnapshot).Should().BeTrue("RimMaskBuffer must be cloned at emission");
+        firstMorph!.SequenceEqual(morphSnapshot).Should().BeTrue("FgAfterMorphBuffer must be cloned at emission");
+        firstPixels!.SequenceEqual(pixSnapshot).Should().BeTrue("BlobClassification.Pixels must be cloned at emission");
+    }
+
+    // mithril#1126: ReadOnlyMemory<bool> doesn't have LINQ Count(predicate); helper
+    // walks the span and tallies the true count. Used by the per-stage tests.
+    private static int CountTrue(ReadOnlyMemory<bool> mem)
+    {
+        var span = mem.Span;
+        int n = 0;
+        for (int i = 0; i < span.Length; i++) if (span[i]) n++;
+        return n;
     }
 
     // mithril#1123 D3.a: BlobFeat.Ordinal carries the 8-connected emission order
@@ -370,7 +403,7 @@ public sealed class DeviationBlobCalibrationDetectorTests
         detector.Detect(request);
 
         var iconOrdinals = blobClasses
-            .Where(c => c.BlobClass == "Icon")
+            .Where(c => c.BlobClass == BlobClass.Icon)
             .Select(c => c.BlobOrdinal)
             .ToHashSet();
         var scoreOrdinals = blobScores.Select(s => s.BlobOrdinal).ToHashSet();
@@ -379,7 +412,7 @@ public sealed class DeviationBlobCalibrationDetectorTests
             "at least one synthetic icon should produce a scored blob");
         scoreOrdinals.Should().BeSubsetOf(iconOrdinals,
             "every BlobTemplateScore.BlobOrdinal must correspond to a "
-            + "BlobClassification record with BlobClass == \"Icon\"");
+            + "BlobClassification record with BlobClass == Icon");
     }
 
     [Fact]

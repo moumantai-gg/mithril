@@ -88,6 +88,10 @@ public static class DeviationBlobDetector
             // matches the sink cadence (Task 3) so a triager can watch the pipeline
             // in real-time without waiting for the bundle to write.
             var (min, max, mean, p50, p95, p99) = ComputeDeviationStats(dev);
+            // mithril#1126: clone the working array, then wrap the clone in
+            // ReadOnlyMemory<bool> so the snapshot's read-only contract is on
+            // the type. The orchestrator continues to mutate fg below — the
+            // clone keeps the snapshot's view stable.
             hooks.OnDeviation(new DeviationSnapshot(
                 Rotate180: false,
                 Width: w, Height: h, Win: 11,
@@ -95,7 +99,7 @@ public static class DeviationBlobDetector
                 Min: min, Max: max, Mean: mean,
                 P50: p50, P95: p95, P99: p99,
                 AboveThresholdCount: aboveThresholdCount,
-                ForegroundBuffer: (bool[])fgInitial.Clone()));
+                ForegroundBuffer: ((bool[])fgInitial.Clone()).AsMemory()));
             logger?.LogTrace(
                 "Deviation (rotate180=False): mean ncc={MeanNcc:0.000} above-threshold={AboveCount} of {Total} px (threshold={Threshold:0.000}, p50={P50:0.000} p95={P95:0.000} p99={P99:0.000}).",
                 meanNcc, aboveThresholdCount, n, devThr, p50, p95, p99);
@@ -141,14 +145,14 @@ public static class DeviationBlobDetector
                     if (fg[i]) survivorCount++;
                 }
                 hooks.OnRimMask(new RimMaskSnapshot(
-                    Pipeline: "blob_detection",
+                    Pipeline: RimMaskPipeline.BlobDetection,
                     Rotate180: false,
                     Width: w, Height: h,
                     Threshold: devThr,
                     RimPixelCount: rimCount,
                     FgInputCount: aboveThresholdCount,
                     FgSurvivorCount: survivorCount,
-                    RimMaskBuffer: (bool[])rimMask.Clone()));
+                    RimMaskBuffer: ((bool[])rimMask.Clone()).AsMemory()));
                 logger?.LogTrace(
                     "RimMask (rotate180=False, pipeline=blob_detection): rim={Rim} of {Total} px, fg pre={Pre} post={Post}.",
                     rimCount, n, aboveThresholdCount, survivorCount);
@@ -179,7 +183,7 @@ public static class DeviationBlobDetector
                     CloseRadius: closeRadius,
                     FgInputCount: fgInputCount,
                     FgOutputCount: fgOutputCount,
-                    FgAfterMorphBuffer: (bool[])fg.Clone()));
+                    FgAfterMorphBuffer: ((bool[])fg.Clone()).AsMemory()));
                 logger?.LogTrace(
                     "Morph (rotate180=False): closeRadius={R} fg pre={Pre} post={Post}.",
                     closeRadius, fgInputCount, fgOutputCount);
@@ -206,7 +210,7 @@ public static class DeviationBlobDetector
                     Cx: f.Cx, Cy: f.Cy,
                     MeanDev: f.MeanDev, PeakDev: f.PeakDev,
                     Solidity: f.Solidity, Aspect: f.Aspect,
-                    BlobClass: cls.ToString(),
+                    BlobClass: cls,
                     // Pixels list is passed through — render-only payload (07e PNG
                     // colourmap); not serialised to 10c JSON.
                     Pixels: f.Pixels.ToArray()));
@@ -302,8 +306,14 @@ public sealed class BlobFeat
     /// <see cref="ConnectedComponents.Label"/> during blob emission so the
     /// detector's per-template scores and the pipeline-observability dump
     /// reference the same physical blob with the same int.
+    ///
+    /// <para>mithril#1126: marked <c>required</c> so a direct
+    /// <c>new BlobFeat()</c> at a future call site is a compile error rather
+    /// than a silent <c>ordinal = 0</c> that breaks the unified ordinal space.
+    /// All blobs go through <c>ConnectedComponents.Label</c> today; this guards
+    /// any future alternate construction path.</para>
     /// </summary>
-    public int Ordinal;
+    public required int Ordinal { get; init; }
 }
 
 /// <summary>
@@ -320,7 +330,11 @@ internal static class ConnectedComponents
         for (int start = 0; start < fg.Length; start++)
         {
             if (!fg[start] || seen[start]) continue;
-            var f = new BlobFeat();
+            // mithril#1123 D3.a / #1126: the all-blobs ordinal is the 8-connected
+            // emission order — same int that BlobTemplateScore (#1121) and
+            // BlobClassification (#1123) reference. Captured BEFORE the flood
+            // fills the comp so it can be set via required-init at construction.
+            var f = new BlobFeat { Ordinal = comps.Count };
             stack.Push(start);
             seen[start] = true;
             while (stack.Count > 0)
@@ -344,10 +358,6 @@ internal static class ConnectedComponents
                         if (fg[qi] && !seen[qi]) { seen[qi] = true; stack.Push(qi); }
                     }
             }
-            // mithril#1123 D3.a: assign the all-blobs ordinal in 8-connected
-            // emission order — same int that BlobTemplateScore (#1121) and
-            // BlobClassification (#1123) reference.
-            f.Ordinal = comps.Count;
             comps.Add(f);
         }
         return comps;
