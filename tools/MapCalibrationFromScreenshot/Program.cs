@@ -40,10 +40,6 @@ internal static class Program
             {
                 return SparseLocateSpike.Run();
             }
-            if (PhaseIs(args, "blur-fit-spike"))
-            {
-                return BlurFitSpike.Run();
-            }
 
             var parsed = CliArgs.Parse(args);
             if (parsed is null)
