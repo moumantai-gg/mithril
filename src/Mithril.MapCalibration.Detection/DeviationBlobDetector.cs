@@ -27,9 +27,27 @@ public static class DeviationBlobDetector
     /// is not available on this overload (it needs the BGRA screenshot) and
     /// throws — use <see cref="RimMaskMode.DeviationFlood"/> or
     /// <see cref="RimMaskMode.None"/>.
+    ///
+    /// <para><paramref name="hooks"/> threads the mithril#1123 per-stage
+    /// observability sinks. When non-null, the orchestrator retains the
+    /// intermediate buffers (fg-initial, rim mask, fg-after-morph) and emits
+    /// one record per stage + one record per classified comp (ALL comps, not
+    /// just Icon). Every bool[] (and float[]) handed to a snapshot is a
+    /// <c>.Clone()</c> of the working buffer — the orchestrator continues to
+    /// mutate <c>fg</c> after emission (rim subtract, morph close), so
+    /// without cloning the snapshot's buffer would silently change to the
+    /// post-mutation state. Producer cost is zero when <paramref name="hooks"/>
+    /// is null.</para>
+    ///
+    /// <para><paramref name="meanNcc"/> is the mean NCC over the deviation
+    /// window — computed by <c>LocalNccDeviation.DeviationMap</c>'s
+    /// <c>out</c> param and threaded through here for <see cref="DeviationSnapshot.MeanNcc"/>.
+    /// Defaults to <see cref="double.NaN"/> for callers that don't compute it.</para>
     /// </summary>
     public static IReadOnlyList<BlobFeat> DetectIconBlobs(
-        float[] dev, int w, int h, double lowNcc, RimMaskMode rim, BlobOptions opts, int closeRadius)
+        float[] dev, int w, int h, double lowNcc, RimMaskMode rim, BlobOptions opts, int closeRadius,
+        DetectionDiagnosticHooks? hooks = null,
+        double meanNcc = double.NaN)
     {
         if (rim == RimMaskMode.ColourFlood)
         {
@@ -42,19 +60,88 @@ public static class DeviationBlobDetector
         int n = w * h;
         double devThr = 1.0 - lowNcc;  // dev >= devThr  <=>  ncc <= lowNcc
 
-        var fg = new bool[n];
-        for (int i = 0; i < n; i++) if (dev[i] >= devThr) fg[i] = true;
+        // fg-initial: the threshold output. Kept as a separate bool[] (rather than
+        // mutated in place) so the rim-subtract / morph-close stages can read
+        // pre-mutation counts for the diagnostic snapshots.
+        var fgInitial = new bool[n];
+        int aboveThresholdCount = 0;
+        for (int i = 0; i < n; i++)
+        {
+            if (dev[i] >= devThr)
+            {
+                fgInitial[i] = true;
+                aboveThresholdCount++;
+            }
+        }
+
+        // Emit DeviationSnapshot — fires after the threshold step, with the
+        // dev float[] still in scope for the stats sweep.
+        if (hooks?.OnDeviation is not null)
+        {
+            var (min, max, mean, p50, p95, p99) = ComputeDeviationStats(dev);
+            hooks.OnDeviation(new DeviationSnapshot(
+                Rotate180: false,
+                Width: w, Height: h, Win: 11,
+                Threshold: devThr, MeanNcc: meanNcc,
+                Min: min, Max: max, Mean: mean,
+                P50: p50, P95: p95, P99: p99,
+                AboveThresholdCount: aboveThresholdCount,
+                ForegroundBuffer: (bool[])fgInitial.Clone()));
+        }
+
+        // fg is the working buffer that subsequent stages mutate.
+        var fg = (bool[])fgInitial.Clone();
 
         if (rim == RimMaskMode.DeviationFlood)
         {
-            // Edge-connected deviation flood: see DeviationFloodRimMask docs.
             var rimMask = DeviationFloodRimMask.Build(dev, w, h, devThr);
-            for (int i = 0; i < n; i++) if (rimMask[i]) fg[i] = false;
+            int rimCount = 0, survivorCount = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (rimMask[i])
+                {
+                    rimCount++;
+                    fg[i] = false;
+                }
+                if (fg[i]) survivorCount++;
+            }
+
+            if (hooks?.OnRimMask is not null)
+            {
+                hooks.OnRimMask(new RimMaskSnapshot(
+                    Pipeline: "blob_detection",
+                    Rotate180: false,
+                    Width: w, Height: h,
+                    Threshold: devThr,
+                    RimPixelCount: rimCount,
+                    FgInputCount: aboveThresholdCount,
+                    FgSurvivorCount: survivorCount,
+                    RimMaskBuffer: (bool[])rimMask.Clone()));
+            }
         }
 
         if (closeRadius > 0)
         {
+            int fgInputCount = 0;
+            if (hooks?.OnMorph is not null)
+            {
+                for (int i = 0; i < n; i++) if (fg[i]) fgInputCount++;
+            }
+
             fg = Morphology.Close(fg, w, h, closeRadius);
+
+            if (hooks?.OnMorph is not null)
+            {
+                int fgOutputCount = 0;
+                for (int i = 0; i < n; i++) if (fg[i]) fgOutputCount++;
+                hooks.OnMorph(new MorphSnapshot(
+                    Rotate180: false,
+                    Width: w, Height: h,
+                    CloseRadius: closeRadius,
+                    FgInputCount: fgInputCount,
+                    FgOutputCount: fgOutputCount,
+                    FgAfterMorphBuffer: (bool[])fg.Clone()));
+            }
         }
 
         var comps = ConnectedComponents.Label(fg, w, h, dev);
@@ -62,9 +149,63 @@ public static class DeviationBlobDetector
         var icons = new List<BlobFeat>();
         foreach (var f in comps)
         {
-            if (Classify(f, opts) == BlobClass.Icon) icons.Add(f);
+            var cls = Classify(f, opts);
+
+            // mithril#1123: emit per-comp classification BEFORE the Icon gate —
+            // all comps including Noise/Fog/Structure, since "why did this blob
+            // get classified as Noise?" is exactly the triage question.
+            if (hooks?.OnBlobClassified is not null)
+            {
+                hooks.OnBlobClassified(new BlobClassification(
+                    Rotate180: false,
+                    BlobOrdinal: f.Ordinal,
+                    MinX: f.MinX, MinY: f.MinY,
+                    W: f.W, H: f.H, Area: f.Area,
+                    Cx: f.Cx, Cy: f.Cy,
+                    MeanDev: f.MeanDev, PeakDev: f.PeakDev,
+                    Solidity: f.Solidity, Aspect: f.Aspect,
+                    BlobClass: cls.ToString(),
+                    // Pixels list is passed through — render-only payload (07e PNG
+                    // colourmap); not serialised to 10c JSON.
+                    Pixels: f.Pixels.ToArray()));
+            }
+
+            if (cls == BlobClass.Icon) icons.Add(f);
         }
         return icons;
+    }
+
+    /// <summary>
+    /// Sweep the deviation float[] for distribution stats: min, max, mean, and
+    /// 50/95/99 percentiles. Used at <see cref="DeviationSnapshot"/> emission
+    /// time only (zero cost when no hook is wired). Cost: O(n log n) for the
+    /// percentile sort on a copy — Hogan's 458k pixels sorts in &lt;50 ms; fires
+    /// once per orientation pass.
+    /// </summary>
+    private static (double Min, double Max, double Mean, double P50, double P95, double P99)
+        ComputeDeviationStats(float[] dev)
+    {
+        if (dev.Length == 0) return (0, 0, 0, 0, 0, 0);
+
+        double sum = 0;
+        float min = dev[0], max = dev[0];
+        for (int i = 0; i < dev.Length; i++)
+        {
+            var v = dev[i];
+            if (v < min) min = v;
+            if (v > max) max = v;
+            sum += v;
+        }
+        double mean = sum / dev.Length;
+
+        var sorted = (float[])dev.Clone();
+        Array.Sort(sorted);
+        // Guard upper-bound — *0.99 can equal Length on tiny inputs.
+        int last = sorted.Length - 1;
+        int p50Idx = Math.Min(last, (int)(sorted.Length * 0.50));
+        int p95Idx = Math.Min(last, (int)(sorted.Length * 0.95));
+        int p99Idx = Math.Min(last, (int)(sorted.Length * 0.99));
+        return (min, max, mean, sorted[p50Idx], sorted[p95Idx], sorted[p99Idx]);
     }
 
     internal static BlobClass Classify(BlobFeat f, BlobOptions o)

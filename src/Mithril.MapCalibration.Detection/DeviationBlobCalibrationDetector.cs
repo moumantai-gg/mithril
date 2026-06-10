@@ -50,12 +50,21 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
         var texF = LocalNccDeviation.ToGrayFloat(request.BaseTexture);
 
         // Window 11 mirrors the gate-study probe default.
-        var dev = LocalNccDeviation.DeviationMap(shotF, texF, w, h, win: 11, out _, addedOnly: true);
+        // mithril#1123: capture meanNcc — DeviationSnapshot.MeanNcc surfaces it
+        // alongside the per-pixel deviation stats.
+        var dev = LocalNccDeviation.DeviationMap(shotF, texF, w, h, win: 11, out var meanNcc, addedOnly: true);
 
         // The deviation-only overload can't run ColourFlood (needs the BGRA shot);
         // fall back to DeviationFlood if asked for ColourFlood here.
         var rim = request.RimMask == RimMaskMode.ColourFlood ? RimMaskMode.DeviationFlood : request.RimMask;
-        var blobs = DeviationBlobDetector.DetectIconBlobs(dev, w, h, request.LowNcc, rim, request.BlobOptions, closeRadius: 1);
+        // mithril#1123: thread the per-stage diagnostic hooks (and meanNcc) into
+        // the deepest orchestrator layer — DetectIconBlobs owns the dev[], fg[],
+        // rim, morph, classify intermediate buffers and is where stage records
+        // are emitted. null hooks → zero producer cost.
+        var blobs = DeviationBlobDetector.DetectIconBlobs(
+            dev, w, h, request.LowNcc, rim, request.BlobOptions, closeRadius: 1,
+            hooks: request.Diagnostics,
+            meanNcc: meanNcc);
 
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
 
