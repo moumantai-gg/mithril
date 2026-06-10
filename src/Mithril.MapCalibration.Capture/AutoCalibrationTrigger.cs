@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Arda.Contracts;
+using Arda.Hosting;
 using Arda.World.Player;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Hosting;
@@ -49,10 +50,22 @@ namespace Mithril.MapCalibration.Capture;
 /// <para>On a non-persisted, <i>actionable</i> reject the trigger surfaces the
 /// reason on the overlay status chip (spec §10/§11) so the user learns why
 /// auto-cal isn't engaging; a persisted success clears the chip silently.</para>
+///
+/// <para><b>Replay gate (mithril#1117).</b> Subscription to
+/// <see cref="AreaChanged"/> + <see cref="MapAssetChanged"/> is deferred until
+/// <see cref="IReplayProgress.ReplayComplete"/> resolves. During Player.log
+/// replay the handler re-emits past scene transitions; firing a capture+solve
+/// against those would screenshot the CURRENT scene and locate it against an
+/// UNRELATED historical scene's bundled texture, contaminating the auto-cal
+/// store with rejected attempts for scenes the user never visited this session.
+/// The gate matches the documented module-activation pattern on
+/// <see cref="IReplayProgress"/>; the live tail's first scene-change event
+/// fires the right attempt.</para>
 /// </summary>
 public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
 {
     private readonly IDomainEventSubscriber _bus;
+    private readonly IReplayProgress _replayProgress;
     private readonly IAutoCalibrationRunner _runner;
     private readonly IMapCaptureRegionProvider _region;
     private readonly IGameWindowLocator _windowLocator;
@@ -64,6 +77,14 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
 
     private IDisposable? _areaChangedSub;
     private IDisposable? _mapAssetChangedSub;
+    private readonly CancellationTokenSource _stopCts = new();
+    private Task? _deferredSubscribeTask;
+    // Serialises the deferred-subscribe continuation against StopAsync/Dispose so
+    // a Stop racing with a just-completed ReplayComplete can't leak a subscription
+    // (mithril#1130 review): StopAsync awaits the deferred task AND takes this
+    // gate before disposing handles; SubscribeNow re-checks cancellation under
+    // the same gate before subscribing.
+    private readonly object _subscribeGate = new();
     private readonly object _gate = new();
     // Scenes (keyed on MapAssetKey) whose auto-attempt PERSISTED — never re-attempted (Fix C).
     private readonly HashSet<string> _persistedScenes = new(StringComparer.Ordinal);
@@ -73,6 +94,7 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
 
     public AutoCalibrationTrigger(
         IDomainEventSubscriber bus,
+        IReplayProgress replayProgress,
         IAutoCalibrationRunner runner,
         IMapCaptureRegionProvider region,
         IGameWindowLocator windowLocator,
@@ -83,6 +105,7 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
         ILogger logger)
     {
         _bus = bus;
+        _replayProgress = replayProgress;
         _runner = runner;
         _region = region;
         _windowLocator = windowLocator;
@@ -95,18 +118,77 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _areaChangedSub = _bus.Subscribe<AreaChanged>(OnAreaChanged);
-        _mapAssetChangedSub = _bus.Subscribe<MapAssetChanged>(OnMapAssetChanged);
+        // Fast-path: replay already complete (headless tests, second-instance
+        // takeover, or a tail-only restart). Subscribe synchronously so the
+        // first live event fires immediately without a thread-pool hop.
+        if (_replayProgress.ReplayComplete.IsCompleted)
+        {
+            SubscribeNow();
+            return Task.CompletedTask;
+        }
+
+        _logger.LogInformation(
+            "Auto-calibration trigger deferred until Player/Chat replay completes (mithril#1117 gate).");
+        _deferredSubscribeTask = Task.Run(async () =>
+        {
+            try
+            {
+                await _replayProgress.ReplayComplete.WaitAsync(_stopCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // StopAsync fired before replay finished — leave the bus
+                // un-subscribed so the trigger stays inert.
+                _logger.LogTrace(
+                    "Auto-calibration trigger deferred subscribe cancelled before replay completed (StopAsync fired during shutdown).");
+                return;
+            }
+
+            SubscribeNow();
+        });
+
         return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    private void SubscribeNow()
     {
-        _areaChangedSub?.Dispose();
-        _areaChangedSub = null;
-        _mapAssetChangedSub?.Dispose();
-        _mapAssetChangedSub = null;
-        return Task.CompletedTask;
+        // mithril#1130 review: take the gate BEFORE the cancellation re-check so
+        // a StopAsync that runs between WaitAsync returning and Subscribe firing
+        // is observed under the lock — StopAsync also takes this gate before
+        // disposing handles, so the choice is "subscribe-then-StopAsync-disposes"
+        // or "StopAsync-runs-first-and-we-skip", never "subscribe-after-Stop-returned".
+        lock (_subscribeGate)
+        {
+            if (_stopCts.IsCancellationRequested) return;
+            _areaChangedSub = _bus.Subscribe<AreaChanged>(OnAreaChanged);
+            _mapAssetChangedSub = _bus.Subscribe<MapAssetChanged>(OnMapAssetChanged);
+        }
+        _logger.LogInformation(
+            "Auto-calibration trigger subscribed to AreaChanged + MapAssetChanged (replay complete).");
+    }
+
+    public async Task StopAsync(CancellationToken cancellationToken)
+    {
+        // Cancel the deferred-subscribe awaiter so a Stop before ReplayComplete
+        // leaves the bus untouched. Then AWAIT the deferred task — this is the
+        // hosted-service contract ("StopAsync's returned task completes when the
+        // service has stopped") and the only way to deterministically synchronise
+        // with the SubscribeNow continuation. Under _subscribeGate we then dispose
+        // whatever handles SubscribeNow may have created in the gap between
+        // WaitAsync returning and Cancel firing.
+        _stopCts.Cancel();
+        if (_deferredSubscribeTask is { } deferred)
+        {
+            try { await deferred.ConfigureAwait(false); }
+            catch (OperationCanceledException) { /* awaiter ate cancel — expected */ }
+        }
+        lock (_subscribeGate)
+        {
+            _areaChangedSub?.Dispose();
+            _areaChangedSub = null;
+            _mapAssetChangedSub?.Dispose();
+            _mapAssetChangedSub = null;
+        }
     }
 
     private void OnAreaChanged(AreaChanged e)
@@ -221,9 +303,26 @@ public sealed class AutoCalibrationTrigger : IHostedService, IDisposable
         }
     }
 
+    private int _disposed;
     public void Dispose()
     {
-        _areaChangedSub?.Dispose();
-        _mapAssetChangedSub?.Dispose();
+        // Idempotent: the DI container can invoke Dispose more than once for an
+        // instance registered as both a singleton and as IHostedService.
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+        try { _stopCts.Cancel(); } catch (ObjectDisposedException) { /* StopAsync raced */ }
+        // In the canonical IHostedService lifecycle StopAsync runs first and has
+        // already awaited the deferred task. This Wait is belt-and-braces for the
+        // direct-Dispose path (e.g. a test container disposing without StopAsync) —
+        // it ensures SubscribeNow can't race past the dispose and leak handlers
+        // onto the bus. The bound is short because StartAsync's continuation never
+        // does IO past the bus.Subscribe call.
+        try { _deferredSubscribeTask?.Wait(TimeSpan.FromSeconds(1)); }
+        catch { /* observed; cancellation/already-faulted are fine */ }
+        lock (_subscribeGate)
+        {
+            _areaChangedSub?.Dispose();
+            _mapAssetChangedSub?.Dispose();
+        }
+        _stopCts.Dispose();
     }
 }
