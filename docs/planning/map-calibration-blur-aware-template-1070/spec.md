@@ -86,17 +86,28 @@ SobelPaddedPyramidRefiner.RefineCore (existing — #1061)
 ├─ 3. 3-level Gaussian pyramid (PyrDown × 2)
 ├─ 4. COARSE stage (quarter resolution): scale ladder, basin pick   ← unchanged
 ├─ 5. HALF stage (half resolution): narrow ladder around coarse     ← unchanged
-└─ 6. FULL stage (full resolution): narrow ladder around half       ← INSERTION POINT
-    └─ 6a. For each candidate scale s:
-    │     ├─ resize textureSobel to (W*s, H*s) via INTER_AREA
+└─ 6. FULL stage (full resolution): narrow ladder around half       ← INSERTION POINT A
+    ├─ 6a. NarrowLadderWithLoc (existing helper, SobelPaddedPyramidRefiner.cs:226-244):
+    │     For each candidate scale s in [centre−2·step, centre+2·step]:
+    │     ├─ resize textureSobel to (W·s, H·s) via INTER_AREA
     │     ├─ NEW: σ = RendererBlurModel.SigmaFor(scale=s, options)
     │     ├─ NEW: if (σ > 0) Cv2.GaussianBlur(resized, resized, ksize=(0,0), σx=σ, σy=σ)
     │     ├─ matchTemplate(capPadded, resized, CCoeffNormed) → response map
-    │     └─ track best (ncc, scale, location)
-    ├─ 6b. Parabolic peak refinement on scale axis (existing)
-    └─ 6c. Sub-pixel translation refinement on 3×3 of response map at peak (existing)
-       └─ EXIT — recovered (tx, ty, scale, NCC, blur σ)
+    │     └─ append (scale, score, location) to fineLadder; record σ alongside (D2.a)
+    ├─ 6b. ArgMax(fineLadder) → fine winner
+    ├─ 6c. Parabolic peak refinement on scale axis (existing)             ← INSERTION POINT B
+    │     If parabolic refinement triggers (concave-down + |sub-step| ≤ 1):
+    │     ├─ refinedScale = winner + step·subStep
+    │     ├─ resize textureSobel at refinedScale via INTER_AREA
+    │     ├─ NEW: σ = RendererBlurModel.SigmaFor(scale=refinedScale, options)
+    │     ├─ NEW: if (σ > 0) Cv2.GaussianBlur(resized, resized, ksize=(0,0), σx=σ, σy=σ)
+    │     ├─ matchTemplate(capPadded, resized, CCoeffNormed) → re-matched response
+    │     ├─ SobelMagnitudeHelpers.RefineLocationSubPixel(result, maxLoc) (existing)
+    │     └─ bestSigma = σ (this σ supersedes the fine-ladder σ — it's the one tied to the recovered tx/ty)
+    └─ 6d. EXIT — recovered (tx, ty, scale, NCC, bestSigma)
 ```
+
+**Both INSERTION POINT A (the fine ladder) and INSERTION POINT B (the post-parabolic re-match) need blur** — without blur at the re-match, the parabolic refinement step would convolve an un-blurred template against the (already-blurred-by-PG) capture, producing a different NCC peak shape than the ladder's pre-parabolic shape and partially undoing the gain. The `bestSigma` carried out of the refiner is whichever σ was applied to the matchTemplate call that produced the recovered (tx, ty) — point B if it fired, otherwise point A's winning rung.
 
 ```
 RendererBlurModel (new, static, in Mithril.MapCalibration.Detection.Internal)
@@ -118,13 +129,13 @@ MapCalibrationLocateOptions (existing — #1061)
 ```
 
 ```
-LocatorBestJson (existing — #1061 v1→v2)
+LocatorBestJson (existing — #1061 v1→v2; current shipped fields: Algorithm, FallbackNcc, PadPx)
 └─ NEW (schema v2→v3, additive):
-   └─ BlurAppliedSigma : double?   (the actually-applied σ at the FULL stage's winning scale; null if blur disabled or fallback didn't run)
+   └─ BlurAppliedSigma : double?   (the actually-applied σ at the FULL stage's recovered scale; null if blur disabled or fallback didn't run)
 ```
 
 Producer cost when `RendererBlurEnabled=false`: zero (skip the `GaussianBlur` call entirely, no σ computation either).
-Producer cost when `RendererBlurEnabled=true`: one `Cv2.GaussianBlur` per fine-ladder rung evaluated at the full stage (~5 rungs × ~1 ms = ~5 ms on Hogan's 1024-px texture; negligible vs the existing matchTemplate cost).
+Producer cost when `RendererBlurEnabled=true`: one `Cv2.GaussianBlur` per fine-ladder rung evaluated at the full stage (~5 rungs × ~1 ms) **plus one for the post-parabolic re-match** when it fires (~1 ms). Total ~5–6 ms on Hogan's 1024-px texture; negligible vs the existing matchTemplate cost.
 
 ## 5. Layer-by-layer detail
 
@@ -167,58 +178,82 @@ Pure static, no DI, no allocation. The σ is recomputed once per fine-ladder run
 
 ### 5.2 `SobelPaddedPyramidRefiner.RefineCore` — blur application at the FULL stage
 
-Today's full-stage loop (rough shape, in `SobelPaddedPyramidRefiner.cs`):
+Today's full stage in [`SobelPaddedPyramidRefiner.cs`](../../../src/Mithril.MapCalibration.Detection/SobelPaddedPyramidRefiner.cs) has TWO matchTemplate sites that both produce the final `(tx, ty)`:
+
+1. **`NarrowLadderWithLoc`** (lines 226-244) — the fine ladder around the L1 winner, emits `List<(double Scale, double Score, Point Loc)>`. `ArgMax` picks the winning rung.
+2. **The post-parabolic re-match in `RefineCore`** (lines 119-130) — when parabolic refinement triggers (concave-down NCC peak + `|sub-step| ≤ 1`), the refiner does ONE more `Cv2.Resize` + `Cv2.MatchTemplate` at the parabolic-refined scale, then calls `SobelMagnitudeHelpers.RefineLocationSubPixel(result, maxLoc)` to derive the sub-pixel `(dx, dy)`.
+
+The recovered `(refinedTx, refinedTy)` carried out of the refiner is **whichever of those two matches fired last** — `NarrowLadderWithLoc`'s winner if parabolic didn't trigger, the re-match if it did. Blur has to apply at both, otherwise the re-match silently un-does the gain.
+
+**INSERTION POINT A — `NarrowLadderWithLoc`** (the existing helper, lines 226-244):
 
 ```csharp
-double bestNcc = double.MinValue;
-double bestScale = 0;
-Point bestLoc = default;
-foreach (var s in scalesNearHalfWinner) {
-    int w = (int)Math.Round(texSobel.Cols * s);
-    int h = (int)Math.Round(texSobel.Rows * s);
-    if (w < _options.MinScaledDim || h < _options.MinScaledDim) continue;
-    using var resized = new Mat();
-    Cv2.Resize(texSobel, resized, new Size(w, h), 0, 0, InterpolationFlags.Area);
-    using var response = new Mat();
-    Cv2.MatchTemplate(capPadded, resized, response, TemplateMatchModes.CCoeffNormed);
-    Cv2.MinMaxLoc(response, out _, out double mx, out _, out Point maxLoc);
-    if (mx > bestNcc) { bestNcc = mx; bestScale = s; bestLoc = maxLoc; }
-}
-```
-
-After (insertion is two lines + a σ recall):
-
-```csharp
-double bestNcc = double.MinValue;
-double bestScale = 0;
-double bestSigma = 0;
-Point bestLoc = default;
-foreach (var s in scalesNearHalfWinner) {
-    int w = (int)Math.Round(texSobel.Cols * s);
-    int h = (int)Math.Round(texSobel.Rows * s);
-    if (w < _options.MinScaledDim || h < _options.MinScaledDim) continue;
-    using var resized = new Mat();
-    Cv2.Resize(texSobel, resized, new Size(w, h), 0, 0, InterpolationFlags.Area);
-    double sigma = RendererBlurModel.SigmaFor(s, _options);
-    if (sigma > 0.0) {
-        Cv2.GaussianBlur(resized, resized, new Size(0, 0), sigmaX: sigma, sigmaY: sigma);
+// existing signature stays; add an options ref so SigmaFor can be called
+private static List<(double Scale, double Score, Point Loc, double Sigma)> NarrowLadderWithLoc(
+    Mat cap, Mat tex, double centreScale, int minDim, double scaleStep,
+    MapCalibrationLocateOptions options)        // NEW param — needs the σ curve
+{
+    var ladder = new List<(double Scale, double Score, Point Loc, double Sigma)>(8);
+    for (double s = centreScale - 2 * scaleStep; s <= centreScale + 2 * scaleStep + 1e-6; s += scaleStep)
+    {
+        if (s <= 0) continue;
+        int sw = (int)Math.Round(tex.Width * s);
+        int sh = (int)Math.Round(tex.Height * s);
+        if (sw < minDim || sh < minDim || sw > cap.Width || sh > cap.Height) continue;
+        using var scaled = new Mat();
+        Cv2.Resize(tex, scaled, new Size(sw, sh), interpolation: InterpolationFlags.Area);
+        double sigma = RendererBlurModel.SigmaFor(s, options);                        // NEW
+        if (sigma > 0.0)                                                              // NEW
+            Cv2.GaussianBlur(scaled, scaled, new Size(0, 0), sigma, sigma);           // NEW
+        using var result = new Mat();
+        Cv2.MatchTemplate(cap, scaled, result, TemplateMatchModes.CCoeffNormed);
+        Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+        ladder.Add((s, maxVal, maxLoc, sigma));                                       // CHANGED — carry σ
     }
-    using var response = new Mat();
-    Cv2.MatchTemplate(capPadded, resized, response, TemplateMatchModes.CCoeffNormed);
-    Cv2.MinMaxLoc(response, out _, out double mx, out _, out Point maxLoc);
-    if (mx > bestNcc) { bestNcc = mx; bestScale = s; bestSigma = sigma; bestLoc = maxLoc; }
+    return ladder;
 }
 ```
 
-`bestSigma` then surfaces into the `Metrics` carried by `MapRegionRefineResult`:
+The tuple grows to four-arity to carry the σ alongside each rung. `ArgMax` is unchanged (still picks by `Score`). The caller (`RefineCore`) reads `fineWinner.Sigma` for the ladder-side σ.
+
+**INSERTION POINT B — the post-parabolic re-match** in [`RefineCore`](../../../src/Mithril.MapCalibration.Detection/SobelPaddedPyramidRefiner.cs:119) at lines 119-130:
+
+```csharp
+// existing parabolic branch — additions marked NEW:
+if (sw >= minDimFull && sh >= minDimFull
+    && sw <= capPadded.Width && sh <= capPadded.Height)
+{
+    using var scaled = new Mat();
+    Cv2.Resize(texSobel, scaled, new Size(sw, sh),
+        interpolation: InterpolationFlags.Area);
+    double sigma = RendererBlurModel.SigmaFor(candidate, _options);                 // NEW
+    if (sigma > 0.0)                                                                // NEW
+        Cv2.GaussianBlur(scaled, scaled, new Size(0, 0), sigma, sigma);             // NEW
+    using var result = new Mat();
+    Cv2.MatchTemplate(capPadded, scaled, result, TemplateMatchModes.CCoeffNormed);
+    Cv2.MinMaxLoc(result, out _, out double maxVal, out _, out Point maxLoc);
+    var (sdx, sdy) = SobelMagnitudeHelpers.RefineLocationSubPixel(result, maxLoc);
+    refinedScale = candidate;
+    refinedTx = maxLoc.X + sdx - pad;
+    refinedTy = maxLoc.Y + sdy - pad;
+    refinedNcc = maxVal;
+    bestSigma = sigma;                                                              // NEW
+}
+```
+
+`bestSigma` defaults to the fine winner's σ before the parabolic block (so when parabolic doesn't trigger, σ from point A wins). The final value surfaces into the `LocateMetrics` returned:
 
 ```csharp
 var metrics = new LocateMetrics(
-    /* …existing fields… */,
-    BlurAppliedSigma: bestSigma);   // NEW field on LocateMetrics
+    InlierCount: 0, CandidateCount: 0, InlierRatio: 0,
+    Scale: refinedScale, RotationDegrees: 0, Mirror: false,
+    Tx: refinedTx, Ty: refinedTy, ResidualPixels: 0,
+    Provenance: LocateProvenance.SobelPaddedPyramid,
+    Confidence: refinedNcc,
+    BlurAppliedSigma: bestSigma);   // NEW positional arg on LocateMetrics
 ```
 
-The coarse + half stages are unchanged — they don't blur. Only the full stage's response drives the sub-pixel refinement.
+The coarse + half stages (`TryFullLadder` line 172, `TryNarrowLadder` line 199) are unchanged — they don't blur. Only the full stage's matches drive the recovered sub-pixel `(tx, ty)`. (See §3 D2 for why coarse + half are deliberately left alone — basin selection vs precision recovery, different jobs.)
 
 ### 5.3 `MapCalibrationLocateOptions` — knobs + v1→v2
 
@@ -255,9 +290,11 @@ Mirror of #1061's v1→v2 additive bump. New optional field:
 
 ```csharp
 public sealed record LocatorBestJson(
-    /* …existing fields, including v2's Algorithm, FallbackNcc, PadPx, LevelScales… */,
+    /* …existing v2 fields: Algorithm = "orb-lowe", FallbackNcc = null, PadPx = null… */,
     double? BlurAppliedSigma = null);
 ```
+
+The current shipped v2 carries `Algorithm`, `FallbackNcc`, `PadPx` per [`CalibrationBundleJson.cs:34-54`](../../../src/Mithril.MapCalibration.Capture/Diagnostics/CalibrationBundleJson.cs#L34). (mithril#1061's spec also mentioned a `LevelScales` field; it didn't ship.) The v2→v3 bump appends one more optional positional argument; pre-#1070 readers handle the absence as null via the default.
 
 `LocatorBestJson.SchemaVersion = 3`. Reader treats absence of `BlurAppliedSigma` as v2 (null). Sink writes v3 unconditionally; the new field is null on ORB-primary success and on Sobel-fallback runs where `RendererBlurEnabled = false`.
 
@@ -265,13 +302,15 @@ public sealed record LocatorBestJson(
 
 ### 5.5 Telemetry
 
-Per `docs/perf-trace-schema.md` + `MithrilActivitySources.MapCalibration`, the existing `calibration.refine.fallback` span (added in #1061 §9) gains a new tag:
+The existing `calibration.refine.fallback` span (#1061 §9) is emitted by [`CompositeMapRegionRefiner.Refine`](../../../src/Mithril.MapCalibration.Detection/CompositeMapRegionRefiner.cs#L60) using `MapCalibrationDiagnostics.ActivitySource` (defined in [`src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs`](../../../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs), name `"Mithril.MapCalibration.Detection"`). This is a **Detection-layer** catalog, distinct from the **Capture-layer** `MithrilActivitySources.MapCalibration` in `Mithril.Shared` (name `"Mithril.MapCalibration.Capture"`); the two coexist because `Mithril.MapCalibration.csproj` deliberately doesn't reference `Mithril.Shared`.
 
-- `blur.sigma` — the `BlurAppliedSigma` written to `LocatorBestJson`. Lowercase-dotted per convention.
+The span gains one new tag:
 
-No new span, no new metric. The bundle's `BlurAppliedSigma` field is the load-bearing diagnostic surface; telemetry tag makes it queryable in Seq alongside `ncc`, `scale`, and `outcome`.
+- `blur.sigma` — the `BlurAppliedSigma` from `LocateMetrics`. Lowercase-dotted per convention. Set in `CompositeMapRegionRefiner.Refine`'s existing `fallbackAct?.SetTag(...)` block (the same spot that already sets `ncc` and `scale` from `m.Confidence` and `m.Scale`).
 
-Update `docs/perf-trace-schema.md`'s `calibration.refine.fallback` row + the byte-parity test in `tests/Mithril.Shared.Tests/PerfTracerTests.cs` when the implementation lands.
+No new span, no new metric. The bundle's `BlurAppliedSigma` field is the load-bearing diagnostic surface; the telemetry tag makes it queryable in Seq alongside `ncc`, `scale`, and `outcome`.
+
+Update sites: `docs/perf-trace-schema.md` has TWO places where this span's vocabulary appears — the high-level row at the catalog-table near line 68, and the detailed tag-list section starting around line 325. Both need the `blur.sigma` addition. Also update the byte-parity test in `tests/Mithril.Shared.Tests/PerfTracerTests.cs` when the implementation lands.
 
 ### 5.6 Logging
 
@@ -308,7 +347,7 @@ The σ clamp `RendererBlurMaxSigma = 3.0` keeps the implicit ksize (`(σ × 6 + 
 | `SobelPaddedPyramidRefiner_records_BlurAppliedSigma` | `Mithril.MapCalibration.Tests` | Drive `Refine(capture, texture)` with `RendererBlurEnabled=true`; assert returned `LocateMetrics.BlurAppliedSigma` is `> 0` and matches `RendererBlurModel.SigmaFor(metrics.Scale, options)`. |
 | `SobelPaddedPyramidRefiner_records_zero_blur_when_disabled` | `Mithril.MapCalibration.Tests` | With `RendererBlurEnabled=false`, assert `LocateMetrics.BlurAppliedSigma == 0`. Behaviour identical to pre-#1070 (regression lock). |
 | `SobelPaddedPyramidRefiner_output_is_byte_equal_with_and_without_blur_on_synthetic_no_blur_fixture` | `Mithril.MapCalibration.Tests` | Construct a synthetic capture+texture pair where the template has no inherent blur (sharp Sobel response). With `RendererBlurEnabled` true vs false, the recovered `(scale, tx, ty)` should differ by ≤ 0.5 px. Guards against the blur ruining a clean case. |
-| `Hogans_OUT_corpus_deviation_density_drops_with_blur` | `Mithril.MapCalibration.Tests` | **Corpus test** — load `tests/Mithril.MapCalibration.Tests/Detection/blur_aware_corpus/hogans_out_scale028.png` + bundled Hogan's texture, run the FULL detector pipeline (refiner → detect → blob classify), assert `aboveThresholdCount / (W*H) < 0.18` (vs the pre-fix 0.32). |
+| `Hogans_OUT_corpus_deviation_density_drops_with_blur` | `Mithril.MapCalibration.Tests` | **Corpus test** — load `tests/Mithril.MapCalibration.Tests/Detection/blur_aware_corpus/hogans_out_scale028.png` + the Hogan's texture (**checked into the same `blur_aware_corpus/` dir** — Hogan's texture is NOT in `BundledData/map-calibration-baseline.json`, so `BundledBaselineLoader` can't supply it; the test must ship its own copy). Run the FULL detector pipeline (refiner → detect → blob classify), assert `aboveThresholdCount / (W*H) < 0.18` (vs the pre-fix 0.32). |
 | `Hogans_IN_corpus_already_passing_doesnt_regress` | `Mithril.MapCalibration.Tests` | **Corpus test** — same corpus directory, scale=0.94 case, assert `aboveThresholdCount / (W*H) ≤ 0.15` (vs the pre-fix 0.11 baseline, 4 % slack for noise). |
 | `Eltibule_outdoor_doesnt_regress` | `Mithril.MapCalibration.Tests` | **Corpus test** — Eltibule capture goes through ORB primary, not the Sobel fallback. Assert `Algorithm == "orb-lowe"` on the recovered metrics and no blur is applied. Regression-only — ensures Composite refiner dispatch is unchanged. |
 | `MapCalibrationLocateOptions_v1_migrates_to_v2_with_defaults` | `Mithril.MapCalibration.Tests` (or `Mithril.MapCalibration.Capture.Tests` if that's where settings tests live) | Deserialize a v1 JSON `{ "schemaVersion": 1, "fallbackNccFloor": 0.30 }`; assert `Migrate` returns an instance with `SchemaVersion = 2`, `FallbackNccFloor = 0.30` (preserved), `RendererBlurEnabled = true`, `RendererBlurIntercept = <measured default>`, `RendererBlurSlope = <measured default>`. |
@@ -323,9 +362,10 @@ The corpus test fixtures (PNG inputs + expected metrics) come from Plan Task 5. 
 | File | Change |
 |---|---|
 | `src/Mithril.MapCalibration.Detection/Internal/RendererBlurModel.cs` | **new** — static `SigmaFor(scale, options)` per §5.1. |
-| [`src/Mithril.MapCalibration.Detection/SobelPaddedPyramidRefiner.cs`](../../../src/Mithril.MapCalibration.Detection/SobelPaddedPyramidRefiner.cs) | FULL-stage loop applies `Cv2.GaussianBlur` after resize when `σ > 0` (§5.2). Track + return `BlurAppliedSigma` on the returned `LocateMetrics`. Three new `LogTrace` lines. |
+| [`src/Mithril.MapCalibration.Detection/SobelPaddedPyramidRefiner.cs`](../../../src/Mithril.MapCalibration.Detection/SobelPaddedPyramidRefiner.cs) | Apply `Cv2.GaussianBlur` after resize at BOTH full-stage matchTemplate sites: (a) inside `NarrowLadderWithLoc` (lines 226-244) for each fine-ladder rung; (b) inside the post-parabolic re-match in `RefineCore` (lines 119-130). Track + return `BlurAppliedSigma` on the returned `LocateMetrics`. Three new `LogTrace` lines. |
 | [`src/Mithril.MapCalibration.Detection/MapCalibrationLocateOptions.cs`](../../../src/Mithril.MapCalibration.Detection/MapCalibrationLocateOptions.cs) | Five new properties + getters/setters + `OnChanged` per §5.3. Bump `Version = 2`. `Migrate` v1→v2 is identity (additive defaults). |
-| `src/Mithril.MapCalibration.Detection/LocateMetrics.cs` (or wherever the type is declared) | Add `double? BlurAppliedSigma` field. |
+| [`src/Mithril.MapCalibration/LocateMetrics.cs`](../../../src/Mithril.MapCalibration/LocateMetrics.cs) | Add `double? BlurAppliedSigma = null` as a new positional record argument after `Confidence`. **Note**: `LocateMetrics` lives in the base `Mithril.MapCalibration` project, not in `.Detection`. |
+| [`src/Mithril.MapCalibration.Detection/CompositeMapRegionRefiner.cs`](../../../src/Mithril.MapCalibration.Detection/CompositeMapRegionRefiner.cs) | Add `fallbackAct?.SetTag("blur.sigma", m.BlurAppliedSigma)` next to the existing `ncc`/`scale` tag-set calls (lines 66-67), guarded on `m.BlurAppliedSigma is double` to avoid double-tagging null. |
 | [`src/Mithril.MapCalibration.Capture/Diagnostics/CalibrationBundleJson.cs`](../../../src/Mithril.MapCalibration.Capture/Diagnostics/CalibrationBundleJson.cs) | `LocatorBestJson.SchemaVersion = 3`; add `BlurAppliedSigma : double?` per §5.4. Register via existing `[JsonSerializable]` context. |
 | [`src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs`](../../../src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs) | Thread `BlurAppliedSigma` from the refiner's `LocateMetrics` into the `LocatorBestJson` payload at write-time. One additional assignment. |
 

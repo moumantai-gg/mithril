@@ -133,18 +133,14 @@ Corpus                = TBD bundles: …list…
 
 ## Task 3 — `LocateMetrics.BlurAppliedSigma` field
 
-**Files:** the file declaring `LocateMetrics` (verify location: it's referenced from `SobelPaddedPyramidRefiner` per spec — most likely `src/Mithril.MapCalibration.Detection/LocateMetrics.cs` or co-located with `MapRegionRefineResult` in `IMapRegionRefiner.cs`). Confirm via:
-
-```bash
-grep -n "record .* LocateMetrics\|class .* LocateMetrics\|struct .* LocateMetrics" src/Mithril.MapCalibration.Detection/*.cs
-```
+**File:** [`src/Mithril.MapCalibration/LocateMetrics.cs`](../../../src/Mithril.MapCalibration/LocateMetrics.cs) — note this is in the **base `Mithril.MapCalibration` project**, not in `.Detection`. Detection-layer code consumes it via the existing project reference.
 
 **Steps:**
 
-1. Add `double? BlurAppliedSigma` field to `LocateMetrics`. Default `null` — matches existing nullable-field convention from #1061's `LocateMetrics.Confidence`.
-2. **Re-grep `LocateMetrics(` ctor calls** across `src/` + `tests/` to find every construction site. There are likely 1–2 (`FeatureMatchingRefiner` for ORB primary, `SobelPaddedPyramidRefiner` for fallback) plus test fixtures. ORB sites pass `BlurAppliedSigma: null` (blur doesn't apply); the fallback site will be updated in Task 4.
+1. Add `double? BlurAppliedSigma = null` as a new positional record argument **after** `Confidence` in `LocateMetrics`. Matches the existing nullable-field convention from #1061's `Confidence`.
+2. **Re-grep `new LocateMetrics(` ctor calls** across `src/` + `tests/` + `tools/` to find every construction site. As of this writing the production sites are `FeatureMatchingRefiner` (ORB primary) and `SobelPaddedPyramidRefiner` (fallback). ORB sites can omit the new arg (the default-null carries them); the fallback site will be updated in Task 4 to pass `bestSigma`.
 
-**Tests:** None for the type addition alone — Task 4 covers the producer; Task 5 covers JSON round-trip.
+**Tests:** None for the type addition alone — Task 4 covers the producer; Task 6 covers JSON round-trip.
 
 **Acceptance:** `dotnet build` green. No semantic change yet.
 
@@ -156,32 +152,43 @@ grep -n "record .* LocateMetrics\|class .* LocateMetrics\|struct .* LocateMetric
 
 **Steps:**
 
-1. At the FULL-stage loop (post-half-winner narrow ladder), insert the σ-computation + `Cv2.GaussianBlur` call per spec §5.2. Track `bestSigma` alongside `bestNcc / bestScale / bestLoc`.
-2. After the loop, plumb `bestSigma` into the returned `LocateMetrics.BlurAppliedSigma` field.
-3. Add the three `LogTrace` lines per spec §5.6 — one before the loop (the σ-curve summary), one inside the loop when `σ > 0` is applied (per-rung trace), one after the loop reporting the winner with σ.
-4. Add a `LogInformation` line at the top of `RefineCore` reporting whether blur is enabled — once-per-attempt lifecycle milestone.
+1. **INSERTION POINT A — `NarrowLadderWithLoc`** (lines 226-244). Extend the helper to accept `MapCalibrationLocateOptions options` so it can call `RendererBlurModel.SigmaFor(s, options)`. After `Cv2.Resize` and before `Cv2.MatchTemplate`, apply `Cv2.GaussianBlur(scaled, scaled, new Size(0, 0), sigma, sigma)` when `sigma > 0`. Extend the emitted tuple from `(double Scale, double Score, Point Loc)` → `(double Scale, double Score, Point Loc, double Sigma)` so the caller can read which σ was applied at each rung. `ArgMax` is unchanged (still keys on `Score`).
+2. **INSERTION POINT B — the post-parabolic re-match** in `RefineCore` (lines 119-130). Add the same σ-computation + `Cv2.GaussianBlur` call after `Cv2.Resize` and before `Cv2.MatchTemplate`. After the re-match, set `bestSigma = sigma` so the re-match's σ supersedes the ladder's. (See spec §5.2 for the rationale — the re-match is what produces the recovered `(tx, ty)` when parabolic refinement triggers, and without blur it un-does the ladder's gain.)
+3. Plumb `bestSigma` (defaulting to the fine winner's σ pre-parabolic) into the returned `LocateMetrics`'s new `BlurAppliedSigma` positional arg.
+4. Add the three `LogTrace` lines per spec §5.6 — one before the ladder (the σ-curve summary), one inside the ladder when `σ > 0` is applied (per-rung trace), one after the parabolic branch reporting the winner's σ.
+5. Add a `LogInformation` line at the top of `RefineCore` reporting whether blur is enabled — once-per-attempt lifecycle milestone.
 
 **Tests:**
 
-- **New** `tests/Mithril.MapCalibration.Tests/Detection/SobelPaddedPyramidRefinerBlurTests.cs`:
+- **New** `tests/Mithril.MapCalibration.Tests/Detection/SobelPaddedPyramidRefinerBlurTests.cs`. **Fixture note**: the existing `BuildPair()` fixture (in `DeviationBlobCalibrationDetectorTests.cs:23`) is designed for the deviation-blob detector, not for testing the sparse-locate refiner — it builds an exact-match pair where ORB primary would dominate. For these tests we need a sparse-locate-friendly pair, which means either (a) building a new fixture here, or (b) loading a real corpus PNG from Task 5's `blur_aware_corpus/` directory. Pick (b) for the integration tests below — it's the path Task 5 already needs:
   ```csharp
+  // Helper local to this test file — loads from the shared blur_aware_corpus dir
+  private static (GrayImage cap, GrayImage tex) LoadHogansOutPair()
+  {
+      var cap = GrayImage.FromPng("Detection/blur_aware_corpus/hogans_out_scale028.png");
+      var tex = GrayImage.FromPng("Detection/blur_aware_corpus/hogans_texture.png");
+      return (cap, tex);
+  }
+
   [Fact]
   public void Refine_records_BlurAppliedSigma_when_enabled()
   {
-      var (cap, tex) = BuildSparsePair();    // existing #1061 fixture
+      var (cap, tex) = LoadHogansOutPair();
       var options = new MapCalibrationLocateOptions { RendererBlurEnabled = true };
       var refiner = new SobelPaddedPyramidRefiner(options);
       var result = refiner.Refine(cap, tex);
       result.Metrics.Should().NotBeNull();
       result.Metrics!.BlurAppliedSigma.Should().NotBeNull();
       result.Metrics.BlurAppliedSigma!.Value.Should().BeGreaterThan(0);
-      // …σ matches RendererBlurModel.SigmaFor(metrics.Scale, options)
+      // σ matches RendererBlurModel.SigmaFor(metrics.Scale, options) — recall LocateMetrics.Scale is `double` (not double?)
+      result.Metrics.BlurAppliedSigma.Value.Should().BeApproximately(
+          RendererBlurModel.SigmaFor(result.Metrics.Scale, options), 1e-9);
   }
 
   [Fact]
   public void Refine_records_zero_sigma_when_disabled()
   {
-      var (cap, tex) = BuildSparsePair();
+      var (cap, tex) = LoadHogansOutPair();
       var options = new MapCalibrationLocateOptions { RendererBlurEnabled = false };
       var refiner = new SobelPaddedPyramidRefiner(options);
       var result = refiner.Refine(cap, tex);
@@ -191,19 +198,19 @@ grep -n "record .* LocateMetrics\|class .* LocateMetrics\|struct .* LocateMetric
   [Fact]
   public void Refine_recovers_same_basin_on_sharp_synthetic_with_and_without_blur()
   {
-      // Build a synthetic capture+texture pair with no inherent blur.
+      // Build a synthetic capture+texture pair with no inherent blur (sharp Sobel response).
       // With blur on vs off, recovered (scale, tx, ty) should differ ≤ 0.5 px.
-      // Guards against the blur degrading a clean case.
+      // Guards against the blur degrading a clean case. Helper local to this test file:
       var (cap, tex) = BuildNoBlurSyntheticPair();
       var on = new SobelPaddedPyramidRefiner(new MapCalibrationLocateOptions { RendererBlurEnabled = true }).Refine(cap, tex);
       var off = new SobelPaddedPyramidRefiner(new MapCalibrationLocateOptions { RendererBlurEnabled = false }).Refine(cap, tex);
       on.AcceptedRect!.OriginX.Should().BeCloseTo(off.AcceptedRect!.OriginX, 1);
       on.AcceptedRect.OriginY.Should().BeCloseTo(off.AcceptedRect.OriginY, 1);
-      on.Metrics!.Scale!.Value.Should().BeApproximately(off.Metrics!.Scale!.Value, 0.005);
+      on.Metrics!.Scale.Should().BeApproximately(off.Metrics!.Scale, 0.005);  // .Scale is `double`, not `double?`
   }
   ```
 
-**Acceptance:** Three tests green. Existing #1061 round-5 tests continue to pass — the blur path is opt-in via `RendererBlurEnabled`, and (in the FM-disabled corpus the existing tests use) the recovery should be within tolerance.
+**Acceptance:** Three tests green. Existing #1061 tests continue to pass — the blur path is opt-in via `RendererBlurEnabled`, and synthetic fixtures with no inherent blur recover within tolerance.
 
 ---
 
@@ -213,20 +220,21 @@ grep -n "record .* LocateMetrics\|class .* LocateMetrics\|struct .* LocateMetric
 
 - **new** `tests/Mithril.MapCalibration.Tests/Detection/HogansBlurAwareCorpusTests.cs`
 - **new** `tests/Mithril.MapCalibration.Tests/Detection/blur_aware_corpus/` directory with checked-in PNGs:
-  - `hogans_out_scale028_06-aligned-screenshot.png`
-  - `hogans_in_scale094_06-aligned-screenshot.png`
-  - `hogans_in_scale094_07b-foreground.png` (expected baseline for the IN-doesn't-regress test)
-  - `eltibule_outdoor_02-screenshot-raw.png`
-  - `hogans_basement.png` (the bundled base texture, copied from `src/Mithril.MapCalibration/BundledData/`)
+  - `hogans_out_scale028.png` (the 06-aligned-screenshot from the OUT bundle)
+  - `hogans_in_scale094.png` (the 06-aligned-screenshot from the IN bundle)
+  - `hogans_in_scale094_07b-foreground-baseline.png` (the 07b baseline for the IN-doesn't-regress test — sanity-check)
+  - `eltibule_outdoor.png` (the 02-screenshot-raw or 03-screenshot-gray from Eltibule's outdoor accepted bundle)
+  - `hogans_texture.png` — **the Hogan's base texture**. NOT bundled — Hogan's is not in `src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json`; that file only contains Eltibule/Serbule/KurMountains. The Hogan's texture comes from PG's installed asset files at runtime (sidecar extraction), so the test corpus must **ship its own copy** of the texture. Extract it from the user's `%LocalAppData%/Mithril/diagnostics/calibration/Map_HogansKeepBasement-…/05-base-texture-resampled.png` (which is the same texture, already at the right resolution for the bundled test).
+  - `eltibule_texture.png` — same rationale for the Eltibule regression test; Eltibule IS in BundledData, but committing it here keeps the test corpus self-contained.
 
 **Steps:**
 
-1. Extract the corpus PNGs from `%LocalAppData%/Mithril/diagnostics/calibration/` (or get them from the user — they may need to be sanitised of any session-specific paths if file headers carry them, but PNG itself doesn't embed such metadata so the raw file should be safe to commit as-is). Add `.gitattributes` entry if needed to mark them as binary (`*.png binary`).
+1. Extract the corpus PNGs from `%LocalAppData%/Mithril/diagnostics/calibration/`. PNG itself doesn't embed paths or session metadata, so the raw files are safe to commit. Add `.gitattributes` entry if needed to mark them as binary (`*.png binary`).
 2. Add the three corpus tests per spec §8:
    - `Hogans_OUT_corpus_deviation_density_drops_with_blur` — drive the full `Detect(...)` pipeline (refiner → detect blobs → assert `aboveThresholdCount / (W*H) < 0.18`).
    - `Hogans_IN_corpus_already_passing_doesnt_regress` — assert `aboveThresholdCount / (W*H) ≤ 0.15`.
    - `Eltibule_outdoor_doesnt_regress` — drive the full composite refiner (FM primary), assert `Algorithm == "orb-lowe"` (or equivalent — verify the exact contract by reading the existing FM ↔ Sobel discrimination check), assert `BlurAppliedSigma == null`.
-3. The tests need to load the bundled texture too. Either copy it to the corpus dir, or load via `BundledBaselineLoader` if that's accessible at test time. Investigate during implementation.
+3. **DO NOT** try to load via `BundledBaselineLoader` — that loader returns the cal entries JSON, not the textures themselves. (And it's `internal static` in `Mithril.MapCalibration`, so `Mithril.MapCalibration.Tests` couldn't reach it anyway without an `InternalsVisibleTo`.) Always read from `tests/.../blur_aware_corpus/*.png`.
 
 **Tests:** Listed above.
 
@@ -303,13 +311,12 @@ The OUT corpus test failing here is the load-bearing TDD signal — after Task 6
 
 **Steps:**
 
-1. **`docs/perf-trace-schema.md`** — find the `calibration.refine.fallback` span row (added in #1061 §9). Add `blur.sigma` to its tag list with a one-line description: *"σ (px) applied to the Sobel template at the fallback's full-resolution stage. Null when blur is disabled or the FM primary won the dispatch. Mithril#1070."*
-2. **`docs/planning/INDEX.md`** — append the new row (alphabetic placement after `map-calibration-1041-mapsceneref-standardization`, before `map-calibration-detection-project-split`):
-   ```
-   | [map-calibration-blur-aware-template-1070](map-calibration-blur-aware-template-1070/) | active | [#1070](https://github.com/moumantai-gg/mithril/issues/1070) | Blur-aware Sobel template for #1061 sparse-locate fallback — closes the NCC-peak-flatness gap that produces Mode-A wall-edge-band registration error in sub-zone interiors |
-   ```
+1. **`docs/perf-trace-schema.md`** has TWO places where the `calibration.refine.fallback` span vocabulary appears — both need updating:
+   1. The catalog-table high-level row at ~line 68 (currently lists the span's source). No change needed to the row text itself; just confirm `MapCalibrationDiagnostics.ActivitySource` is still the cited source (it is — the row already attributes the span correctly).
+   2. The detailed tag-list section starting at ~line 325 (`### calibration.refine.primary / calibration.refine.fallback (mithril#1061)`). Add a row for `blur.sigma` next to the existing `calibration.refine.fallback only` rows for `ncc`/`scale`/`outcome`. Description: *"σ (px) applied to the Sobel template at the fallback's full-resolution stage. Null when blur is disabled. Mithril#1070."*
+2. **`docs/planning/INDEX.md`** — already landed in the initial spec/plan commit. Verify the row is between `map-calibration-1041-mapsceneref-standardization` and `map-calibration-sparse-locate-fallback-1061`.
 3. **Update `PerfTracerTests.cs`** (in `tests/Mithril.Shared.Tests/`) — find the byte-parity assertion for the `calibration.refine.fallback` span and extend its expected-tag list with `blur.sigma`. This is a small assertion change, not a new test file.
-4. **Wiki Findings page** (after PR merges) — flip the "Open questions" row for "Is the Mode-A failure monotonic in zoom level?" from open → confirmed-monotonic-in-1/scale per the spec §1.1 corpus.
+4. **Wiki Findings page** — the monotonicity row was already flipped by an earlier commit (see https://github.com/moumantai-gg/mithril/wiki/Auto-Calibration-Sub-Zone-Findings); no additional wiki update needed for this PR.
 5. **`dotnet test Mithril.slnx`** — final full-build green run.
 
 **Tests:** Just the `PerfTracerTests` update above.
