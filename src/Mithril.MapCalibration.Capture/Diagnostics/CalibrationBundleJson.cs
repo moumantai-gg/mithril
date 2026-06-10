@@ -69,7 +69,24 @@ public sealed record AttemptFilesJson(
     // round-trip unchanged; populated when the deviation-blob detector
     // emitted any blob scores (it always does in the production AutoCalibrationEngine
     // path).
-    string? BlobTemplateScores = null);
+    string? BlobTemplateScores = null,
+    // mithril#1123: detector-pipeline observability dump (10c) + 10 PNGs for
+    // the stage masks (foreground, rim, morph, classification × orientation).
+    // All default-null so pre-#1123 readers round-trip unchanged. The 10c JSON
+    // pairs with the BlobOrdinal cross-ref in 10b — same int identifies the
+    // same physical blob in both files (D3.a).
+    string? BlobPipeline = null,           // 10c-blob-pipeline.json
+    string? Foreground = null,             // 07b-foreground.png
+    string? ForegroundR180 = null,         // 07b-r180-foreground.png
+    string? RimMask = null,                // 07c-rim-mask.png
+    string? RimMaskR180 = null,            // 07c-r180-rim-mask.png
+    string? SynthRimMask = null,           // 07c-synth-rim-mask.png
+    string? SynthRimMaskR180 = null,       // 07c-r180-synth-rim-mask.png
+    string? Morphed = null,                // 07d-morphed.png
+    string? MorphedR180 = null,            // 07d-r180-morphed.png
+    string? BlobClassification = null,     // 07e-blob-classification.png
+    string? BlobClassificationR180 = null  // 07e-r180-blob-classification.png
+);
 
 public sealed record MapRectJson(
     int SchemaVersion,
@@ -167,13 +184,94 @@ public sealed record BlobTemplateScoreJson(
 
 /// <summary>
 /// Top-level shape of the <c>10b-blob-template-scores.json</c> bundle dump
-/// (mithril#1121). The list is grouped client-side by <c>blobIndex</c> /
+/// (mithril#1121). The list is grouped client-side by <c>blobOrdinal</c> /
 /// <c>rotate180</c>; the wire format is a flat array so downstream jq /
 /// pandas pipelines stay straightforward.
 /// </summary>
 public sealed record BlobTemplateScoresJson(
     int SchemaVersion,
     IReadOnlyList<BlobTemplateScoreJson> Scores);
+
+/// <summary>
+/// Per-orientation deviation section in <c>10c-blob-pipeline.json</c>
+/// (mithril#1123). Wire-format mirror of <c>DeviationSnapshot</c>; the
+/// <c>ForegroundBuffer bool[]</c> is NOT serialised here — it renders to
+/// <c>07b-foreground.png</c> instead.
+/// </summary>
+public sealed record DeviationSectionJson(
+    bool Rotate180,
+    int Width, int Height, int Win,
+    double Threshold, double MeanNcc,
+    double Min, double Max, double Mean,
+    double P50, double P95, double P99,
+    int AboveThresholdCount);
+
+/// <summary>
+/// Per-(orientation, pipeline) rim-mask section in <c>10c-blob-pipeline.json</c>
+/// (mithril#1123). pipeline ∈ <c>{"blob_detection", "synthesis_j"}</c>;
+/// <c>FgInputCount</c> / <c>FgSurvivorCount</c> carry <c>-1</c> sentinels on
+/// the synthesis_j path (no fg-mask concept there). The bool[] mask renders
+/// to <c>07c-rim-mask.png</c> / <c>07c-synth-rim-mask.png</c> instead of
+/// serialising here.
+/// </summary>
+public sealed record RimMaskSectionJson(
+    string Pipeline,
+    bool Rotate180,
+    int Width, int Height,
+    double Threshold,
+    int RimPixelCount,
+    int FgInputCount,
+    int FgSurvivorCount);
+
+/// <summary>
+/// Per-orientation morph-close section in <c>10c-blob-pipeline.json</c>
+/// (mithril#1123). Wire-format mirror of <c>MorphSnapshot</c>; the post-morph
+/// bool[] renders to <c>07d-morphed.png</c> instead of serialising here.
+/// </summary>
+public sealed record MorphSectionJson(
+    bool Rotate180,
+    int Width, int Height,
+    int CloseRadius,
+    int FgInputCount,
+    int FgOutputCount);
+
+/// <summary>
+/// Per-comp classification record in <c>10c-blob-pipeline.json</c>
+/// (mithril#1123). One per blob across ALL comps (Noise/Icon/Fog/Structure),
+/// not just the Icon-class subset that emits to 10b. <see cref="BlobOrdinal"/>
+/// cross-refs <see cref="BlobTemplateScoreJson.BlobOrdinal"/> in 10b — same
+/// physical blob, same int (D3.a).
+///
+/// <para><b>Pixels NOT serialised:</b> the in-memory <c>BlobClassification</c>
+/// record carries a <c>Pixels</c> list for the bundle sink's
+/// <c>07e-blob-classification.png</c> render, but the JSON shape excludes it
+/// — keeps 10c bounded in size on Hogan's-shaped inputs (~50 blobs × ~200 px
+/// each would 10×-bloat the file).</para>
+/// </summary>
+public sealed record BlobJson(
+    bool Rotate180,
+    int BlobOrdinal,
+    int MinX, int MinY,
+    int W, int H, int Area,
+    double Cx, double Cy,
+    double MeanDev, double PeakDev,
+    double Solidity, double Aspect,
+    string BlobClass);
+
+/// <summary>
+/// Top-level shape of <c>10c-blob-pipeline.json</c> (mithril#1123). The four
+/// sections (deviation, rim masks, morph, blobs) co-locate the per-stage
+/// observations so downstream triage opens one file per attempt instead of
+/// four. <see cref="RimMasks"/> is a flat array with the <c>pipeline</c>
+/// discriminator (per D6.a) — both blob_detection and synthesis_j records
+/// live in the same list so a triager can compare them side-by-side.
+/// </summary>
+public sealed record BlobPipelineJson(
+    int SchemaVersion,
+    IReadOnlyList<DeviationSectionJson> Deviation,
+    IReadOnlyList<RimMaskSectionJson> RimMasks,
+    IReadOnlyList<MorphSectionJson> Morph,
+    IReadOnlyList<BlobJson> Blobs);
 
 // mithril#1121: AllowNamedFloatingPointLiterals lets BlobTemplateScore.Score
 // round-trip its NaN sentinel (the skip-path marker) as the JSON token "NaN".
@@ -190,4 +288,5 @@ public sealed record BlobTemplateScoresJson(
 [JsonSerializable(typeof(RecoveredCalibrationJson))]
 [JsonSerializable(typeof(SynthesisJson))]
 [JsonSerializable(typeof(BlobTemplateScoresJson))]
+[JsonSerializable(typeof(BlobPipelineJson))]  // mithril#1123
 public partial class CalibrationBundleJsonContext : JsonSerializerContext;

@@ -56,6 +56,38 @@ public sealed class CalibrationAttemptContext
     /// </summary>
     public IReadOnlyList<BlobTemplateScore>? BlobTemplateScores { get; set; }
 
+    // mithril#1123: per-stage observations from the deviation-blob detector
+    // pipeline. Populated by AutoCalibrationEngine when it wires
+    // DetectionRequest.Diagnostics for the attempt; up to two records per
+    // orientation pass (and per (orientation, pipeline) for the rim mask).
+    // All four assigned even when empty so the bundle sink distinguishes
+    // "diagnostic wiring missing" from "diagnostic ran, found nothing."
+    /// <summary>
+    /// Per-orientation deviation stats + fg-initial bool[] (mithril#1123).
+    /// Up to two records (×orientation).
+    /// </summary>
+    public IReadOnlyList<DeviationSnapshot>? DeviationSnapshots { get; set; }
+
+    /// <summary>
+    /// Per-(orientation, pipeline) rim mask bool[] (mithril#1123).
+    /// pipeline ∈ {"blob_detection", "synthesis_j"}; up to four records
+    /// (×orientation × pipeline).
+    /// </summary>
+    public IReadOnlyList<RimMaskSnapshot>? RimMaskSnapshots { get; set; }
+
+    /// <summary>
+    /// Per-orientation morph-close output bool[] (mithril#1123). Up to two
+    /// records (×orientation).
+    /// </summary>
+    public IReadOnlyList<MorphSnapshot>? MorphSnapshots { get; set; }
+
+    /// <summary>
+    /// Per-blob classification across ALL comps — not just Icons — including
+    /// Noise/Fog/Structure verdicts (mithril#1123). Volume on Hogan's-shaped
+    /// inputs is ~25-50 records per orientation pass.
+    /// </summary>
+    public IReadOnlyList<BlobClassification>? BlobClassifications { get; set; }
+
     // Outcome is set explicitly by the engine — either at each Fail() site, at
     // the end of the success path, or in the catch (exception → "error").
     public string Outcome { get; set; } = "unknown";
