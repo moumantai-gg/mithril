@@ -1,8 +1,25 @@
 # Map auto-calibration: blur-aware Sobel template for the sparse-locate fallback — spec
 
-**Issue:** [mithril#1070](https://github.com/moumantai-gg/mithril/issues/1070). **Status:** active. **Branch posture:** docs-only spec/plan PR; the implementation lands in a follow-up PR this spec drives.
+**Issue:** [mithril#1070](https://github.com/moumantai-gg/mithril/issues/1070). **Status:** shipped via [mithril#1132](https://github.com/moumantai-gg/mithril/pull/1132). **Branch posture:** spec landed in #1131; implementation in #1132.
 
 **Companion:** [Auto-Calibration Sub-Zone Findings (wiki)](https://github.com/moumantai-gg/mithril/wiki/Auto-Calibration-Sub-Zone-Findings) — the 2026-06-10 corpus + verification surfaces this spec leans on.
+
+## 0. Post-implementation note (added 2026-06-10 with PR #1132)
+
+The Plan Task 0 measurement experiment **contradicted the spec's hypothesis direction at moderate zoom levels**. The fitted σ(scale) curve has a **negative intercept** (`Intercept = -1.5643, Slope = 1.0043`) and the `MinSigma = 0.0` clamp means:
+
+- At Hogan's three primary corpus scales (0.28 / 0.78 / 0.94), `σ_needed ≈ 0` — the template is **already as blurry as or blurrier than** the captured screenshot. Adding more blur to the template would worsen the match, not improve it. The `MinSigma=0` clamp correctly fires here and the matchTemplate runs un-blurred (zero behaviour change vs pre-#1070 for these zooms).
+- σ > 0 only fires at very-low-zoom captures (scale < ~0.18) — the deep-zoom corner where the template's INTER_AREA downsample blur is genuinely insufficient.
+
+So the fix's **active surface is narrower than the spec predicted**: the wall-edge-band regime at scale 0.28 documented in §1.1 is real, but the mechanism that produces it is not the template-is-not-blurry-enough story this spec told. The template is already plenty blurry at scale 0.28; something else (locator sub-pixel translation precision? a sharpening-side correction the spec didn't model?) is producing the wall-edge-band signature. The fix as shipped won't address the scale-0.28 case directly; it locks the deep-zoom corner.
+
+The linear-fit residuals exceeded the spec's 10% gate (§3 D3). The piecewise-linear fallback (§D3 → Plan Task 1 step 3) is **not** implemented in #1132. **Follow-up issues** filed to track:
+
+- [mithril#1133](https://github.com/moumantai-gg/mithril/issues/1133) — σ-curve fit-quality and the under-fit at moderate zoom (the missing-mechanism story above).
+- [mithril#1134](https://github.com/moumantai-gg/mithril/issues/1134) — Online per-attempt σ estimation as the alternative when the static curve under-fits a scene class.
+- [mithril#1135](https://github.com/moumantai-gg/mithril/issues/1135) — Manual verification owed on Hogan's `07b-foreground.png` density drop (the spec §3 D8 acceptance bar). The corpus tests in #1132 verify the σ surface, not the downstream blob-classify pipeline.
+
+The sections below preserve the original spec for the durable design-history record. Treat them as written-in-advance reasoning; the post-#1132 truth is **(a) the mechanism shape is partly right (σ matters at deep zoom) and partly wrong (template-blur-mismatch is not the dominant cause at scale 0.28)** and **(b) the load-bearing acceptance bar is verification-owed, not test-verified**.
 
 ## 1. Problem
 
