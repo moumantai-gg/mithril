@@ -1,4 +1,7 @@
+using System.Threading;
 using System.Threading.Tasks;
+using Arda.Abstractions.Logs;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -231,9 +234,15 @@ public sealed class AutoCalibrationTriggerTests
     private static AutoCalibrationTrigger Build(
         SpyAutoCalibrationEngine engine, CaptureRect? bbox, bool focused,
         FakeCalibrationService? service = null, FakeOverlayWindow? overlay = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        FakeDomainEventSubscriber? bus = null,
+        FakeReplayProgress? replay = null)
         => new(
-            new FakeDomainEventSubscriber(),
+            bus ?? new FakeDomainEventSubscriber(),
+            // mithril#1117: default to "replay complete" so the existing
+            // OnSceneChangedAsync-direct tests aren't gated. The new replay-gate
+            // tests pass their own FakeReplayProgress(completed: false) explicitly.
+            replay ?? new FakeReplayProgress(completed: true),
             engine,
             new FakeRegionProvider(bbox),
             new FakeWindowLocator(focused ? new GameWindow(1, new CaptureRect(0, 0, 1920, 1080)) : null),
@@ -242,4 +251,128 @@ public sealed class AutoCalibrationTriggerTests
             new FakeSceneAssetCache(),
             overlay ?? new FakeOverlayWindow(),
             logger ?? NullLogger.Instance);
+
+    // -------------------------------------------------------------------------
+    // mithril#1117: replay-gate tests. The trigger must NOT subscribe to
+    // AreaChanged / MapAssetChanged while Player.log replay is in flight, because
+    // replayed past scene transitions fire capture+solve against the CURRENT
+    // screen against an UNRELATED historical scene's bundled texture and
+    // contaminate the diagnostics store with rejected attempts for scenes the
+    // user never visited this session.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task StartAsync_does_not_subscribe_while_replay_is_in_flight()
+    {
+        var bus = new FakeDomainEventSubscriber();
+        var replay = new FakeReplayProgress(completed: false);
+        var engine = new SpyAutoCalibrationEngine();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            bus: bus, replay: replay);
+
+        await trigger.StartAsync(CancellationToken.None);
+
+        bus.SubscriptionCount.Should().Be(0,
+            "the trigger must defer Subscribe until ReplayComplete so replayed past scene transitions don't fire capture+solve");
+
+        await trigger.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Events_published_during_replay_do_not_reach_the_handler()
+    {
+        var bus = new FakeDomainEventSubscriber();
+        var replay = new FakeReplayProgress(completed: false);
+        var engine = new SpyAutoCalibrationEngine();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            bus: bus, replay: replay);
+
+        await trigger.StartAsync(CancellationToken.None);
+        // Simulate Arda re-emitting a past scene transition during the replay catch-up phase.
+        var replayMeta = new LogLineMetadata(
+            Timestamp: new DateTimeOffset(2026, 6, 10, 10, 18, 36, TimeSpan.Zero),
+            ReadOn: new DateTimeOffset(2026, 6, 10, 10, 18, 36, TimeSpan.Zero),
+            IsReplay: true);
+        bus.Publish(new AreaChanged(PreviousArea: null, CurrentArea: Area, replayMeta));
+        bus.Publish(new MapAssetChanged(
+            PreviousScene: null,
+            CurrentScene: new MapSceneRef(Area, null, AssetKey),
+            replayMeta));
+
+        engine.Calls.Should().Be(0,
+            "replay-time events must not reach the handler — the locator would screenshot the current scene against an unrelated historical scene's texture");
+
+        await trigger.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task Subscribes_after_replay_completes()
+    {
+        var bus = new FakeDomainEventSubscriber();
+        var replay = new FakeReplayProgress(completed: false);
+        var engine = new SpyAutoCalibrationEngine();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            bus: bus, replay: replay);
+
+        await trigger.StartAsync(CancellationToken.None);
+        bus.SubscriptionCount.Should().Be(0);
+
+        replay.Complete();
+        // The deferred Subscribe runs on the thread pool; wait until it lands.
+        await WaitForAsync(() => bus.SubscriptionCount > 0);
+
+        bus.HasSubscriber<AreaChanged>().Should().BeTrue(
+            "AreaChanged subscription must be established once replay completes");
+        bus.HasSubscriber<MapAssetChanged>().Should().BeTrue(
+            "MapAssetChanged subscription must be established once replay completes");
+
+        await trigger.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task StartAsync_subscribes_synchronously_when_replay_already_complete()
+    {
+        // Headless tests, second-instance takeover, or a tail-only restart all
+        // hit StartAsync with ReplayComplete already resolved. The trigger should
+        // subscribe synchronously in that case — no thread-pool hop, no race.
+        var bus = new FakeDomainEventSubscriber();
+        var replay = new FakeReplayProgress(completed: true);
+        var engine = new SpyAutoCalibrationEngine();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            bus: bus, replay: replay);
+
+        await trigger.StartAsync(CancellationToken.None);
+
+        bus.HasSubscriber<AreaChanged>().Should().BeTrue();
+        bus.HasSubscriber<MapAssetChanged>().Should().BeTrue();
+
+        await trigger.StopAsync(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task StopAsync_before_replay_completes_leaves_the_bus_un_subscribed()
+    {
+        var bus = new FakeDomainEventSubscriber();
+        var replay = new FakeReplayProgress(completed: false);
+        var engine = new SpyAutoCalibrationEngine();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            bus: bus, replay: replay);
+
+        await trigger.StartAsync(CancellationToken.None);
+        await trigger.StopAsync(CancellationToken.None);
+        replay.Complete();
+
+        // Give the deferred-subscribe task a moment to observe the cancellation.
+        await Task.Delay(50);
+        bus.SubscriptionCount.Should().Be(0,
+            "a Stop before ReplayComplete must cancel the deferred Subscribe — the trigger stays inert");
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition, int timeoutMs = 2000)
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (!condition() && sw.ElapsedMilliseconds < timeoutMs)
+            await Task.Delay(10);
+        condition().Should().BeTrue("the awaited condition should have flipped within {0}ms", timeoutMs);
+    }
 }

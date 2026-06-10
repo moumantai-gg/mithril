@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Arda.Contracts;
+using Arda.Hosting;
 using Arda.World.Player;
 using Arda.World.Player.Events;
 using Mithril.MapCalibration;
@@ -23,13 +24,107 @@ internal sealed class FakeOverlayWindow : IOverlayWindow
     private sealed class Noop : IDisposable { public void Dispose() { } }
 }
 
-/// <summary>No-op event bus: the trigger's hosted-service Subscribe wiring is
-/// exercised by the DI-resolution test; the gating logic is tested directly via
-/// the extracted OnSceneChangedAsync seam.</summary>
+/// <summary>
+/// Recording event bus: tracks every <see cref="Subscribe{T}"/> call so tests
+/// can assert subscription state (e.g. the mithril#1117 replay-gate tests that
+/// verify <c>StartAsync</c> does NOT subscribe before <c>ReplayComplete</c>),
+/// and lets tests publish events through any handler that has subscribed.
+/// </summary>
 internal sealed class FakeDomainEventSubscriber : IDomainEventSubscriber
 {
-    public IDisposable Subscribe<T>(Action<T> handler) where T : struct => new Noop();
-    private sealed class Noop : IDisposable { public void Dispose() { } }
+    private readonly Dictionary<Type, List<object>> _handlers = new();
+    private readonly object _gate = new();
+
+    /// <summary>Total number of live subscriptions across all event types.</summary>
+    public int SubscriptionCount
+    {
+        get { lock (_gate) return _handlers.Values.Sum(h => h.Count); }
+    }
+
+    /// <summary>True iff at least one handler is currently subscribed to <typeparamref name="T"/>.</summary>
+    public bool HasSubscriber<T>() where T : struct
+    {
+        lock (_gate) return _handlers.TryGetValue(typeof(T), out var hs) && hs.Count > 0;
+    }
+
+    public IDisposable Subscribe<T>(Action<T> handler) where T : struct
+    {
+        lock (_gate)
+        {
+            if (!_handlers.TryGetValue(typeof(T), out var list))
+                _handlers[typeof(T)] = list = new List<object>();
+            list.Add(handler);
+        }
+        return new Subscription(this, typeof(T), handler);
+    }
+
+    /// <summary>Dispatch <paramref name="evt"/> to every currently-subscribed handler for type <typeparamref name="T"/>.</summary>
+    public void Publish<T>(T evt) where T : struct
+    {
+        List<object> snapshot;
+        lock (_gate)
+        {
+            if (!_handlers.TryGetValue(typeof(T), out var list)) return;
+            snapshot = new List<object>(list);
+        }
+        foreach (var h in snapshot)
+            ((Action<T>)h)(evt);
+    }
+
+    private sealed class Subscription : IDisposable
+    {
+        private readonly FakeDomainEventSubscriber _owner;
+        private readonly Type _type;
+        private readonly object _handler;
+        public Subscription(FakeDomainEventSubscriber owner, Type type, object handler)
+            => (_owner, _type, _handler) = (owner, type, handler);
+        public void Dispose()
+        {
+            lock (_owner._gate)
+            {
+                if (_owner._handlers.TryGetValue(_type, out var list))
+                    list.Remove(_handler);
+            }
+        }
+    }
+}
+
+/// <summary>
+/// Controllable <see cref="IReplayProgress"/> for the mithril#1117 trigger
+/// gate tests. Defaults to "replay already complete" so the bulk of the
+/// existing trigger tests — which exercise <see cref="AutoCalibrationTrigger.OnSceneChangedAsync"/>
+/// directly and don't care about the subscription path — keep their old shape.
+/// </summary>
+internal sealed class FakeReplayProgress : IReplayProgress
+{
+    private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <param name="completed">When <c>true</c> (default) <see cref="ReplayComplete"/> is already resolved.</param>
+    public FakeReplayProgress(bool completed = true)
+    {
+        if (completed)
+        {
+            _tcs.SetResult();
+            PlayerProgress = 1.0;
+            ChatProgress = 1.0;
+        }
+    }
+
+    public double PlayerProgress { get; private set; }
+    public double ChatProgress { get; private set; }
+    public Task ReplayComplete => _tcs.Task;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    /// <summary>Resolve <see cref="ReplayComplete"/> if it hasn't been already.</summary>
+    public void Complete()
+    {
+        PlayerProgress = 1.0;
+        ChatProgress = 1.0;
+        _tcs.TrySetResult();
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlayerProgress)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ChatProgress)));
+    }
 }
 
 internal sealed class FakeAreaState : IAreaState

@@ -17,6 +17,7 @@
     <ProjectReference Include="..\Mithril.Overlay\Mithril.Overlay.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
     <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
+    <ProjectReference Include="..\Arda\Arda.Hosting\Arda.Hosting.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Mithril.MapCalibration.Capture.Tests" />

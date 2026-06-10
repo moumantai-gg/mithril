@@ -230,9 +230,13 @@ public static partial class CaptureServiceCollectionExtensions
 
         // Background auto-attempt trigger. A hosted service → ILogger is required
         // (CLAUDE.md): resolve ILoggerFactory as required and create the category
-        // logger rather than threading an optional logger.
+        // logger rather than threading an optional logger. The trigger defers its
+        // AreaChanged/MapAssetChanged subscription until IReplayProgress.ReplayComplete
+        // resolves so replayed past scene transitions don't fire capture+solve
+        // attempts against the current-screen screenshot (mithril#1117).
         services.AddSingleton<AutoCalibrationTrigger>(sp => new AutoCalibrationTrigger(
             sp.GetRequiredService<Arda.Contracts.IDomainEventSubscriber>(),
+            sp.GetRequiredService<Arda.Hosting.IReplayProgress>(),
             sp.GetRequiredService<IAutoCalibrationRunner>(),
             sp.GetRequiredService<IMapCaptureRegionProvider>(),
             sp.GetRequiredService<IGameWindowLocator>(),

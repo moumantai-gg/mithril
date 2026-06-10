@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using Arda.Contracts;
+using Arda.Hosting;
 using Arda.World.Player;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -135,6 +136,10 @@ public sealed class CaptureDependencyInjectionTests
         services.AddSingleton(new GameConfig { CalibrationGoodResidualPx = 9.0, GameRoot = "" });
         services.AddSingleton<IOverlayWindow>(new FakeOverlayWindow());
         services.AddSingleton<IDomainEventSubscriber>(new FakeDomainEventSubscriber());
+        // mithril#1117: AutoCalibrationTrigger now gates its event subscription on
+        // IReplayProgress.ReplayComplete. Register the "replay complete" fake so the
+        // DI graph resolves; the trigger subscribes synchronously in StartAsync.
+        services.AddSingleton<IReplayProgress>(new FakeReplayProgress(completed: true));
         services.AddSingleton<IAreaState>(new FakeAreaState("AreaSerbule"));
         // #1021: the engine now resolves IMapState (per-scene asset + sub-zone)
         // instead of IAreaState. AutoCalibrationTrigger still consumes IAreaState
