@@ -98,6 +98,15 @@ public sealed record DetectionDiagnosticHooks(
 /// time + serialised to JSON; the dev float[] itself is NOT retained on this
 /// record. <see cref="ForegroundBuffer"/> IS retained — it backs
 /// <c>07b-foreground.png</c> in the diagnostic bundle.
+///
+/// <para>mithril#1126: <see cref="ForegroundBuffer"/> is a
+/// <see cref="ReadOnlyMemory{T}"/> rather than a bare <c>bool[]</c> so the
+/// type itself surfaces the read-only contract — consumers can't mutate the
+/// snapshot's buffer and corrupt other consumers reading the same record.
+/// The orchestrator still clones into the snapshot (so subsequent stage
+/// mutations to its working <c>fg</c> buffer don't bleed in); wrapping with
+/// <see cref="ReadOnlyMemory{T}"/> makes that invariant load-bearing on the
+/// type.</para>
 /// </summary>
 public sealed record DeviationSnapshot(
     bool Rotate180,
@@ -113,7 +122,25 @@ public sealed record DeviationSnapshot(
     double P95,
     double P99,
     int AboveThresholdCount,
-    bool[] ForegroundBuffer);
+    ReadOnlyMemory<bool> ForegroundBuffer)
+{
+    /// <summary>
+    /// mithril#1126: Debug-only length invariant — fires at construction (named,
+    /// positional, or <c>with</c>) so a buffer/dim mismatch surfaces at the
+    /// producer site instead of a downstream array-out-of-bounds. No RELEASE cost.
+    /// </summary>
+    public ReadOnlyMemory<bool> ForegroundBuffer { get; init; } =
+        AssertBufferLengthMatches(ForegroundBuffer, Width, Height, nameof(ForegroundBuffer));
+
+    private static ReadOnlyMemory<bool> AssertBufferLengthMatches(
+        ReadOnlyMemory<bool> buffer, int width, int height, string name)
+    {
+        System.Diagnostics.Debug.Assert(
+            buffer.Length == width * height,
+            $"DeviationSnapshot.{name}.Length ({buffer.Length}) must equal Width*Height ({width}*{height}={width * height}).");
+        return buffer;
+    }
+}
 
 /// <summary>
 /// Identifies which caller of <c>DeviationFloodRimMask.Build</c> emitted a
@@ -154,7 +181,21 @@ public sealed record RimMaskSnapshot(
     int RimPixelCount,
     int? FgInputCount,
     int? FgSurvivorCount,
-    bool[] RimMaskBuffer);
+    ReadOnlyMemory<bool> RimMaskBuffer)
+{
+    /// <summary>mithril#1126: see <see cref="DeviationSnapshot.ForegroundBuffer"/>.</summary>
+    public ReadOnlyMemory<bool> RimMaskBuffer { get; init; } =
+        AssertBufferLengthMatches(RimMaskBuffer, Width, Height, nameof(RimMaskBuffer));
+
+    private static ReadOnlyMemory<bool> AssertBufferLengthMatches(
+        ReadOnlyMemory<bool> buffer, int width, int height, string name)
+    {
+        System.Diagnostics.Debug.Assert(
+            buffer.Length == width * height,
+            $"RimMaskSnapshot.{name}.Length ({buffer.Length}) must equal Width*Height ({width}*{height}={width * height}).");
+        return buffer;
+    }
+}
 
 /// <summary>
 /// One observation per orientation pass (mithril#1123). <see cref="CloseRadius"/>
@@ -168,7 +209,21 @@ public sealed record MorphSnapshot(
     int CloseRadius,
     int FgInputCount,
     int FgOutputCount,
-    bool[] FgAfterMorphBuffer);
+    ReadOnlyMemory<bool> FgAfterMorphBuffer)
+{
+    /// <summary>mithril#1126: see <see cref="DeviationSnapshot.ForegroundBuffer"/>.</summary>
+    public ReadOnlyMemory<bool> FgAfterMorphBuffer { get; init; } =
+        AssertBufferLengthMatches(FgAfterMorphBuffer, Width, Height, nameof(FgAfterMorphBuffer));
+
+    private static ReadOnlyMemory<bool> AssertBufferLengthMatches(
+        ReadOnlyMemory<bool> buffer, int width, int height, string name)
+    {
+        System.Diagnostics.Debug.Assert(
+            buffer.Length == width * height,
+            $"MorphSnapshot.{name}.Length ({buffer.Length}) must equal Width*Height ({width}*{height}={width * height}).");
+        return buffer;
+    }
+}
 
 /// <summary>
 /// One observation per connected component — ALL components, not just
@@ -197,7 +252,25 @@ public sealed record BlobClassification(
     double Solidity,
     double Aspect,
     BlobClass BlobClass,
-    IReadOnlyList<int> Pixels);
+    IReadOnlyList<int> Pixels)
+{
+    /// <summary>
+    /// mithril#1126: BlobClassification's invariant is per-comp (not per-image):
+    /// <see cref="Pixels"/>.Count must equal <see cref="Area"/>. The producer
+    /// computes Area from the pixel list (BlobFeat.Area => Pixels.Count); this
+    /// assertion guards against a producer that copies one without the other.
+    /// </summary>
+    public IReadOnlyList<int> Pixels { get; init; } =
+        AssertPixelsMatchArea(Pixels, Area);
+
+    private static IReadOnlyList<int> AssertPixelsMatchArea(IReadOnlyList<int> pixels, int area)
+    {
+        System.Diagnostics.Debug.Assert(
+            pixels.Count == area,
+            $"BlobClassification.Pixels.Count ({pixels.Count}) must equal Area ({area}).");
+        return pixels;
+    }
+}
 
 /// <summary>
 /// Per-blob × per-template NCC observation (mithril#1121). Produced by the

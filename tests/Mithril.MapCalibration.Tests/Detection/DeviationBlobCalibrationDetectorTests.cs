@@ -216,7 +216,7 @@ public sealed class DeviationBlobCalibrationDetectorTests
         snap.ForegroundBuffer.Length.Should().Be(TexW * TexH);
         snap.Width.Should().Be(TexW);
         snap.Height.Should().Be(TexW * TexH / TexW);  // TexH, but readable
-        int trueCount = snap.ForegroundBuffer.Count(b => b);
+        int trueCount = CountTrue(snap.ForegroundBuffer);
         snap.AboveThresholdCount.Should().Be(trueCount);
         // The detector itself emits rotate180=false; the SolveEngine wrapper rewrites.
         snap.Rotate180.Should().BeFalse();
@@ -268,7 +268,7 @@ public sealed class DeviationBlobCalibrationDetectorTests
         m.CloseRadius.Should().Be(1);  // production default
         m.FgInputCount.Should().Be(rimSnaps[0].FgSurvivorCount);
         m.FgAfterMorphBuffer.Length.Should().Be(TexW * TexH);
-        m.FgOutputCount.Should().Be(m.FgAfterMorphBuffer.Count(b => b));
+        m.FgOutputCount.Should().Be(CountTrue(m.FgAfterMorphBuffer));
     }
 
     // mithril#1123: OnBlobClassified fires for ALL comps, not just Icons — the
@@ -306,9 +306,11 @@ public sealed class DeviationBlobCalibrationDetectorTests
         var (shot, tex) = BuildPair();
         var detector = new DeviationBlobCalibrationDetector();
 
+        // mithril#1126: ForegroundBuffer is ReadOnlyMemory<bool>; capture the underlying
+        // array via ToArray() so a second Detect can't alias the snapshot's buffer.
         bool[]? firstFg = null;
         var hooks1 = new DetectionDiagnosticHooks(
-            OnDeviation: s => firstFg ??= s.ForegroundBuffer,
+            OnDeviation: s => firstFg ??= s.ForegroundBuffer.ToArray(),
             OnRimMask: null, OnMorph: null, OnBlobClassified: null);
         detector.Detect(Request(shot, tex) with { Diagnostics = hooks1 });
         firstFg.Should().NotBeNull();
@@ -320,6 +322,16 @@ public sealed class DeviationBlobCalibrationDetectorTests
         // Snapshot from the first run must still match its own AboveThresholdCount tally.
         firstFg!.Count(b => b).Should().Be(snapshotCount,
             "the snapshot buffer must be a clone — orchestrator mutations to fg must not bleed through");
+    }
+
+    // mithril#1126: ReadOnlyMemory<bool> doesn't have LINQ Count(predicate); helper
+    // walks the span and tallies the true count. Used by the per-stage tests.
+    private static int CountTrue(ReadOnlyMemory<bool> mem)
+    {
+        var span = mem.Span;
+        int n = 0;
+        for (int i = 0; i < span.Length; i++) if (span[i]) n++;
+        return n;
     }
 
     // mithril#1123 D3.a: BlobFeat.Ordinal carries the 8-connected emission order

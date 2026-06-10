@@ -540,7 +540,7 @@ public sealed class MapCalibrationSolveEngine
                 // fg mask — there's no fg-pre/fg-post concept here. mithril#1125:
                 // null in memory; bundle DTO projects to the -1 wire sentinel.
                 FgInputCount: null, FgSurvivorCount: null,
-                RimMaskBuffer: (bool[])rim.Clone()));
+                RimMaskBuffer: ((bool[])rim.Clone()).AsMemory()));
             _logger?.LogTrace(
                 "RimMask (rotate180={Rotate180}, pipeline=synthesis_j): rim={Rim} of {N} px (threshold={T:0.000}).",
                 rotate180, rimCount, n, devThr);

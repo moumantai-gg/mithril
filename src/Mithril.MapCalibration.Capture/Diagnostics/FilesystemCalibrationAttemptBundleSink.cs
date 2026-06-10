@@ -377,12 +377,16 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
     // 07b foreground, 07c rim, 07d morph masks. Mirrors the existing
     // TryWriteGrayScreenshot in-line BitmapSource.Create pattern (no
     // IAttemptBundleVisualizer extension needed for direct mask visualisation).
-    private string? TryWriteBoolMaskPng(string dir, string name, int w, int h, bool[] mask)
+    // mithril#1126: mask is ReadOnlyMemory<bool> so the snapshot's read-only
+    // contract carries through to the consumer — we iterate the span without
+    // mutating.
+    private string? TryWriteBoolMaskPng(string dir, string name, int w, int h, ReadOnlyMemory<bool> mask)
     {
         try
         {
+            var span = mask.Span;
             var bytes = new byte[w * h];
-            for (int i = 0; i < bytes.Length; i++) bytes[i] = mask[i] ? (byte)255 : (byte)0;
+            for (int i = 0; i < bytes.Length; i++) bytes[i] = span[i] ? (byte)255 : (byte)0;
             var src = BitmapSource.Create(w, h, 96, 96, PixelFormats.Gray8, null, bytes, w);
             return WritePng(dir, name, src);
         }
