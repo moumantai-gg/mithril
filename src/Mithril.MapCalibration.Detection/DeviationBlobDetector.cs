@@ -62,26 +62,31 @@ public static class DeviationBlobDetector
         int n = w * h;
         double devThr = 1.0 - lowNcc;  // dev >= devThr  <=>  ncc <= lowNcc
 
-        // fg-initial: the threshold output. Kept as a separate bool[] (rather than
-        // mutated in place) so the rim-subtract / morph-close stages can read
-        // pre-mutation counts for the diagnostic snapshots.
-        var fgInitial = new bool[n];
+        // Spec D9: zero producer cost when Diagnostics == null. On the null-hook
+        // path we allocate ONE bool[] (the working fg buffer that subsequent
+        // stages mutate). When OnDeviation IS wired we also allocate a separate
+        // fgInitial bool[] + clone, because the snapshot must capture the
+        // pre-rim-subtract / pre-morph state — the orchestrator continues to
+        // mutate fg afterwards.
+        bool[] fg;
         int aboveThresholdCount = 0;
-        for (int i = 0; i < n; i++)
-        {
-            if (dev[i] >= devThr)
-            {
-                fgInitial[i] = true;
-                aboveThresholdCount++;
-            }
-        }
-
-        // Emit DeviationSnapshot — fires after the threshold step, with the
-        // dev float[] still in scope for the stats sweep. The LogTrace mirror
-        // matches the sink cadence (Task 3) so a triager can watch the pipeline
-        // in real-time without waiting for the bundle to write.
         if (hooks?.OnDeviation is not null)
         {
+            // fg-initial: the threshold output retained for the snapshot.
+            var fgInitial = new bool[n];
+            for (int i = 0; i < n; i++)
+            {
+                if (dev[i] >= devThr)
+                {
+                    fgInitial[i] = true;
+                    aboveThresholdCount++;
+                }
+            }
+
+            // Emit DeviationSnapshot — fires after the threshold step, with the
+            // dev float[] still in scope for the stats sweep. The LogTrace mirror
+            // matches the sink cadence (Task 3) so a triager can watch the pipeline
+            // in real-time without waiting for the bundle to write.
             var (min, max, mean, p50, p95, p99) = ComputeDeviationStats(dev);
             hooks.OnDeviation(new DeviationSnapshot(
                 Rotate180: false,
@@ -94,10 +99,27 @@ public static class DeviationBlobDetector
             logger?.LogTrace(
                 "Deviation (rotate180=False): mean ncc={MeanNcc:0.000} above-threshold={AboveCount} of {Total} px (threshold={Threshold:0.000}, p50={P50:0.000} p95={P95:0.000} p99={P99:0.000}).",
                 meanNcc, aboveThresholdCount, n, devThr, p50, p95, p99);
-        }
 
-        // fg is the working buffer that subsequent stages mutate.
-        var fg = (bool[])fgInitial.Clone();
+            // fg is the working buffer that subsequent stages mutate; fgInitial
+            // is retained by the snapshot.
+            fg = (bool[])fgInitial.Clone();
+        }
+        else
+        {
+            // Null-hook fast path: skip the fg-initial bool[] + clone — write the
+            // threshold output directly into the working buffer. aboveThresholdCount
+            // is still tallied because the OnRimMask sink (independently null-able)
+            // reports it as FgInputCount when wired.
+            fg = new bool[n];
+            for (int i = 0; i < n; i++)
+            {
+                if (dev[i] >= devThr)
+                {
+                    fg[i] = true;
+                    aboveThresholdCount++;
+                }
+            }
+        }
 
         if (rim == RimMaskMode.DeviationFlood)
         {
