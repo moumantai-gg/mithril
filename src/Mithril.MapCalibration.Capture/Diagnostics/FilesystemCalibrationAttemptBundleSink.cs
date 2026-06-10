@@ -454,7 +454,6 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 };
                 foreach (var pixIdx in c.Pixels)
                 {
-                    if (pixIdx < 0 || pixIdx >= w * h) continue;
                     int ofs = pixIdx * 4;
                     bgra[ofs]     = b;
                     bgra[ofs + 1] = g;
