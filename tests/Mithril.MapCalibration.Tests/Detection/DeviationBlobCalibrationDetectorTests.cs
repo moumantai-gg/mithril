@@ -306,22 +306,42 @@ public sealed class DeviationBlobCalibrationDetectorTests
         var (shot, tex) = BuildPair();
         var detector = new DeviationBlobCalibrationDetector();
 
-        // mithril#1126: ForegroundBuffer is ReadOnlyMemory<bool>; capture the underlying
-        // array via ToArray() so a second Detect can't alias the snapshot's buffer.
+        // mithril#1127: capture every buffer at first-Detect, then drive a SECOND
+        // Detect and assert byte-equality. The original "count stable" check
+        // wouldn't catch an aliased buffer with the same true-count; SequenceEqual
+        // catches any single-byte mutation. Extended to all four buffers
+        // (Foreground/RimMask/FgAfterMorph/Pixels) so the clone contract is
+        // covered for every per-stage emission, not just OnDeviation.
         bool[]? firstFg = null;
+        bool[]? firstRim = null;
+        bool[]? firstMorph = null;
+        int[]? firstPixels = null;
         var hooks1 = new DetectionDiagnosticHooks(
             OnDeviation: s => firstFg ??= s.ForegroundBuffer.ToArray(),
-            OnRimMask: null, OnMorph: null, OnBlobClassified: null);
+            OnRimMask: s => firstRim ??= s.RimMaskBuffer.ToArray(),
+            OnMorph: s => firstMorph ??= s.FgAfterMorphBuffer.ToArray(),
+            OnBlobClassified: c => firstPixels ??= c.Pixels.ToArray());
         detector.Detect(Request(shot, tex) with { Diagnostics = hooks1 });
         firstFg.Should().NotBeNull();
-        var snapshotCount = firstFg!.Count(b => b);
+        firstRim.Should().NotBeNull();
+        firstMorph.Should().NotBeNull();
+        firstPixels.Should().NotBeNull();
 
-        // Drive a second detect — it must not alias the captured buffer.
+        // Snapshot each captured array's exact bytes BEFORE the second run.
+        var fgSnapshot = (bool[])firstFg!.Clone();
+        var rimSnapshot = (bool[])firstRim!.Clone();
+        var morphSnapshot = (bool[])firstMorph!.Clone();
+        var pixSnapshot = (int[])firstPixels!.Clone();
+
+        // Drive a second detect — captured arrays must not alias the new run's
+        // working buffers (which mutate as the orchestrator advances stages).
         detector.Detect(Request(shot, tex) with { Diagnostics = hooks1 });
 
-        // Snapshot from the first run must still match its own AboveThresholdCount tally.
-        firstFg!.Count(b => b).Should().Be(snapshotCount,
-            "the snapshot buffer must be a clone — orchestrator mutations to fg must not bleed through");
+        firstFg!.SequenceEqual(fgSnapshot).Should().BeTrue(
+            "ForegroundBuffer must be cloned at emission — orchestrator mutations to fg must not bleed through");
+        firstRim!.SequenceEqual(rimSnapshot).Should().BeTrue("RimMaskBuffer must be cloned at emission");
+        firstMorph!.SequenceEqual(morphSnapshot).Should().BeTrue("FgAfterMorphBuffer must be cloned at emission");
+        firstPixels!.SequenceEqual(pixSnapshot).Should().BeTrue("BlobClassification.Pixels must be cloned at emission");
     }
 
     // mithril#1126: ReadOnlyMemory<bool> doesn't have LINQ Count(predicate); helper

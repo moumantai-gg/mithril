@@ -387,6 +387,21 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         dto.Blobs.Select(b => b.BlobClass).Should()
             .Contain(new[] { "Icon", "Noise" });
 
+        // mithril#1127: synthesis-J carries -1 sentinels on the wire (the
+        // in-memory record uses int? null per #1125; the bundle DTO projects to
+        // -1). Confirms the sentinel survives JSON round-trip rather than
+        // getting interpreted as 0, unsigned, or null.
+        var synthRimMasks = dto.RimMasks.Where(r => r.Pipeline == "synthesis_j").ToArray();
+        synthRimMasks.Should().HaveCount(2);
+        synthRimMasks.Should().AllSatisfy(r =>
+        {
+            r.FgInputCount.Should().Be(-1, "synthesis-J pipeline emits the -1 wire sentinel");
+            r.FgSurvivorCount.Should().Be(-1);
+        });
+        // blob-detection records carry the real counts.
+        var blobDetectionRimMasks = dto.RimMasks.Where(r => r.Pipeline == "blob_detection").ToArray();
+        blobDetectionRimMasks.Should().AllSatisfy(r => r.FgInputCount.Should().BeGreaterThanOrEqualTo(0));
+
         // 01-attempt.json carries the 11 new file slots.
         var attemptPath = Path.Combine(dir, "01-attempt.json");
         using var attemptFs = File.OpenRead(attemptPath);
@@ -402,6 +417,89 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         attempt.Files.MorphedR180.Should().Be("07d-r180-morphed.png");
         attempt.Files.BlobClassification.Should().Be("07e-blob-classification.png");
         attempt.Files.BlobClassificationR180.Should().Be("07e-r180-blob-classification.png");
+    }
+
+    /// <summary>
+    /// mithril#1127: the 07e-blob-classification.png colormap switch in
+    /// <see cref="FilesystemCalibrationAttemptBundleSink"/> renders one BGRA
+    /// tuple per <see cref="BlobClass"/> value. The earlier coverage exercised
+    /// only Icon + Noise; a typo in the Fog, Structure, or default-fallback
+    /// tuple would ship undetected. This test wires one single-pixel blob per
+    /// named BlobClass value plus one cast to an out-of-range value (which
+    /// exercises the default arm), loads the rendered PNG back, and asserts
+    /// the per-class colour at each blob's pixel.
+    /// </summary>
+    [Fact]
+    public void BlobClassification_png_paints_pixels_per_blob_class()
+    {
+        var ctx = PopulatedAccepted();
+        const int W = 5, H = 1;
+
+        // DeviationSnapshot supplies the canvas dims to TryWriteBlobClassificationPng
+        // (it pulls Width/Height from the co-orientation DeviationSnapshot, since
+        // BlobClassification itself doesn't carry image dims).
+        ctx.DeviationSnapshots = new[]
+        {
+            new DeviationSnapshot(Rotate180: false, Width: W, Height: H, Win: 11,
+                Threshold: 0.5, MeanNcc: 0.82,
+                Min: 0.0, Max: 0.9, Mean: 0.2, P50: 0.1, P95: 0.7, P99: 0.85,
+                AboveThresholdCount: W,
+                ForegroundBuffer: new bool[W * H]),
+        };
+
+        // One single-pixel blob per BlobClass + a cast to exercise the `_` arm.
+        // Casting (BlobClass)99 is the only path that hits the default tuple —
+        // post-#1125 the named values are enum-exhaustive but the default
+        // remains as defensive cover for rogue casts.
+        ctx.BlobClassifications = new[]
+        {
+            SingleBlobAt(BlobClass.Icon,      ordinal: 0, pixel: 0),
+            SingleBlobAt(BlobClass.Noise,     ordinal: 1, pixel: 1),
+            SingleBlobAt(BlobClass.Fog,       ordinal: 2, pixel: 2),
+            SingleBlobAt(BlobClass.Structure, ordinal: 3, pixel: 3),
+            SingleBlobAt((BlobClass)99,       ordinal: 4, pixel: 4),
+        };
+
+        NewSink().Write(ctx);
+
+        var dir = Directory.GetDirectories(_root).Single();
+        var pngPath = Path.Combine(dir, "07e-blob-classification.png");
+        File.Exists(pngPath).Should().BeTrue();
+
+        // Decode the PNG back, convert to Bgra32 to match the encoder's pixel
+        // format (BitmapSource.Create was given PixelFormats.Bgra32).
+        using var stream = File.OpenRead(pngPath);
+        var decoder = new PngBitmapDecoder(stream, BitmapCreateOptions.None, BitmapCacheOption.Default);
+        var frame = decoder.Frames[0];
+        var bgra32 = new FormatConvertedBitmap(frame, System.Windows.Media.PixelFormats.Bgra32, null, 0);
+        var bgra = new byte[W * H * 4];
+        bgra32.CopyPixels(bgra, W * 4, 0);
+
+        // Per the colormap in TryWriteBlobClassificationPng. Alpha = 255 on
+        // every painted pixel (whether named class or fallback).
+        AssertBgra(bgra, pixel: 0, b: 0,   g: 200, r: 0,   a: 255);  // Icon
+        AssertBgra(bgra, pixel: 1, b: 80,  g: 80,  r: 80,  a: 255);  // Noise
+        AssertBgra(bgra, pixel: 2, b: 200, g: 100, r: 40,  a: 255);  // Fog
+        AssertBgra(bgra, pixel: 3, b: 0,   g: 0,   r: 200, a: 255);  // Structure
+        AssertBgra(bgra, pixel: 4, b: 0,   g: 0,   r: 0,   a: 255);  // default arm
+    }
+
+    private static BlobClassification SingleBlobAt(BlobClass cls, int ordinal, int pixel)
+        => new(Rotate180: false, BlobOrdinal: ordinal,
+            MinX: pixel, MinY: 0, W: 1, H: 1, Area: 1,
+            Cx: pixel, Cy: 0,
+            MeanDev: 0.6, PeakDev: 0.6,
+            Solidity: 1.0, Aspect: 1.0,
+            BlobClass: cls,
+            Pixels: new[] { pixel });
+
+    private static void AssertBgra(byte[] buf, int pixel, byte b, byte g, byte r, byte a)
+    {
+        int ofs = pixel * 4;
+        buf[ofs    ].Should().Be(b, $"pixel {pixel} BGRA[B]");
+        buf[ofs + 1].Should().Be(g, $"pixel {pixel} BGRA[G]");
+        buf[ofs + 2].Should().Be(r, $"pixel {pixel} BGRA[R]");
+        buf[ofs + 3].Should().Be(a, $"pixel {pixel} BGRA[A]");
     }
 
     /// <summary>

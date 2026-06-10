@@ -161,4 +161,64 @@ public sealed class MapCalibrationSolveEngineSynthesisRimSinkTests
         deviationSnaps.Should().Contain(s => s.Rotate180 == false);
         deviationSnaps.Should().Contain(s => s.Rotate180 == true);
     }
+
+    /// <summary>
+    /// mithril#1127: a single Solve invocation under the Shadow-mode default
+    /// emits exactly 4 RimMaskSnapshot records — one per (orientation, pipeline)
+    /// tuple. Combined assertion (spec §8 line 509): the prior tests cover the
+    /// synthesis-J path in isolation and the blob-detection path in isolation;
+    /// this asserts the engine-level coordination of both fires consistently.
+    /// </summary>
+    [Fact]
+    public void OnRimMask_fires_per_orientation_per_pipeline()
+    {
+        var (shot, tex) = BuildPair();
+        var templates = SyntheticMap.BuildTemplates(SyntheticMap.DefaultIcons);
+
+        var rimSnaps = new List<RimMaskSnapshot>();
+        var hooks = new DetectionDiagnosticHooks(
+            OnDeviation: null,
+            OnRimMask: rimSnaps.Add,
+            OnMorph: null,
+            OnBlobClassified: null);
+
+        var rect = new MapRect(0, 0, W, H, W, H);
+        var opts = new BlobOptions(MinArea: 8, MaxIconArea: 1500,
+            MinSolidity: 0.25, MaxAspect: 3.5, MinPeak: 0.5);
+        var request = new DetectionRequest(shot, tex, rect, templates,
+            RimMaskMode.DeviationFlood, LowNcc: 0.5, TypeFloor: 0.45, BlobOptions: opts)
+        {
+            Diagnostics = hooks,
+        };
+
+        // MapCalibrationSolverOptions defaults SynthesisRerankMode = Shadow, so
+        // both pipelines run on every Solve. No options injection needed.
+        var engine = new MapCalibrationSolveEngine(
+            detector: new DeviationBlobCalibrationDetector(),
+            gate: new CalibrationConfidenceGate());
+
+        engine.Solve(request, references: Array.Empty<LandmarkReference>());
+
+        // 2 orientations × 2 pipelines = 4 records, each tuple uniquely represented.
+        rimSnaps.Should().HaveCount(4);
+
+        var tuples = rimSnaps.Select(s => (s.Rotate180, s.Pipeline)).ToList();
+        tuples.Should().OnlyHaveUniqueItems();
+        tuples.Should().Contain((false, RimMaskPipeline.BlobDetection));
+        tuples.Should().Contain((true, RimMaskPipeline.BlobDetection));
+        tuples.Should().Contain((false, RimMaskPipeline.SynthesisJ));
+        tuples.Should().Contain((true, RimMaskPipeline.SynthesisJ));
+
+        // Synthesis-J carries null Fg counts; blob-detection carries non-null.
+        rimSnaps.Where(s => s.Pipeline == RimMaskPipeline.SynthesisJ).Should().AllSatisfy(s =>
+        {
+            s.FgInputCount.Should().BeNull();
+            s.FgSurvivorCount.Should().BeNull();
+        });
+        rimSnaps.Where(s => s.Pipeline == RimMaskPipeline.BlobDetection).Should().AllSatisfy(s =>
+        {
+            s.FgInputCount.Should().NotBeNull();
+            s.FgSurvivorCount.Should().NotBeNull();
+        });
+    }
 }
