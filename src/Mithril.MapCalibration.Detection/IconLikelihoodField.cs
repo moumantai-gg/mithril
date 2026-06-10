@@ -68,6 +68,36 @@ public static class IconLikelihoodField
         for (int i = 0; i < n; i++) dev[i] = deviation.Pixels[i] / 255f;
 
         var rim = DeviationFloodRimMask.Build(dev, deviation.Width, deviation.Height, devThr);
+        // mithril#1123: delegate to the 3-arg overload so the rim-applied
+        // ScoreAll tail is byte-identical to the synthesis-J orchestrator's
+        // lifted-rim path. Existing callers (probe tooling, equivalence tests)
+        // continue to call this 4-arg overload unchanged.
+        return LoadDeviationAsField(deviation, template, rim);
+    }
+
+    /// <summary>
+    /// Overload with a caller-supplied pre-built rim mask. Used by the
+    /// synthesis-J orchestrator (mithril#1123) which lifts rim-mask computation
+    /// out of the per-template loop into
+    /// <c>MapCalibrationSolveEngine.BuildLikelihoodFieldsFromDeviation</c>'s
+    /// body — once per orientation rather than once per template. The other
+    /// overloads delegate to this one internally (after building their own mask)
+    /// so behaviour is identical across the surface.
+    /// </summary>
+    /// <param name="rim">Row-major rim mask: <c>true</c> at pixels to zero out
+    /// before scoring; length must equal <c>deviation.Width * deviation.Height</c>.</param>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="rim"/>'s
+    /// length does not match the deviation's pixel count.</exception>
+    public static double[,] LoadDeviationAsField(
+        GrayImage deviation, IconTemplate template, bool[] rim)
+    {
+        int n = deviation.Width * deviation.Height;
+        if (rim.Length != n)
+        {
+            throw new ArgumentException(
+                $"rim.Length ({rim.Length}) must equal deviation.Width*Height ({n}).",
+                nameof(rim));
+        }
 
         var maskedPixels = new byte[n];
         for (int i = 0; i < n; i++) maskedPixels[i] = rim[i] ? (byte)0 : deviation.Pixels[i];
