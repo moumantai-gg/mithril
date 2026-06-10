@@ -140,9 +140,16 @@ public sealed record SynthesisJson(
 /// see that type's doc for field semantics (<c>Score</c> is <c>NaN</c> on the
 /// skip path; <c>aboveFloor</c> is the gate verdict; <c>rotate180</c>
 /// disambiguates the two orientation passes the engine runs).
+///
+/// <para><b>Schema v2 (mithril#1123 D3.a):</b> <c>BlobIndex</c> renamed to
+/// <c>BlobOrdinal</c> with all-blobs semantics — the same ordinal carried by
+/// <c>BlobClassification.BlobOrdinal</c> in <c>10c-blob-pipeline.json</c>
+/// (the per-comp classification dump). 10b's records are sparse over the
+/// 10c ordinal space: only Icon-class blobs that ran per-template NCC
+/// emit here.</para>
 /// </summary>
 public sealed record BlobTemplateScoreJson(
-    int BlobIndex,
+    int BlobOrdinal,
     int BlobMinX,
     int BlobMinY,
     int BlobWidth,

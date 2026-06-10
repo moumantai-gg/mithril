@@ -254,7 +254,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         {
             if (ctx.BlobTemplateScores is not { Count: > 0 } scores) return null;
             var dtos = scores.Select(s => new BlobTemplateScoreJson(
-                BlobIndex: s.BlobIndex,
+                BlobOrdinal: s.BlobOrdinal,
                 BlobMinX: s.BlobMinX,
                 BlobMinY: s.BlobMinY,
                 BlobWidth: s.BlobWidth,
@@ -269,7 +269,9 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 AboveFloor: s.AboveFloor,
                 Skipped: s.Skipped,
                 Rotate180: s.Rotate180)).ToArray();
-            var dto = new BlobTemplateScoresJson(SchemaVersion: 1, Scores: dtos);
+            // mithril#1123 D3.a: schema v1→v2, BlobIndex→BlobOrdinal with all-blobs
+            // semantics (the same int identifies the same physical blob in 10c).
+            var dto = new BlobTemplateScoresJson(SchemaVersion: 2, Scores: dtos);
             return WriteJson(dir, "10b-blob-template-scores.json", dto,
                 CalibrationBundleJsonContext.Default.BlobTemplateScoresJson);
         }

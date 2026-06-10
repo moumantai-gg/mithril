@@ -106,6 +106,17 @@ public sealed class BlobFeat
     public double MeanDev => SumDev / Area;
     public double Solidity => (double)Area / Math.Max(1, W * H);
     public double Aspect => (double)Math.Max(W, H) / Math.Max(1, Math.Min(W, H));
+
+    /// <summary>
+    /// Index over the 8-connected emission order produced by
+    /// <see cref="ConnectedComponents.Label"/> — the same ordinal space carried
+    /// by <c>BlobTemplateScore.BlobOrdinal</c> (#1121) and
+    /// <c>BlobClassification.BlobOrdinal</c> (#1123). Set by
+    /// <see cref="ConnectedComponents.Label"/> during blob emission so the
+    /// detector's per-template scores and the pipeline-observability dump
+    /// reference the same physical blob with the same int.
+    /// </summary>
+    public int Ordinal;
 }
 
 /// <summary>
@@ -146,6 +157,10 @@ internal static class ConnectedComponents
                         if (fg[qi] && !seen[qi]) { seen[qi] = true; stack.Push(qi); }
                     }
             }
+            // mithril#1123 D3.a: assign the all-blobs ordinal in 8-connected
+            // emission order — same int that BlobTemplateScore (#1121) and
+            // BlobClassification (#1123) reference.
+            f.Ordinal = comps.Count;
             comps.Add(f);
         }
         return comps;

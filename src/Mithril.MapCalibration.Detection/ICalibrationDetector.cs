@@ -69,9 +69,18 @@ public sealed record DetectionRequest(
 /// is the gate verdict — <c>true</c> iff the template participated in the
 /// "best-icon-wins" competition for this blob. <see cref="Rotate180"/>
 /// disambiguates the two passes the engine runs (0° and 180° base texture).</para>
+///
+/// <para><see cref="BlobOrdinal"/> is the blob's position in the 8-connected
+/// emission order from <c>ConnectedComponents.Label</c> — the same ordinal
+/// space carried by <c>BlobClassification.BlobOrdinal</c> (mithril#1123).
+/// Cross-ref between the <c>10b-blob-template-scores.json</c> bundle dump
+/// (per-template scores for Icon-class blobs only) and
+/// <c>10c-blob-pipeline.json</c> (classification for all comps) is by
+/// matching ordinal — same value identifies the same physical blob in both
+/// files. Renamed from <c>BlobIndex</c> in schema v2.</para>
 /// </remarks>
 public sealed record BlobTemplateScore(
-    int BlobIndex,
+    int BlobOrdinal,
     int BlobMinX,
     int BlobMinY,
     int BlobWidth,

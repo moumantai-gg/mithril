@@ -176,21 +176,21 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         ctx.BlobTemplateScores = new[]
         {
             new BlobTemplateScore(
-                BlobIndex: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
+                BlobOrdinal: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
                 BlobArea: 230,
                 TemplateName: "landmark_npc", TemplateLandmarkType: "Npc",
                 TemplateWidth: 15, TemplateHeight: 16,
                 Score: 0.78, TypeFloor: 0.80, AboveFloor: false, Skipped: false,
                 Rotate180: false),
             new BlobTemplateScore(
-                BlobIndex: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
+                BlobOrdinal: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
                 BlobArea: 230,
                 TemplateName: "landmark_portal", TemplateLandmarkType: "Portal",
                 TemplateWidth: 16, TemplateHeight: 16,
                 Score: 0.65, TypeFloor: 0.80, AboveFloor: false, Skipped: false,
                 Rotate180: false),
             new BlobTemplateScore(
-                BlobIndex: 1, BlobMinX: 249, BlobMinY: 149, BlobWidth: 16, BlobHeight: 17,
+                BlobOrdinal: 1, BlobMinX: 249, BlobMinY: 149, BlobWidth: 16, BlobHeight: 17,
                 BlobArea: 220,
                 TemplateName: "landmark_telepad", TemplateLandmarkType: "TeleportationPlatform",
                 TemplateWidth: 0, TemplateHeight: 0,
@@ -208,11 +208,12 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         using var fs = File.OpenRead(path);
         var dto = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.BlobTemplateScoresJson);
         dto.Should().NotBeNull();
-        dto!.SchemaVersion.Should().Be(1);
+        // mithril#1123 D3.a: BlobOrdinal rename = schema v1→v2 bump on 10b.
+        dto!.SchemaVersion.Should().Be(2);
         dto.Scores.Should().HaveCount(3);
 
         // First record round-trips faithfully.
-        dto.Scores[0].BlobIndex.Should().Be(0);
+        dto.Scores[0].BlobOrdinal.Should().Be(0);
         dto.Scores[0].TemplateName.Should().Be("landmark_npc");
         dto.Scores[0].TemplateLandmarkType.Should().Be("Npc");
         dto.Scores[0].Score.Should().BeApproximately(0.78, 1e-9);

@@ -92,10 +92,10 @@ public sealed class DeviationBlobCalibrationDetectorTests
         collected.Select(s => s.TemplateName).Distinct()
             .Should().BeSubsetOf(["landmark_portal", "landmark_telepad", "landmark_medipillar", "landmark_npc"]);
 
-        // For each distinct blob index, we expect a record per template the detector
+        // For each distinct blob ordinal, we expect a record per template the detector
         // considered (skips + scored). This is the per-blob fan-out the bundle dump
         // reflects.
-        var byBlob = collected.GroupBy(s => s.BlobIndex).ToList();
+        var byBlob = collected.GroupBy(s => s.BlobOrdinal).ToList();
         byBlob.Should().NotBeEmpty();
         foreach (var grp in byBlob)
         {
@@ -169,6 +169,32 @@ public sealed class DeviationBlobCalibrationDetectorTests
     // but real on degenerate inputs). The default-sized fixture never trips this
     // branch, so the per-blob test asserts conditional NaN; this test exercises
     // it directly so the skip-side semantic stays under coverage.
+    // mithril#1123 D3.a: BlobFeat.Ordinal carries the 8-connected emission order
+    // produced by ConnectedComponents.Label — the same int that
+    // BlobTemplateScore.BlobOrdinal (#1121) and BlobClassification.BlobOrdinal
+    // (#1123) reference. Direct unit test on the static helper guards the
+    // cross-file ordinal-space contract.
+    [Fact]
+    public void BlobOrdinal_is_set_by_ConnectedComponents_Label_emission_order()
+    {
+        // 4x4 deviation map with two disjoint above-threshold pixels:
+        //   one at (1,1), one at (3,3). Raster scan visits (1,1) first.
+        var dev = new float[16];
+        dev[1 * 4 + 1] = 1.0f;
+        dev[3 * 4 + 3] = 1.0f;
+        var opts = new BlobOptions(MinArea: 1, MaxIconArea: 100,
+            MinSolidity: 0.0, MaxAspect: 100.0, MinPeak: 0.5);
+
+        var blobs = DeviationBlobDetector.DetectIconBlobs(
+            dev, w: 4, h: 4, lowNcc: 0.5, RimMaskMode.None, opts, closeRadius: 0);
+
+        // Both 1-pixel hot spots survive the gate (peak >= MinPeak, area >= MinArea,
+        // solidity = 1.0, aspect = 1.0). Emission order is the raster scan order.
+        blobs.Should().HaveCount(2);
+        blobs[0].Ordinal.Should().Be(0);
+        blobs[1].Ordinal.Should().Be(1);
+    }
+
     [Fact]
     public void Diagnostic_sink_records_skip_path_when_template_exceeds_padded_crop()
     {
