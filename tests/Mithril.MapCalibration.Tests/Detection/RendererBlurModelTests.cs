@@ -23,11 +23,14 @@ public sealed class RendererBlurModelTests
     }
 
     [Fact]
-    public void SigmaFor_is_linear_in_inverse_scale_with_canonical_coefficients()
+    public void SigmaFor_is_linear_in_inverse_scale_for_arbitrary_coefficients()
     {
-        // Pin the canonical intercept + slope so the spec's σ-curve fit is
-        // recorded directly in test source. Anything that touches the model
-        // must move these numbers in lockstep with the production defaults.
+        // Pins the σ = intercept + slope/scale linear-in-1/scale arithmetic with
+        // round-number coefficients chosen for arithmetic clarity. The PRODUCTION
+        // coefficients (`MapCalibrationLocateOptions` defaults — Plan Task 0 fit:
+        // Intercept=-1.5643, Slope=1.0043) are exercised in the
+        // SigmaFor_clamps_to_min and SigmaFor_production_curve_matches_fit tests
+        // below; this test exists to verify the formula, not the fit.
         var options = new MapCalibrationLocateOptions
         {
             RendererBlurEnabled = true,
