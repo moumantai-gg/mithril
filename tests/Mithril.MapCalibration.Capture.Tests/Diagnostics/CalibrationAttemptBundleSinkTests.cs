@@ -176,21 +176,21 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         ctx.BlobTemplateScores = new[]
         {
             new BlobTemplateScore(
-                BlobIndex: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
+                BlobOrdinal: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
                 BlobArea: 230,
                 TemplateName: "landmark_npc", TemplateLandmarkType: "Npc",
                 TemplateWidth: 15, TemplateHeight: 16,
                 Score: 0.78, TypeFloor: 0.80, AboveFloor: false, Skipped: false,
                 Rotate180: false),
             new BlobTemplateScore(
-                BlobIndex: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
+                BlobOrdinal: 0, BlobMinX: 239, BlobMinY: 106, BlobWidth: 16, BlobHeight: 17,
                 BlobArea: 230,
                 TemplateName: "landmark_portal", TemplateLandmarkType: "Portal",
                 TemplateWidth: 16, TemplateHeight: 16,
                 Score: 0.65, TypeFloor: 0.80, AboveFloor: false, Skipped: false,
                 Rotate180: false),
             new BlobTemplateScore(
-                BlobIndex: 1, BlobMinX: 249, BlobMinY: 149, BlobWidth: 16, BlobHeight: 17,
+                BlobOrdinal: 1, BlobMinX: 249, BlobMinY: 149, BlobWidth: 16, BlobHeight: 17,
                 BlobArea: 220,
                 TemplateName: "landmark_telepad", TemplateLandmarkType: "TeleportationPlatform",
                 TemplateWidth: 0, TemplateHeight: 0,
@@ -208,11 +208,12 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         using var fs = File.OpenRead(path);
         var dto = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.BlobTemplateScoresJson);
         dto.Should().NotBeNull();
-        dto!.SchemaVersion.Should().Be(1);
+        // mithril#1123 D3.a: BlobOrdinal rename = schema v1→v2 bump on 10b.
+        dto!.SchemaVersion.Should().Be(2);
         dto.Scores.Should().HaveCount(3);
 
         // First record round-trips faithfully.
-        dto.Scores[0].BlobIndex.Should().Be(0);
+        dto.Scores[0].BlobOrdinal.Should().Be(0);
         dto.Scores[0].TemplateName.Should().Be("landmark_npc");
         dto.Scores[0].TemplateLandmarkType.Should().Be("Npc");
         dto.Scores[0].Score.Should().BeApproximately(0.78, 1e-9);
@@ -263,6 +264,185 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         using var attemptFs = File.OpenRead(attemptPath);
         var attempt = JsonSerializer.Deserialize(attemptFs, CalibrationBundleJsonContext.Default.AttemptJson);
         attempt!.Files.BlobTemplateScores.Should().BeNull();
+    }
+
+    /// <summary>
+    /// mithril#1123: detector-pipeline observability dump (10c-blob-pipeline.json)
+    /// + per-stage PNG masks. When the context's four per-stage lists are
+    /// populated, the sink writes 10c + 10 PNGs and the 01-attempt.json's
+    /// Files block carries 11 new slots.
+    /// </summary>
+    [Fact]
+    public void Writes_blob_pipeline_json_and_pngs_when_context_populated()
+    {
+        var ctx = PopulatedAccepted();
+        const int W = 4, H = 4;
+
+        // One DeviationSnapshot per orientation. ForegroundBuffer is dense (W*H).
+        ctx.DeviationSnapshots = new[]
+        {
+            new DeviationSnapshot(Rotate180: false, Width: W, Height: H, Win: 11,
+                Threshold: 0.5, MeanNcc: 0.82,
+                Min: 0.0, Max: 0.9, Mean: 0.2,
+                P50: 0.1, P95: 0.7, P99: 0.85,
+                AboveThresholdCount: 4,
+                ForegroundBuffer: new[] { true, false, true, false, false, true, false, true,
+                                          true, false, true, false, false, true, false, true }),
+            new DeviationSnapshot(Rotate180: true, Width: W, Height: H, Win: 11,
+                Threshold: 0.5, MeanNcc: 0.81,
+                Min: 0.0, Max: 0.9, Mean: 0.2,
+                P50: 0.1, P95: 0.7, P99: 0.85,
+                AboveThresholdCount: 3,
+                ForegroundBuffer: new bool[W * H]),
+        };
+
+        // Four RimMaskSnapshots: 2 orientations × 2 pipelines.
+        ctx.RimMaskSnapshots = new[]
+        {
+            new RimMaskSnapshot(Pipeline: "blob_detection", Rotate180: false,
+                Width: W, Height: H, Threshold: 0.5,
+                RimPixelCount: 1, FgInputCount: 4, FgSurvivorCount: 3,
+                RimMaskBuffer: new bool[W * H]),
+            new RimMaskSnapshot(Pipeline: "blob_detection", Rotate180: true,
+                Width: W, Height: H, Threshold: 0.5,
+                RimPixelCount: 1, FgInputCount: 3, FgSurvivorCount: 2,
+                RimMaskBuffer: new bool[W * H]),
+            new RimMaskSnapshot(Pipeline: "synthesis_j", Rotate180: false,
+                Width: W, Height: H, Threshold: 0.5,
+                RimPixelCount: 0, FgInputCount: -1, FgSurvivorCount: -1,
+                RimMaskBuffer: new bool[W * H]),
+            new RimMaskSnapshot(Pipeline: "synthesis_j", Rotate180: true,
+                Width: W, Height: H, Threshold: 0.5,
+                RimPixelCount: 0, FgInputCount: -1, FgSurvivorCount: -1,
+                RimMaskBuffer: new bool[W * H]),
+        };
+
+        ctx.MorphSnapshots = new[]
+        {
+            new MorphSnapshot(Rotate180: false, Width: W, Height: H,
+                CloseRadius: 1, FgInputCount: 3, FgOutputCount: 4,
+                FgAfterMorphBuffer: new bool[W * H]),
+            new MorphSnapshot(Rotate180: true, Width: W, Height: H,
+                CloseRadius: 1, FgInputCount: 2, FgOutputCount: 3,
+                FgAfterMorphBuffer: new bool[W * H]),
+        };
+
+        // Two blobs per orientation — one Icon, one Noise. Pixels list covers
+        // a couple of pixels per blob (the render PNG uses these).
+        ctx.BlobClassifications = new[]
+        {
+            new BlobClassification(Rotate180: false, BlobOrdinal: 0,
+                MinX: 0, MinY: 0, W: 2, H: 2, Area: 2,
+                Cx: 0.5, Cy: 0.5,
+                MeanDev: 0.6, PeakDev: 0.9,
+                Solidity: 0.5, Aspect: 1.0,
+                BlobClass: "Icon",
+                Pixels: new[] { 0, 1 }),
+            new BlobClassification(Rotate180: false, BlobOrdinal: 1,
+                MinX: 2, MinY: 2, W: 1, H: 1, Area: 1,
+                Cx: 2, Cy: 2,
+                MeanDev: 0.5, PeakDev: 0.5,
+                Solidity: 1.0, Aspect: 1.0,
+                BlobClass: "Noise",
+                Pixels: new[] { 10 }),
+            new BlobClassification(Rotate180: true, BlobOrdinal: 0,
+                MinX: 0, MinY: 0, W: 1, H: 1, Area: 1,
+                Cx: 0, Cy: 0,
+                MeanDev: 0.6, PeakDev: 0.6,
+                Solidity: 1.0, Aspect: 1.0,
+                BlobClass: "Icon",
+                Pixels: new[] { 0 }),
+        };
+
+        NewSink().Write(ctx);
+
+        var dir = Directory.GetDirectories(_root).Single();
+        var files = Directory.GetFiles(dir).Select(Path.GetFileName).ToArray();
+
+        // 10c JSON + 10 PNGs land on disk.
+        files.Should().Contain("10c-blob-pipeline.json");
+        files.Should().Contain("07b-foreground.png");
+        files.Should().Contain("07b-r180-foreground.png");
+        files.Should().Contain("07c-rim-mask.png");
+        files.Should().Contain("07c-r180-rim-mask.png");
+        files.Should().Contain("07c-synth-rim-mask.png");
+        files.Should().Contain("07c-r180-synth-rim-mask.png");
+        files.Should().Contain("07d-morphed.png");
+        files.Should().Contain("07d-r180-morphed.png");
+        files.Should().Contain("07e-blob-classification.png");
+        files.Should().Contain("07e-r180-blob-classification.png");
+
+        // 10c content round-trips.
+        var path = Path.Combine(dir, "10c-blob-pipeline.json");
+        using var fs = File.OpenRead(path);
+        var dto = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.BlobPipelineJson);
+        dto.Should().NotBeNull();
+        dto!.SchemaVersion.Should().Be(1);
+        dto.Deviation.Should().HaveCount(2);
+        dto.RimMasks.Should().HaveCount(4);
+        dto.RimMasks.Select(r => r.Pipeline).Distinct().Should()
+            .BeEquivalentTo(new[] { "blob_detection", "synthesis_j" });
+        dto.Morph.Should().HaveCount(2);
+        dto.Blobs.Should().HaveCount(3);
+        dto.Blobs.Select(b => b.BlobClass).Should()
+            .Contain(new[] { "Icon", "Noise" });
+
+        // 01-attempt.json carries the 11 new file slots.
+        var attemptPath = Path.Combine(dir, "01-attempt.json");
+        using var attemptFs = File.OpenRead(attemptPath);
+        var attempt = JsonSerializer.Deserialize(attemptFs, CalibrationBundleJsonContext.Default.AttemptJson);
+        attempt!.Files.BlobPipeline.Should().Be("10c-blob-pipeline.json");
+        attempt.Files.Foreground.Should().Be("07b-foreground.png");
+        attempt.Files.ForegroundR180.Should().Be("07b-r180-foreground.png");
+        attempt.Files.RimMask.Should().Be("07c-rim-mask.png");
+        attempt.Files.RimMaskR180.Should().Be("07c-r180-rim-mask.png");
+        attempt.Files.SynthRimMask.Should().Be("07c-synth-rim-mask.png");
+        attempt.Files.SynthRimMaskR180.Should().Be("07c-r180-synth-rim-mask.png");
+        attempt.Files.Morphed.Should().Be("07d-morphed.png");
+        attempt.Files.MorphedR180.Should().Be("07d-r180-morphed.png");
+        attempt.Files.BlobClassification.Should().Be("07e-blob-classification.png");
+        attempt.Files.BlobClassificationR180.Should().Be("07e-r180-blob-classification.png");
+    }
+
+    /// <summary>
+    /// mithril#1123: when all four pipeline lists are null OR empty, the sink
+    /// omits 10c + every PNG slot. Mirrors the #1121 "null-or-empty → omit"
+    /// convention.
+    /// </summary>
+    [Fact]
+    public void Omits_blob_pipeline_when_context_null_or_empty()
+    {
+        var nullCtx = PopulatedAccepted();
+        nullCtx.DeviationSnapshots = null;
+        nullCtx.RimMaskSnapshots = null;
+        nullCtx.MorphSnapshots = null;
+        nullCtx.BlobClassifications = null;
+        NewSink().Write(nullCtx);
+        var nullDir = Directory.GetDirectories(_root).Single();
+        Directory.GetFiles(nullDir).Select(Path.GetFileName)
+            .Should().NotContain("10c-blob-pipeline.json");
+
+        Directory.Delete(nullDir, recursive: true);
+        var emptyCtx = PopulatedAccepted();
+        emptyCtx.DeviationSnapshots = Array.Empty<DeviationSnapshot>();
+        emptyCtx.RimMaskSnapshots = Array.Empty<RimMaskSnapshot>();
+        emptyCtx.MorphSnapshots = Array.Empty<MorphSnapshot>();
+        emptyCtx.BlobClassifications = Array.Empty<BlobClassification>();
+        NewSink().Write(emptyCtx);
+        var emptyDir = Directory.GetDirectories(_root).Single();
+        Directory.GetFiles(emptyDir).Select(Path.GetFileName)
+            .Should().NotContain("10c-blob-pipeline.json");
+
+        // 01-attempt.json's 11 new slots are null in both cases.
+        var attemptPath = Path.Combine(emptyDir, "01-attempt.json");
+        using var attemptFs = File.OpenRead(attemptPath);
+        var attempt = JsonSerializer.Deserialize(attemptFs, CalibrationBundleJsonContext.Default.AttemptJson);
+        attempt!.Files.BlobPipeline.Should().BeNull();
+        attempt.Files.Foreground.Should().BeNull();
+        attempt.Files.RimMask.Should().BeNull();
+        attempt.Files.SynthRimMask.Should().BeNull();
+        attempt.Files.Morphed.Should().BeNull();
+        attempt.Files.BlobClassification.Should().BeNull();
     }
 
     /// <summary>

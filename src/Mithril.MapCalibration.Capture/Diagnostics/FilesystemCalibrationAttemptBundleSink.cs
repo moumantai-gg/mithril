@@ -73,7 +73,20 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 ProjectionOverlay: TryWriteProjectionOverlay(subdir, context),
                 Detections: TryWriteDetectionsJson(subdir, context),
                 RecoveredCalibration: TryWriteRecoveredCalibrationJson(subdir, context),
-                BlobTemplateScores: TryWriteBlobTemplateScoresJson(subdir, context));
+                BlobTemplateScores: TryWriteBlobTemplateScoresJson(subdir, context),
+                // mithril#1123: detector-pipeline observability — 10c JSON +
+                // 10 PNGs for the stage masks × orientations.
+                BlobPipeline: TryWriteBlobPipelineJson(subdir, context),
+                Foreground: TryWriteForegroundPng(subdir, context, rotate180: false),
+                ForegroundR180: TryWriteForegroundPng(subdir, context, rotate180: true),
+                RimMask: TryWriteRimMaskPng(subdir, context, pipeline: "blob_detection", rotate180: false),
+                RimMaskR180: TryWriteRimMaskPng(subdir, context, pipeline: "blob_detection", rotate180: true),
+                SynthRimMask: TryWriteRimMaskPng(subdir, context, pipeline: "synthesis_j", rotate180: false),
+                SynthRimMaskR180: TryWriteRimMaskPng(subdir, context, pipeline: "synthesis_j", rotate180: true),
+                Morphed: TryWriteMorphedPng(subdir, context, rotate180: false),
+                MorphedR180: TryWriteMorphedPng(subdir, context, rotate180: true),
+                BlobClassification: TryWriteBlobClassificationPng(subdir, context, rotate180: false),
+                BlobClassificationR180: TryWriteBlobClassificationPng(subdir, context, rotate180: true));
 
             WriteAttemptJson(subdir, context, files);
         }
@@ -254,7 +267,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         {
             if (ctx.BlobTemplateScores is not { Count: > 0 } scores) return null;
             var dtos = scores.Select(s => new BlobTemplateScoreJson(
-                BlobIndex: s.BlobIndex,
+                BlobOrdinal: s.BlobOrdinal,
                 BlobMinX: s.BlobMinX,
                 BlobMinY: s.BlobMinY,
                 BlobWidth: s.BlobWidth,
@@ -269,11 +282,195 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 AboveFloor: s.AboveFloor,
                 Skipped: s.Skipped,
                 Rotate180: s.Rotate180)).ToArray();
-            var dto = new BlobTemplateScoresJson(SchemaVersion: 1, Scores: dtos);
+            // mithril#1123 D3.a: schema v1→v2, BlobIndex→BlobOrdinal with all-blobs
+            // semantics (the same int identifies the same physical blob in 10c).
+            var dto = new BlobTemplateScoresJson(SchemaVersion: 2, Scores: dtos);
             return WriteJson(dir, "10b-blob-template-scores.json", dto,
                 CalibrationBundleJsonContext.Default.BlobTemplateScoresJson);
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "10b-blob-template-scores write failed"); return null; }
+    }
+
+    // mithril#1123: detector-pipeline observability dump (10c-blob-pipeline.json).
+    // Omitted when ALL four context lists are null OR empty — same convention as
+    // 10b. The four sections (deviation / rim masks / morph / blobs) are
+    // co-located so triage workflows open one file per attempt instead of four.
+    private string? TryWriteBlobPipelineJson(string dir, CalibrationAttemptContext ctx)
+    {
+        try
+        {
+            var devSnaps = ctx.DeviationSnapshots;
+            var rimSnaps = ctx.RimMaskSnapshots;
+            var morphSnaps = ctx.MorphSnapshots;
+            var blobClasses = ctx.BlobClassifications;
+
+            bool hasAnyData =
+                (devSnaps is { Count: > 0 }) ||
+                (rimSnaps is { Count: > 0 }) ||
+                (morphSnaps is { Count: > 0 }) ||
+                (blobClasses is { Count: > 0 });
+            if (!hasAnyData) return null;
+
+            var devDtos = (devSnaps ?? Array.Empty<DeviationSnapshot>())
+                .Select(d => new DeviationSectionJson(
+                    Rotate180: d.Rotate180,
+                    Width: d.Width, Height: d.Height, Win: d.Win,
+                    Threshold: d.Threshold, MeanNcc: d.MeanNcc,
+                    Min: d.Min, Max: d.Max, Mean: d.Mean,
+                    P50: d.P50, P95: d.P95, P99: d.P99,
+                    AboveThresholdCount: d.AboveThresholdCount))
+                .ToArray();
+
+            var rimDtos = (rimSnaps ?? Array.Empty<RimMaskSnapshot>())
+                .Select(r => new RimMaskSectionJson(
+                    Pipeline: r.Pipeline,
+                    Rotate180: r.Rotate180,
+                    Width: r.Width, Height: r.Height,
+                    Threshold: r.Threshold,
+                    RimPixelCount: r.RimPixelCount,
+                    FgInputCount: r.FgInputCount,
+                    FgSurvivorCount: r.FgSurvivorCount))
+                .ToArray();
+
+            var morphDtos = (morphSnaps ?? Array.Empty<MorphSnapshot>())
+                .Select(m => new MorphSectionJson(
+                    Rotate180: m.Rotate180,
+                    Width: m.Width, Height: m.Height,
+                    CloseRadius: m.CloseRadius,
+                    FgInputCount: m.FgInputCount,
+                    FgOutputCount: m.FgOutputCount))
+                .ToArray();
+
+            // Pixels payload is render-only — not serialised here.
+            var blobDtos = (blobClasses ?? Array.Empty<BlobClassification>())
+                .Select(b => new BlobJson(
+                    Rotate180: b.Rotate180,
+                    BlobOrdinal: b.BlobOrdinal,
+                    MinX: b.MinX, MinY: b.MinY,
+                    W: b.W, H: b.H, Area: b.Area,
+                    Cx: b.Cx, Cy: b.Cy,
+                    MeanDev: b.MeanDev, PeakDev: b.PeakDev,
+                    Solidity: b.Solidity, Aspect: b.Aspect,
+                    BlobClass: b.BlobClass))
+                .ToArray();
+
+            var dto = new BlobPipelineJson(
+                SchemaVersion: 1,
+                Deviation: devDtos,
+                RimMasks: rimDtos,
+                Morph: morphDtos,
+                Blobs: blobDtos);
+            return WriteJson(dir, "10c-blob-pipeline.json", dto,
+                CalibrationBundleJsonContext.Default.BlobPipelineJson);
+        }
+        catch (Exception ex) { _logger?.LogWarning(ex, "10c-blob-pipeline write failed"); return null; }
+    }
+
+    // mithril#1123: bool[w*h] → Gray8 PNG (true=255, false=0). Used for the
+    // 07b foreground, 07c rim, 07d morph masks. Mirrors the existing
+    // TryWriteGrayScreenshot in-line BitmapSource.Create pattern (no
+    // IAttemptBundleVisualizer extension needed for direct mask visualisation).
+    private string? TryWriteBoolMaskPng(string dir, string name, int w, int h, bool[] mask)
+    {
+        try
+        {
+            var bytes = new byte[w * h];
+            for (int i = 0; i < bytes.Length; i++) bytes[i] = mask[i] ? (byte)255 : (byte)0;
+            var src = BitmapSource.Create(w, h, 96, 96, PixelFormats.Gray8, null, bytes, w);
+            return WritePng(dir, name, src);
+        }
+        catch (Exception ex) { _logger?.LogWarning(ex, "{Name} write failed", name); return null; }
+    }
+
+    private string? TryWriteForegroundPng(string dir, CalibrationAttemptContext ctx, bool rotate180)
+    {
+        var snap = ctx.DeviationSnapshots?.FirstOrDefault(s => s.Rotate180 == rotate180);
+        if (snap is null) return null;
+        var name = rotate180 ? "07b-r180-foreground.png" : "07b-foreground.png";
+        return TryWriteBoolMaskPng(dir, name, snap.Width, snap.Height, snap.ForegroundBuffer);
+    }
+
+    private string? TryWriteRimMaskPng(
+        string dir, CalibrationAttemptContext ctx, string pipeline, bool rotate180)
+    {
+        var snap = ctx.RimMaskSnapshots?
+            .FirstOrDefault(s => s.Pipeline == pipeline && s.Rotate180 == rotate180);
+        if (snap is null) return null;
+        // Filename convention matches the spec §6.1 table.
+        string name = (pipeline, rotate180) switch
+        {
+            ("blob_detection", false) => "07c-rim-mask.png",
+            ("blob_detection", true) => "07c-r180-rim-mask.png",
+            ("synthesis_j", false) => "07c-synth-rim-mask.png",
+            ("synthesis_j", true) => "07c-r180-synth-rim-mask.png",
+            _ => $"07c-{pipeline}-{(rotate180 ? "r180-" : "")}rim-mask.png",
+        };
+        return TryWriteBoolMaskPng(dir, name, snap.Width, snap.Height, snap.RimMaskBuffer);
+    }
+
+    private string? TryWriteMorphedPng(string dir, CalibrationAttemptContext ctx, bool rotate180)
+    {
+        var snap = ctx.MorphSnapshots?.FirstOrDefault(s => s.Rotate180 == rotate180);
+        if (snap is null) return null;
+        var name = rotate180 ? "07d-r180-morphed.png" : "07d-morphed.png";
+        return TryWriteBoolMaskPng(dir, name, snap.Width, snap.Height, snap.FgAfterMorphBuffer);
+    }
+
+    // mithril#1123: per-pixel labelled PNG. Walks each BlobClassification's
+    // Pixels list (render-only payload, retained on the in-memory record but
+    // NOT serialised to 10c JSON) and paints the colour of BlobClass into a
+    // Bgra32 buffer. Background pixels stay black; the spatial layout of the
+    // pipeline outcome surfaces in one image (the 07e companion to 10c).
+    private string? TryWriteBlobClassificationPng(
+        string dir, CalibrationAttemptContext ctx, bool rotate180)
+    {
+        try
+        {
+            var classifications = ctx.BlobClassifications?
+                .Where(c => c.Rotate180 == rotate180)
+                .ToArray();
+            if (classifications is null || classifications.Length == 0) return null;
+
+            // Use the first record's dims as canvas size (all records from the
+            // same orientation come from the same Detect invocation, so dims
+            // are consistent — but we don't carry them on BlobClassification
+            // itself; pull from a co-orientation DeviationSnapshot if present).
+            var devSnap = ctx.DeviationSnapshots?.FirstOrDefault(d => d.Rotate180 == rotate180);
+            if (devSnap is null) return null;
+            int w = devSnap.Width, h = devSnap.Height;
+
+            var bgra = new byte[w * h * 4];  // default = black-fill (0,0,0,0)
+            foreach (var c in classifications)
+            {
+                // Colour map: Icon=green, Fog=blue-ish, Structure=red, Noise=dim-grey.
+                // Triager can spot the NPC-pip cluster region by colour at a glance.
+                var (b, g, r) = c.BlobClass switch
+                {
+                    "Icon"      => ((byte)0,   (byte)200, (byte)0),
+                    "Fog"       => ((byte)200, (byte)100, (byte)40),
+                    "Structure" => ((byte)0,   (byte)0,   (byte)200),
+                    "Noise"     => ((byte)80,  (byte)80,  (byte)80),
+                    _           => ((byte)0,   (byte)0,   (byte)0),
+                };
+                foreach (var pixIdx in c.Pixels)
+                {
+                    int ofs = pixIdx * 4;
+                    bgra[ofs]     = b;
+                    bgra[ofs + 1] = g;
+                    bgra[ofs + 2] = r;
+                    bgra[ofs + 3] = 255;
+                }
+            }
+            var src = BitmapSource.Create(w, h, 96, 96, PixelFormats.Bgra32, null, bgra, w * 4);
+            var name = rotate180 ? "07e-r180-blob-classification.png" : "07e-blob-classification.png";
+            return WritePng(dir, name, src);
+        }
+        catch (Exception ex)
+        {
+            var name = rotate180 ? "07e-r180-blob-classification" : "07e-blob-classification";
+            _logger?.LogWarning(ex, "{Name} write failed", name);
+            return null;
+        }
     }
 
     private void WriteAttemptJson(string dir, CalibrationAttemptContext ctx, AttemptFilesJson files)

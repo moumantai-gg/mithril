@@ -50,12 +50,25 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
         var texF = LocalNccDeviation.ToGrayFloat(request.BaseTexture);
 
         // Window 11 mirrors the gate-study probe default.
-        var dev = LocalNccDeviation.DeviationMap(shotF, texF, w, h, win: 11, out _, addedOnly: true);
+        // mithril#1123: capture meanNcc — DeviationSnapshot.MeanNcc surfaces it
+        // alongside the per-pixel deviation stats.
+        var dev = LocalNccDeviation.DeviationMap(shotF, texF, w, h, win: 11, out var meanNcc, addedOnly: true);
 
         // The deviation-only overload can't run ColourFlood (needs the BGRA shot);
         // fall back to DeviationFlood if asked for ColourFlood here.
         var rim = request.RimMask == RimMaskMode.ColourFlood ? RimMaskMode.DeviationFlood : request.RimMask;
-        var blobs = DeviationBlobDetector.DetectIconBlobs(dev, w, h, request.LowNcc, rim, request.BlobOptions, closeRadius: 1);
+        // mithril#1123: thread the per-stage diagnostic hooks (and meanNcc) into
+        // the deepest orchestrator layer — DetectIconBlobs owns the dev[], fg[],
+        // rim, morph, classify intermediate buffers and is where stage records
+        // are emitted. null hooks → zero producer cost. The logger is passed
+        // through too so the static helper's LogTrace mirror fires under the
+        // same "Mithril.MapCalibration.Detection" category as the per-(blob,
+        // template) lines from EmitDiagnostic.
+        var blobs = DeviationBlobDetector.DetectIconBlobs(
+            dev, w, h, request.LowNcc, rim, request.BlobOptions, closeRadius: 1,
+            hooks: request.Diagnostics,
+            meanNcc: meanNcc,
+            logger: _logger);
 
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
 
@@ -72,8 +85,13 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
         // best NCC peak (minScore = -1) for the diagnostic so a 0.78-just-below-floor
         // blob is distinguishable from a 0.30-way-below-floor blob — see
         // BlobTemplateScore. The detection-decision NCC stays gated by TypeFloor.
+        //
+        // mithril#1123 D3.a: BlobTemplateScore.BlobOrdinal carries the same int that
+        // BlobClassification.BlobOrdinal does (across all comps, not just the
+        // Icon-class subset this method returns) — set on BlobFeat by
+        // ConnectedComponents.Label and read here. Cross-file ordinal-space coherence
+        // is what lets 10b ↔ 10c be joined by ordinal without a bbox guess.
         var sink = request.BlobScoreSink;
-        int blobIndex = 0;
 
         foreach (var blob in blobs)
         {
@@ -93,7 +111,7 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
             {
                 if (t.Gray.Width > cw || t.Gray.Height > ch)
                 {
-                    EmitDiagnostic(sink, blob, blobIndex, t,
+                    EmitDiagnostic(sink, blob, blob.Ordinal, t,
                         score: double.NaN, typeFloor: request.TypeFloor,
                         aboveFloor: false, skipped: true);
                     continue;
@@ -106,7 +124,7 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
                 var hitScore = diagHit?.Score ?? double.NaN;
                 var clearedFloor = diagHit is not null && hitScore >= request.TypeFloor;
 
-                EmitDiagnostic(sink, blob, blobIndex, t,
+                EmitDiagnostic(sink, blob, blob.Ordinal, t,
                     score: hitScore, typeFloor: request.TypeFloor,
                     aboveFloor: clearedFloor, skipped: false);
 
@@ -119,7 +137,6 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
                 }
             }
 
-            blobIndex++;
             if (bestIcon is null) continue;
 
             var (cx, cy) = bestDet.Centre(bestIcon.Gray.Width, bestIcon.Gray.Height);
@@ -145,28 +162,28 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
     // detector itself has no knowledge of which orientation pass it's running in.
     private void EmitDiagnostic(
         Action<BlobTemplateScore>? sink,
-        BlobFeat blob, int blobIndex, IconTemplate template,
+        BlobFeat blob, int blobOrdinal, IconTemplate template,
         double score, double typeFloor, bool aboveFloor, bool skipped)
     {
         if (skipped)
         {
             _logger?.LogTrace(
-                "Blob #{Idx} ({Mx},{My},{W},{H}) area={A}: skipped template {T} ({Tt}) — too large ({Tw}x{Th}).",
-                blobIndex, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
+                "Blob #{Ord} ({Mx},{My},{W},{H}) area={A}: skipped template {T} ({Tt}) — too large ({Tw}x{Th}).",
+                blobOrdinal, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
                 template.Name, template.LandmarkType, template.Gray.Width, template.Gray.Height);
         }
         else
         {
             _logger?.LogTrace(
-                "Blob #{Idx} ({Mx},{My},{W},{H}) area={A}: template {T} ({Tt}) score={S:0.000} floor={F:0.00} {Outcome}.",
-                blobIndex, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
+                "Blob #{Ord} ({Mx},{My},{W},{H}) area={A}: template {T} ({Tt}) score={S:0.000} floor={F:0.00} {Outcome}.",
+                blobOrdinal, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
                 template.Name, template.LandmarkType, score, typeFloor,
                 aboveFloor ? "above" : "below");
         }
 
         if (sink is null) return;
         sink(new BlobTemplateScore(
-            BlobIndex: blobIndex,
+            BlobOrdinal: blobOrdinal,
             BlobMinX: blob.MinX,
             BlobMinY: blob.MinY,
             BlobWidth: blob.W,

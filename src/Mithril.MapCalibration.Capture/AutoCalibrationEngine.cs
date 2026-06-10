@@ -666,6 +666,23 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // (blob, template, orientation). null sink → zero producer cost; the
         // detector skips both the LogTrace path and the per-record allocation.
         var blobScores = new List<BlobTemplateScore>();
+
+        // mithril#1123: collect per-stage detector-pipeline observations for the
+        // bundle. Mirrors the #1121 wiring; each sub-sink is independently
+        // nullable on the DetectionDiagnosticHooks record, but in production we
+        // wire all four so the 10c JSON + the PNGs are populated. The SolveEngine
+        // wraps these per orientation pass so each record carries the right
+        // rotate180 flag.
+        var deviationSnaps = new List<DeviationSnapshot>();
+        var rimSnaps = new List<RimMaskSnapshot>();
+        var morphSnaps = new List<MorphSnapshot>();
+        var blobClasses = new List<BlobClassification>();
+        var hooks = new DetectionDiagnosticHooks(
+            OnDeviation: deviationSnaps.Add,
+            OnRimMask: rimSnaps.Add,
+            OnMorph: morphSnaps.Add,
+            OnBlobClassified: blobClasses.Add);
+
         var request = new DetectionRequest(
             Screenshot: crop,
             BaseTexture: alignedTexture,
@@ -678,6 +695,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         {
             RenderSizePx = RenderSizePx,
             BlobScoreSink = blobScores.Add,
+            Diagnostics = hooks,
         };
 
         _logger?.LogInformation(
@@ -707,6 +725,13 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // bundle sink. Always assigned (even empty) so the dump distinguishes "no
         // blobs detected" from "diagnostic wiring missing."
         attempt.BlobTemplateScores = blobScores;
+        // mithril#1123: same convention for the detector-pipeline stage records —
+        // always assigned (even when empty) so the bundle sink can distinguish
+        // "diagnostic wiring missing" from "diagnostic ran, found nothing."
+        attempt.DeviationSnapshots = deviationSnaps;
+        attempt.RimMaskSnapshots = rimSnaps;
+        attempt.MorphSnapshots = morphSnaps;
+        attempt.BlobClassifications = blobClasses;
 
         if (result.Calibration is null)
         {

@@ -104,10 +104,18 @@ public sealed class SynthesisRerankFieldEquivalenceTests
         var templates = new IconTemplateSet(new[] { nativeTemplate });
 
         // Path A — production path under test.
-        var prodFields = MapCalibrationSolveEngine.BuildLikelihoodFieldsFromDeviation(
+        // mithril#1123: BuildLikelihoodFieldsFromDeviation is now an instance method
+        // (the synthesis-J rim-mask sink reads _logger). Construct a no-op engine
+        // — the helper doesn't touch _detector / _gate / _options for this method.
+        var engine = new MapCalibrationSolveEngine(
+            detector: new DeviationBlobCalibrationDetector(),
+            gate: new CalibrationConfidenceGate());
+        var prodFields = engine.BuildLikelihoodFieldsFromDeviation(
             shot, tex, templates,
             typeFloor: 0.0,
-            renderSizePx: RenderSizePx);
+            renderSizePx: RenderSizePx,
+            rotate180: false,
+            hooks: null);
         prodFields.Should().ContainKey("TeleportationPlatform");
         var prodField = prodFields["TeleportationPlatform"];
 

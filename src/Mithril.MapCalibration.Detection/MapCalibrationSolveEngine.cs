@@ -55,12 +55,43 @@ public sealed class MapCalibrationSolveEngine
             // flag is set per pass. The detector emits with Rotate180=false
             // (it has no knowledge of which orientation pass it's in); the
             // wrapper rewrites that field before forwarding to the original sink.
+            //
+            // mithril#1123: same shape, scaled to the four DetectionDiagnosticHooks
+            // sinks. Each sub-sink is independently nullable so the wrapper builds
+            // a per-callback null check (cost = one closure per non-null sink).
+            // Local-copy hoists (devSink / rimSink / morphSink / blobSink) keep the
+            // null-flow analyzer happy and prevent the closures from capturing the
+            // mutable `request.Diagnostics` field.
             var orientationFlag = rotate180;
             var callerSink = request.BlobScoreSink;
             var wrappedSink = callerSink is null
                 ? null
                 : (Action<BlobTemplateScore>)(score => callerSink(score with { Rotate180 = orientationFlag }));
-            var req = request with { BaseTexture = texture, BlobScoreSink = wrappedSink };
+
+            var callerHooks = request.Diagnostics;
+            DetectionDiagnosticHooks? wrappedHooks = null;
+            if (callerHooks is not null)
+            {
+                var devSink = callerHooks.OnDeviation;
+                var rimSink = callerHooks.OnRimMask;
+                var morphSink = callerHooks.OnMorph;
+                var blobSink = callerHooks.OnBlobClassified;
+                wrappedHooks = new DetectionDiagnosticHooks(
+                    OnDeviation: devSink is null ? null
+                        : s => devSink(s with { Rotate180 = orientationFlag }),
+                    OnRimMask: rimSink is null ? null
+                        : s => rimSink(s with { Rotate180 = orientationFlag }),
+                    OnMorph: morphSink is null ? null
+                        : s => morphSink(s with { Rotate180 = orientationFlag }),
+                    OnBlobClassified: blobSink is null ? null
+                        : c => blobSink(c with { Rotate180 = orientationFlag }));
+            }
+            var req = request with
+            {
+                BaseTexture = texture,
+                BlobScoreSink = wrappedSink,
+                Diagnostics = wrappedHooks,
+            };
 
             var detections = _detector.Detect(req);
             LogDetectSummary(rotate180, detections, references);
@@ -100,9 +131,17 @@ public sealed class MapCalibrationSolveEngine
             // === Synthesis track (skipped when mode == Off) ===
             if (mode == SynthesisRerankMode.Off) continue;
 
+            // mithril#1123: pass rotate180 + diagnostic hooks so the synthesis-J
+            // rim-mask sink fires per orientation (matches the blob-detection
+            // sink cadence). req.Diagnostics already carries the orientation-
+            // rewriting wrap from above, but the synth-J path emits with the
+            // explicit rotate180 flag set, so the wrap's `with { Rotate180 = ... }`
+            // overwrite is a no-op of the same value — semantically identical.
             var fields = BuildLikelihoodFieldsFromDeviation(
                 req.Screenshot, req.BaseTexture, req.Templates,
-                req.TypeFloor, req.RenderSizePx);
+                req.TypeFloor, req.RenderSizePx,
+                rotate180,
+                req.Diagnostics);
             var winner = ScoreOrientationCandidates(rotate180, topKList, fields, references, req.MapRect);
             if (winner is null) continue;
             if (bestSynthesis is null || winner.J > bestSynthesis.J)
@@ -446,25 +485,66 @@ public sealed class MapCalibrationSolveEngine
     /// (mithril#992), and scoring each unique landmark-type template against the
     /// masked deviation. Cached by orientation: built once per orientation, reused
     /// across all top-K candidates the re-rank scores.
+    ///
+    /// <para><b>mithril#1123:</b> non-static (was <c>internal static</c>) so the
+    /// rim-mask emission can read <c>_logger</c>. The rim mask is computed ONCE
+    /// per orientation (lifted out of the per-template loop, where it used to be
+    /// rebuilt with identical inputs N times) and passed into the new 3-arg
+    /// <see cref="IconLikelihoodField.LoadDeviationAsField(GrayImage, IconTemplate, bool[])"/>
+    /// overload. When <paramref name="hooks"/>.OnRimMask is wired, one
+    /// <see cref="RimMaskSnapshot"/> per orientation fires with
+    /// <c>pipeline = "synthesis_j"</c>; null hooks → zero retention.</para>
     /// </summary>
-    internal static IReadOnlyDictionary<string, double[,]> BuildLikelihoodFieldsFromDeviation(
+    internal IReadOnlyDictionary<string, double[,]> BuildLikelihoodFieldsFromDeviation(
         GrayImage screenshot,
         GrayImage baseTexture,
         IconTemplateSet templates,
         double typeFloor,
-        int? renderSizePx)
+        int? renderSizePx,
+        bool rotate180,
+        DetectionDiagnosticHooks? hooks)
     {
         if (screenshot.Width != baseTexture.Width || screenshot.Height != baseTexture.Height)
             throw new ArgumentException("screenshot and base texture must have matching dimensions");
 
         int w = screenshot.Width, h = screenshot.Height;
-        var deviation = new byte[w * h];
+        int n = w * h;
+        var deviation = new byte[n];
         for (int i = 0; i < deviation.Length; i++)
         {
             int d = screenshot.Pixels[i] - baseTexture.Pixels[i];
             deviation[i] = d > 0 ? (byte)Math.Min(255, d) : (byte)0;
         }
         var devImage = new GrayImage(w, h, deviation);
+
+        // mithril#1123: compute the rim mask once for the orientation — pre-#1123
+        // this happened once per template inside LoadDeviationAsField's 4-arg path,
+        // duplicating identical work N times. The 3-arg overload now consumes the
+        // pre-built mask.
+        var devThr = IconLikelihoodField.DefaultDevThr;
+        var devAsFloat = new float[n];
+        for (int i = 0; i < n; i++) devAsFloat[i] = devImage.Pixels[i] / 255f;
+        var rim = DeviationFloodRimMask.Build(devAsFloat, w, h, devThr);
+
+        if (hooks?.OnRimMask is not null)
+        {
+            int rimCount = 0;
+            for (int i = 0; i < n; i++) if (rim[i]) rimCount++;
+            hooks.OnRimMask(new RimMaskSnapshot(
+                Pipeline: "synthesis_j",
+                Rotate180: rotate180,
+                Width: w, Height: h,
+                Threshold: devThr,
+                RimPixelCount: rimCount,
+                // Synthesis-J applies the rim mask to a likelihood field, not an
+                // fg mask — there's no fg-pre/fg-post concept here. Sentinel -1
+                // tells the bundle dump + downstream triage to skip those fields.
+                FgInputCount: -1, FgSurvivorCount: -1,
+                RimMaskBuffer: (bool[])rim.Clone()));
+            _logger?.LogTrace(
+                "RimMask (rotate180={Rotate180}, pipeline=synthesis_j): rim={Rim} of {N} px (threshold={T:0.000}).",
+                rotate180, rimCount, n, devThr);
+        }
 
         // PG ships icon sprites at native resolution (~256 px) but renders map icons
         // at a single small on-screen size (~16 px). Single-scale NCC only correlates
@@ -490,10 +570,9 @@ public sealed class MapCalibrationSolveEngine
         var fields = new Dictionary<string, double[,]>(perType.Count, StringComparer.Ordinal);
         foreach (var (type, template) in perType)
         {
-            fields[type] = IconLikelihoodField.LoadDeviationAsField(
-                devImage, template,
-                applyRimMask: true,
-                devThr: IconLikelihoodField.DefaultDevThr);
+            // mithril#1123: consume the orchestrator-computed rim mask — Task 4's
+            // 3-arg overload — instead of building one per template.
+            fields[type] = IconLikelihoodField.LoadDeviationAsField(devImage, template, rim);
         }
         return fields;
     }
