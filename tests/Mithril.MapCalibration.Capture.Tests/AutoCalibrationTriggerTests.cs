@@ -327,6 +327,32 @@ public sealed class AutoCalibrationTriggerTests
             "MapAssetChanged subscription must be established once replay completes");
 
         await trigger.StopAsync(CancellationToken.None);
+        bus.SubscriptionCount.Should().Be(0,
+            "StopAsync must dispose every subscription handle the trigger created");
+    }
+
+    [Fact]
+    public async Task StopAsync_synchronises_deferred_subscribe_after_Complete()
+    {
+        // mithril#1130 review: closes the TOCTOU where ReplayComplete resolves
+        // and the continuation passes the cancellation check, then StopAsync
+        // runs to completion BEFORE SubscribeNow has actually called
+        // bus.Subscribe. Without the _subscribeGate + StopAsync.await of the
+        // deferred task, two handlers would land on the bus after StopAsync
+        // returned. This test exercises the Complete-then-immediate-Stop ordering
+        // and asserts the contract: after StopAsync returns, no handlers are live.
+        var bus = new FakeDomainEventSubscriber();
+        var replay = new FakeReplayProgress(completed: false);
+        var engine = new SpyAutoCalibrationEngine();
+        var trigger = Build(engine, bbox: new CaptureRect(0, 0, 64, 64), focused: true,
+            bus: bus, replay: replay);
+
+        await trigger.StartAsync(CancellationToken.None);
+        replay.Complete();
+        await trigger.StopAsync(CancellationToken.None);
+
+        bus.SubscriptionCount.Should().Be(0,
+            "StopAsync must await the deferred subscribe task and dispose any handle the gap-window subscribe created");
     }
 
     [Fact]
