@@ -535,8 +535,12 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         // behaviour.
         var isFallback = metrics.Provenance == LocateProvenance.SobelPaddedPyramid;
         var padPx = isFallback ? (_options?.FallbackPadPx ?? 100) : (int?)null;
+        // mithril#1070 schema v3: BlurAppliedSigma is the σ stamped at the
+        // refiner's final matchTemplate call. Plumbed only on the fallback path
+        // — the ORB primary doesn't blur, and surfacing a zero on v2 readers
+        // would be a misleading "blur ran but with σ=0" semantic.
         return new LocatorBestJson(
-            SchemaVersion: 2,
+            SchemaVersion: 3,
             OriginX: rect.OriginX,
             OriginY: rect.OriginY,
             Width: rect.Width,
@@ -555,7 +559,8 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             GateRejectReason: ctx.Result?.RejectReason ?? ctx.ExceptionInfo,
             Algorithm: isFallback ? "sobel-padded-pyramid" : "orb-lowe",
             FallbackNcc: isFallback ? metrics.Confidence : null,
-            PadPx: padPx);
+            PadPx: padPx,
+            BlurAppliedSigma: isFallback ? metrics.BlurAppliedSigma : null);
     }
 
     // #1117: field-by-field translation from the engine-layer SynthesisDiagnostics

@@ -640,11 +640,17 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         var attempt = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
         attempt.Should().NotBeNull();
         attempt!.LocatorBest.Should().NotBeNull();
-        attempt.LocatorBest!.SchemaVersion.Should().Be(2);
+        attempt.LocatorBest!.SchemaVersion.Should().Be(3,
+            "mithril#1070 bumped LocatorBestJson to v3 (additive BlurAppliedSigma field)");
         attempt.LocatorBest.Algorithm.Should().Be("sobel-padded-pyramid");
         attempt.LocatorBest.FallbackNcc.Should().BeApproximately(0.680, 1e-9);
         attempt.LocatorBest.PadPx.Should().Be(150,
             "the sink reads FallbackPadPx live from the injected options, not the option default");
+        // mithril#1070: the metrics this test sets up have BlurAppliedSigma
+        // defaulted-null (the constructor argument was omitted), so the bundle
+        // round-trip should preserve null. Tests that explicitly set the σ
+        // live in LocatorBestJsonV3Tests + HogansBlurAwareCorpusTests.
+        attempt.LocatorBest.BlurAppliedSigma.Should().BeNull();
     }
 
     /// <summary>
