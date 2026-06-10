@@ -60,11 +60,15 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
         // mithril#1123: thread the per-stage diagnostic hooks (and meanNcc) into
         // the deepest orchestrator layer — DetectIconBlobs owns the dev[], fg[],
         // rim, morph, classify intermediate buffers and is where stage records
-        // are emitted. null hooks → zero producer cost.
+        // are emitted. null hooks → zero producer cost. The logger is passed
+        // through too so the static helper's LogTrace mirror fires under the
+        // same "Mithril.MapCalibration.Detection" category as the per-(blob,
+        // template) lines from EmitDiagnostic.
         var blobs = DeviationBlobDetector.DetectIconBlobs(
             dev, w, h, request.LowNcc, rim, request.BlobOptions, closeRadius: 1,
             hooks: request.Diagnostics,
-            meanNcc: meanNcc);
+            meanNcc: meanNcc,
+            logger: _logger);
 
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.MapCalibration.Detection;
 
@@ -47,7 +48,8 @@ public static class DeviationBlobDetector
     public static IReadOnlyList<BlobFeat> DetectIconBlobs(
         float[] dev, int w, int h, double lowNcc, RimMaskMode rim, BlobOptions opts, int closeRadius,
         DetectionDiagnosticHooks? hooks = null,
-        double meanNcc = double.NaN)
+        double meanNcc = double.NaN,
+        ILogger? logger = null)
     {
         if (rim == RimMaskMode.ColourFlood)
         {
@@ -75,7 +77,9 @@ public static class DeviationBlobDetector
         }
 
         // Emit DeviationSnapshot — fires after the threshold step, with the
-        // dev float[] still in scope for the stats sweep.
+        // dev float[] still in scope for the stats sweep. The LogTrace mirror
+        // matches the sink cadence (Task 3) so a triager can watch the pipeline
+        // in real-time without waiting for the bundle to write.
         if (hooks?.OnDeviation is not null)
         {
             var (min, max, mean, p50, p95, p99) = ComputeDeviationStats(dev);
@@ -87,6 +91,9 @@ public static class DeviationBlobDetector
                 P50: p50, P95: p95, P99: p99,
                 AboveThresholdCount: aboveThresholdCount,
                 ForegroundBuffer: (bool[])fgInitial.Clone()));
+            logger?.LogTrace(
+                "Deviation (rotate180=False): mean ncc={MeanNcc:0.000} above-threshold={AboveCount} of {Total} px (threshold={Threshold:0.000}, p50={P50:0.000} p95={P95:0.000} p99={P99:0.000}).",
+                meanNcc, aboveThresholdCount, n, devThr, p50, p95, p99);
         }
 
         // fg is the working buffer that subsequent stages mutate.
@@ -117,6 +124,9 @@ public static class DeviationBlobDetector
                     FgInputCount: aboveThresholdCount,
                     FgSurvivorCount: survivorCount,
                     RimMaskBuffer: (bool[])rimMask.Clone()));
+                logger?.LogTrace(
+                    "RimMask (rotate180=False, pipeline=blob_detection): rim={Rim} of {Total} px, fg pre={Pre} post={Post}.",
+                    rimCount, n, aboveThresholdCount, survivorCount);
             }
         }
 
@@ -141,6 +151,9 @@ public static class DeviationBlobDetector
                     FgInputCount: fgInputCount,
                     FgOutputCount: fgOutputCount,
                     FgAfterMorphBuffer: (bool[])fg.Clone()));
+                logger?.LogTrace(
+                    "Morph (rotate180=False): closeRadius={R} fg pre={Pre} post={Post}.",
+                    closeRadius, fgInputCount, fgOutputCount);
             }
         }
 
@@ -168,6 +181,10 @@ public static class DeviationBlobDetector
                     // Pixels list is passed through — render-only payload (07e PNG
                     // colourmap); not serialised to 10c JSON.
                     Pixels: f.Pixels.ToArray()));
+                logger?.LogTrace(
+                    "Blob #{Ord} ({Mx},{My},{W},{H}) area={A} meanDev={MeanDev:0.000} peakDev={PeakDev:0.000} solidity={Sol:0.00} aspect={Asp:0.00} -> {Class}.",
+                    f.Ordinal, f.MinX, f.MinY, f.W, f.H, f.Area,
+                    f.MeanDev, f.PeakDev, f.Solidity, f.Aspect, cls);
             }
 
             if (cls == BlobClass.Icon) icons.Add(f);
