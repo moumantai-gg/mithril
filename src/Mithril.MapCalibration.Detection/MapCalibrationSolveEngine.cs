@@ -55,12 +55,43 @@ public sealed class MapCalibrationSolveEngine
             // flag is set per pass. The detector emits with Rotate180=false
             // (it has no knowledge of which orientation pass it's in); the
             // wrapper rewrites that field before forwarding to the original sink.
+            //
+            // mithril#1123: same shape, scaled to the four DetectionDiagnosticHooks
+            // sinks. Each sub-sink is independently nullable so the wrapper builds
+            // a per-callback null check (cost = one closure per non-null sink).
+            // Local-copy hoists (devSink / rimSink / morphSink / blobSink) keep the
+            // null-flow analyzer happy and prevent the closures from capturing the
+            // mutable `request.Diagnostics` field.
             var orientationFlag = rotate180;
             var callerSink = request.BlobScoreSink;
             var wrappedSink = callerSink is null
                 ? null
                 : (Action<BlobTemplateScore>)(score => callerSink(score with { Rotate180 = orientationFlag }));
-            var req = request with { BaseTexture = texture, BlobScoreSink = wrappedSink };
+
+            var callerHooks = request.Diagnostics;
+            DetectionDiagnosticHooks? wrappedHooks = null;
+            if (callerHooks is not null)
+            {
+                var devSink = callerHooks.OnDeviation;
+                var rimSink = callerHooks.OnRimMask;
+                var morphSink = callerHooks.OnMorph;
+                var blobSink = callerHooks.OnBlobClassified;
+                wrappedHooks = new DetectionDiagnosticHooks(
+                    OnDeviation: devSink is null ? null
+                        : s => devSink(s with { Rotate180 = orientationFlag }),
+                    OnRimMask: rimSink is null ? null
+                        : s => rimSink(s with { Rotate180 = orientationFlag }),
+                    OnMorph: morphSink is null ? null
+                        : s => morphSink(s with { Rotate180 = orientationFlag }),
+                    OnBlobClassified: blobSink is null ? null
+                        : c => blobSink(c with { Rotate180 = orientationFlag }));
+            }
+            var req = request with
+            {
+                BaseTexture = texture,
+                BlobScoreSink = wrappedSink,
+                Diagnostics = wrappedHooks,
+            };
 
             var detections = _detector.Detect(req);
             LogDetectSummary(rotate180, detections, references);

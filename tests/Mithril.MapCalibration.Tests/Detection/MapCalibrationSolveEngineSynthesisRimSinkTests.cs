@@ -119,4 +119,45 @@ public sealed class MapCalibrationSolveEngineSynthesisRimSinkTests
 
         fields.Should().NotBeEmpty();  // synthesis still ran; no exception thrown
     }
+
+    /// <summary>
+    /// Task 6: Solve()'s orientation loop wraps the caller's hooks so each
+    /// orientation pass tags its records with the right Rotate180 flag. The
+    /// detector emits rotate180=false on every record; the wrap rewrites.
+    /// Drives via Solve so the wrap + the detector + the synth-J path all fire.
+    /// </summary>
+    [Fact]
+    public void Solve_wraps_diagnostic_hooks_with_orientation_flag()
+    {
+        var (shot, tex) = BuildPair();
+        var templates = SyntheticMap.BuildTemplates(SyntheticMap.DefaultIcons);
+
+        var deviationSnaps = new List<DeviationSnapshot>();
+        var hooks = new DetectionDiagnosticHooks(
+            OnDeviation: deviationSnaps.Add,
+            OnRimMask: null,
+            OnMorph: null,
+            OnBlobClassified: null);
+
+        var rect = new MapRect(0, 0, W, H, W, H);
+        var opts = new BlobOptions(MinArea: 8, MaxIconArea: 1500,
+            MinSolidity: 0.25, MaxAspect: 3.5, MinPeak: 0.5);
+        var request = new DetectionRequest(shot, tex, rect, templates,
+            RimMaskMode.DeviationFlood, LowNcc: 0.5, TypeFloor: 0.45, BlobOptions: opts)
+        {
+            Diagnostics = hooks,
+        };
+
+        var engine = new MapCalibrationSolveEngine(
+            detector: new DeviationBlobCalibrationDetector(),
+            gate: new CalibrationConfidenceGate());
+
+        engine.Solve(request, references: Array.Empty<LandmarkReference>());
+
+        // Two orientation passes → two DeviationSnapshot records (one per pass),
+        // each tagged with the correct rotate180 flag.
+        deviationSnaps.Should().HaveCount(2);
+        deviationSnaps.Should().Contain(s => s.Rotate180 == false);
+        deviationSnaps.Should().Contain(s => s.Rotate180 == true);
+    }
 }
