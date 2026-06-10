@@ -239,11 +239,12 @@ public sealed class DeviationBlobCalibrationDetectorTests
 
         rimSnaps.Should().HaveCount(1);
         var rim = rimSnaps[0];
-        rim.Pipeline.Should().Be("blob_detection");
+        rim.Pipeline.Should().Be(RimMaskPipeline.BlobDetection);
         rim.RimMaskBuffer.Length.Should().Be(TexW * TexH);
-        // Input/survivor stay populated on the blob_detection path (synthesis_j uses -1 sentinels).
+        // mithril#1125: input/survivor stay populated (non-null) on the blob-detection
+        // path; synthesis-J supplies null instead.
         rim.FgInputCount.Should().Be(devSnaps[0].AboveThresholdCount);
-        rim.FgSurvivorCount.Should().BeLessThanOrEqualTo(rim.FgInputCount);
+        rim.FgSurvivorCount!.Value.Should().BeLessThanOrEqualTo(rim.FgInputCount!.Value);
         rim.FgSurvivorCount.Should().Be(rim.FgInputCount - rim.RimPixelCount);
     }
 
@@ -370,7 +371,7 @@ public sealed class DeviationBlobCalibrationDetectorTests
         detector.Detect(request);
 
         var iconOrdinals = blobClasses
-            .Where(c => c.BlobClass == "Icon")
+            .Where(c => c.BlobClass == BlobClass.Icon)
             .Select(c => c.BlobOrdinal)
             .ToHashSet();
         var scoreOrdinals = blobScores.Select(s => s.BlobOrdinal).ToHashSet();
@@ -379,7 +380,7 @@ public sealed class DeviationBlobCalibrationDetectorTests
             "at least one synthetic icon should produce a scored blob");
         scoreOrdinals.Should().BeSubsetOf(iconOrdinals,
             "every BlobTemplateScore.BlobOrdinal must correspond to a "
-            + "BlobClassification record with BlobClass == \"Icon\"");
+            + "BlobClassification record with BlobClass == Icon");
     }
 
     [Fact]

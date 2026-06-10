@@ -60,11 +60,12 @@ public sealed class MapCalibrationSolveEngineSynthesisRimSinkTests
 
         rimSnaps.Should().HaveCount(1, "rim mask is computed once per orientation; this call drives one");
         var snap = rimSnaps[0];
-        snap.Pipeline.Should().Be("synthesis_j");
+        snap.Pipeline.Should().Be(RimMaskPipeline.SynthesisJ);
         snap.RimMaskBuffer.Length.Should().Be(W * H);
-        // Synthesis-J has no fg-pre/fg-post concept — sentinel -1.
-        snap.FgInputCount.Should().Be(-1);
-        snap.FgSurvivorCount.Should().Be(-1);
+        // mithril#1125: synthesis-J has no fg-pre/fg-post concept — null in memory
+        // (the bundle DTO projects to the -1 wire sentinel for backwards-compat).
+        snap.FgInputCount.Should().BeNull();
+        snap.FgSurvivorCount.Should().BeNull();
         snap.Rotate180.Should().BeFalse();
     }
 

@@ -116,24 +116,44 @@ public sealed record DeviationSnapshot(
     bool[] ForegroundBuffer);
 
 /// <summary>
+/// Identifies which caller of <c>DeviationFloodRimMask.Build</c> emitted a
+/// <see cref="RimMaskSnapshot"/>. Closed two-value domain; promoting from
+/// string to enum (mithril#1125) closes the silent-typo gap at the producer
+/// site without changing the wire format — the
+/// <c>FilesystemCalibrationAttemptBundleSink</c> projects to the lowercase /
+/// snake_case strings (<c>"blob_detection"</c>, <c>"synthesis_j"</c>) when
+/// serialising to <c>10c-blob-pipeline.json</c>.
+/// </summary>
+public enum RimMaskPipeline
+{
+    /// <summary>The detector pipeline (<c>DeviationBlobDetector.DetectIconBlobs</c>).</summary>
+    BlobDetection,
+
+    /// <summary>The synthesis-J L_t builder (<c>MapCalibrationSolveEngine.BuildLikelihoodFieldsFromDeviation</c>).</summary>
+    SynthesisJ,
+}
+
+/// <summary>
 /// One observation per (orientation, pipeline) pair (mithril#1123). Pipeline
 /// discriminates the two callers of <c>DeviationFloodRimMask.Build</c>:
-/// <c>"blob_detection"</c> (from <c>DeviationBlobDetector.DetectIconBlobs</c>)
-/// and <c>"synthesis_j"</c> (from
+/// <see cref="RimMaskPipeline.BlobDetection"/> (from <c>DeviationBlobDetector.DetectIconBlobs</c>)
+/// and <see cref="RimMaskPipeline.SynthesisJ"/> (from
 /// <c>MapCalibrationSolveEngine.BuildLikelihoodFieldsFromDeviation</c>).
 /// <see cref="FgInputCount"/> / <see cref="FgSurvivorCount"/> are populated on
-/// the blob_detection path; synthesis_j supplies <c>-1</c> sentinels (that
-/// pipeline applies the rim mask to a likelihood field, not an fg mask).
+/// the blob-detection path; synthesis-J supplies <c>null</c> (mithril#1125 —
+/// the in-memory record uses nullable to express "absent" semantically; the
+/// JSON wire format still emits <c>-1</c> on those fields, projected at the
+/// DTO boundary).
 /// </summary>
 public sealed record RimMaskSnapshot(
-    string Pipeline,
+    RimMaskPipeline Pipeline,
     bool Rotate180,
     int Width,
     int Height,
     double Threshold,
     int RimPixelCount,
-    int FgInputCount,
-    int FgSurvivorCount,
+    int? FgInputCount,
+    int? FgSurvivorCount,
     bool[] RimMaskBuffer);
 
 /// <summary>
@@ -176,7 +196,7 @@ public sealed record BlobClassification(
     double PeakDev,
     double Solidity,
     double Aspect,
-    string BlobClass,
+    BlobClass BlobClass,
     IReadOnlyList<int> Pixels);
 
 /// <summary>

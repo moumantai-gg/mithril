@@ -79,10 +79,10 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 BlobPipeline: TryWriteBlobPipelineJson(subdir, context),
                 Foreground: TryWriteForegroundPng(subdir, context, rotate180: false),
                 ForegroundR180: TryWriteForegroundPng(subdir, context, rotate180: true),
-                RimMask: TryWriteRimMaskPng(subdir, context, pipeline: "blob_detection", rotate180: false),
-                RimMaskR180: TryWriteRimMaskPng(subdir, context, pipeline: "blob_detection", rotate180: true),
-                SynthRimMask: TryWriteRimMaskPng(subdir, context, pipeline: "synthesis_j", rotate180: false),
-                SynthRimMaskR180: TryWriteRimMaskPng(subdir, context, pipeline: "synthesis_j", rotate180: true),
+                RimMask: TryWriteRimMaskPng(subdir, context, pipeline: RimMaskPipeline.BlobDetection, rotate180: false),
+                RimMaskR180: TryWriteRimMaskPng(subdir, context, pipeline: RimMaskPipeline.BlobDetection, rotate180: true),
+                SynthRimMask: TryWriteRimMaskPng(subdir, context, pipeline: RimMaskPipeline.SynthesisJ, rotate180: false),
+                SynthRimMaskR180: TryWriteRimMaskPng(subdir, context, pipeline: RimMaskPipeline.SynthesisJ, rotate180: true),
                 Morphed: TryWriteMorphedPng(subdir, context, rotate180: false),
                 MorphedR180: TryWriteMorphedPng(subdir, context, rotate180: true),
                 BlobClassification: TryWriteBlobClassificationPng(subdir, context, rotate180: false),
@@ -321,15 +321,19 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                     AboveThresholdCount: d.AboveThresholdCount))
                 .ToArray();
 
+            // mithril#1125: the in-memory record carries the RimMaskPipeline enum
+            // and nullable Fg counts. The DTO is the wire format and preserves
+            // the lowercase / snake_case discriminator + -1 sentinel — pre-#1125
+            // bundle readers (jq, downstream tools) round-trip unchanged.
             var rimDtos = (rimSnaps ?? Array.Empty<RimMaskSnapshot>())
                 .Select(r => new RimMaskSectionJson(
-                    Pipeline: r.Pipeline,
+                    Pipeline: ToWire(r.Pipeline),
                     Rotate180: r.Rotate180,
                     Width: r.Width, Height: r.Height,
                     Threshold: r.Threshold,
                     RimPixelCount: r.RimPixelCount,
-                    FgInputCount: r.FgInputCount,
-                    FgSurvivorCount: r.FgSurvivorCount))
+                    FgInputCount: r.FgInputCount ?? -1,
+                    FgSurvivorCount: r.FgSurvivorCount ?? -1))
                 .ToArray();
 
             var morphDtos = (morphSnaps ?? Array.Empty<MorphSnapshot>())
@@ -341,7 +345,10 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                     FgOutputCount: m.FgOutputCount))
                 .ToArray();
 
-            // Pixels payload is render-only — not serialised here.
+            // Pixels payload is render-only — not serialised here. mithril#1125:
+            // BlobClass is an enum in memory; the DTO emits the enum-name string
+            // ("Icon"/"Noise"/"Fog"/"Structure") so the wire format is identical
+            // to pre-#1125.
             var blobDtos = (blobClasses ?? Array.Empty<BlobClassification>())
                 .Select(b => new BlobJson(
                     Rotate180: b.Rotate180,
@@ -351,7 +358,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                     Cx: b.Cx, Cy: b.Cy,
                     MeanDev: b.MeanDev, PeakDev: b.PeakDev,
                     Solidity: b.Solidity, Aspect: b.Aspect,
-                    BlobClass: b.BlobClass))
+                    BlobClass: b.BlobClass.ToString()))
                 .ToArray();
 
             var dto = new BlobPipelineJson(
@@ -391,7 +398,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
     }
 
     private string? TryWriteRimMaskPng(
-        string dir, CalibrationAttemptContext ctx, string pipeline, bool rotate180)
+        string dir, CalibrationAttemptContext ctx, RimMaskPipeline pipeline, bool rotate180)
     {
         var snap = ctx.RimMaskSnapshots?
             .FirstOrDefault(s => s.Pipeline == pipeline && s.Rotate180 == rotate180);
@@ -399,11 +406,11 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         // Filename convention matches the spec §6.1 table.
         string name = (pipeline, rotate180) switch
         {
-            ("blob_detection", false) => "07c-rim-mask.png",
-            ("blob_detection", true) => "07c-r180-rim-mask.png",
-            ("synthesis_j", false) => "07c-synth-rim-mask.png",
-            ("synthesis_j", true) => "07c-r180-synth-rim-mask.png",
-            _ => $"07c-{pipeline}-{(rotate180 ? "r180-" : "")}rim-mask.png",
+            (RimMaskPipeline.BlobDetection, false) => "07c-rim-mask.png",
+            (RimMaskPipeline.BlobDetection, true) => "07c-r180-rim-mask.png",
+            (RimMaskPipeline.SynthesisJ, false) => "07c-synth-rim-mask.png",
+            (RimMaskPipeline.SynthesisJ, true) => "07c-r180-synth-rim-mask.png",
+            _ => throw new ArgumentOutOfRangeException(nameof(pipeline)),
         };
         return TryWriteBoolMaskPng(dir, name, snap.Width, snap.Height, snap.RimMaskBuffer);
     }
@@ -444,13 +451,15 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             {
                 // Colour map: Icon=green, Fog=blue-ish, Structure=red, Noise=dim-grey.
                 // Triager can spot the NPC-pip cluster region by colour at a glance.
+                // mithril#1125: BlobClass is now the typed enum — the switch is
+                // enum-exhaustive, so a future enum addition triggers a compile error.
                 var (b, g, r) = c.BlobClass switch
                 {
-                    "Icon"      => ((byte)0,   (byte)200, (byte)0),
-                    "Fog"       => ((byte)200, (byte)100, (byte)40),
-                    "Structure" => ((byte)0,   (byte)0,   (byte)200),
-                    "Noise"     => ((byte)80,  (byte)80,  (byte)80),
-                    _           => ((byte)0,   (byte)0,   (byte)0),
+                    BlobClass.Icon      => ((byte)0,   (byte)200, (byte)0),
+                    BlobClass.Fog       => ((byte)200, (byte)100, (byte)40),
+                    BlobClass.Structure => ((byte)0,   (byte)0,   (byte)200),
+                    BlobClass.Noise     => ((byte)80,  (byte)80,  (byte)80),
+                    _                   => ((byte)0,   (byte)0,   (byte)0),
                 };
                 foreach (var pixIdx in c.Pixels)
                 {
@@ -559,6 +568,17 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             Disagree: d.Disagree,
             DisagreeChange: d.DisagreeChange);
     }
+
+    // mithril#1125: project the typed RimMaskPipeline enum to the snake_case
+    // wire-format string the JSON shape expects (and pre-#1125 bundles already
+    // shipped). Keeping the projection here means the in-memory record uses the
+    // typed value and the producer can't silently typo a discriminator.
+    private static string ToWire(RimMaskPipeline pipeline) => pipeline switch
+    {
+        RimMaskPipeline.BlobDetection => "blob_detection",
+        RimMaskPipeline.SynthesisJ => "synthesis_j",
+        _ => throw new ArgumentOutOfRangeException(nameof(pipeline)),
+    };
 
     private static string WritePng(string dir, string name, BitmapSource src)
     {

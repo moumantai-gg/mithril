@@ -531,15 +531,15 @@ public sealed class MapCalibrationSolveEngine
             int rimCount = 0;
             for (int i = 0; i < n; i++) if (rim[i]) rimCount++;
             hooks.OnRimMask(new RimMaskSnapshot(
-                Pipeline: "synthesis_j",
+                Pipeline: RimMaskPipeline.SynthesisJ,
                 Rotate180: rotate180,
                 Width: w, Height: h,
                 Threshold: devThr,
                 RimPixelCount: rimCount,
                 // Synthesis-J applies the rim mask to a likelihood field, not an
-                // fg mask — there's no fg-pre/fg-post concept here. Sentinel -1
-                // tells the bundle dump + downstream triage to skip those fields.
-                FgInputCount: -1, FgSurvivorCount: -1,
+                // fg mask — there's no fg-pre/fg-post concept here. mithril#1125:
+                // null in memory; bundle DTO projects to the -1 wire sentinel.
+                FgInputCount: null, FgSurvivorCount: null,
                 RimMaskBuffer: (bool[])rim.Clone()));
             _logger?.LogTrace(
                 "RimMask (rotate180={Rotate180}, pipeline=synthesis_j): rim={Rim} of {N} px (threshold={T:0.000}).",

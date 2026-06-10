@@ -141,7 +141,7 @@ public static class DeviationBlobDetector
                     if (fg[i]) survivorCount++;
                 }
                 hooks.OnRimMask(new RimMaskSnapshot(
-                    Pipeline: "blob_detection",
+                    Pipeline: RimMaskPipeline.BlobDetection,
                     Rotate180: false,
                     Width: w, Height: h,
                     Threshold: devThr,
@@ -206,7 +206,7 @@ public static class DeviationBlobDetector
                     Cx: f.Cx, Cy: f.Cy,
                     MeanDev: f.MeanDev, PeakDev: f.PeakDev,
                     Solidity: f.Solidity, Aspect: f.Aspect,
-                    BlobClass: cls.ToString(),
+                    BlobClass: cls,
                     // Pixels list is passed through — render-only payload (07e PNG
                     // colourmap); not serialised to 10c JSON.
                     Pixels: f.Pixels.ToArray()));
