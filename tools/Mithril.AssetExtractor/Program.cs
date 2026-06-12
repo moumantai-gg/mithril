@@ -142,6 +142,17 @@ namespace Mithril.Tools.AssetExtractor
                 var (manifestPath, sha) = MapTextureCacheEmitter.EmitFromPng(
                     pngPath, asset, args.OutDir, pgVersion, extractorVersion);
                 artifacts.Add(new ResultArtifact("texture", asset, manifestPath, sha));
+
+                // mithril#1140: emit the alpha companion when the source PNG
+                // has a real alpha channel. RGB-only formats (RGB24 / BC1)
+                // return null → no alpha artifact; the consumer's
+                // TryGetTextureAlpha safe-degrades.
+                var alphaResult = MapTextureCacheEmitter.EmitAlphaFromPng(
+                    pngPath, asset, args.OutDir, pgVersion, extractorVersion);
+                if (alphaResult is { } alpha)
+                {
+                    artifacts.Add(new ResultArtifact("texture-alpha", asset, alpha.ManifestPath, alpha.PixelSha256));
+                }
             }
 
             EmitResult(pgVersion, extractorVersion, artifacts);
