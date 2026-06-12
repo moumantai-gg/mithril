@@ -49,7 +49,8 @@ public static class DeviationBlobDetector
         float[] dev, int w, int h, double lowNcc, RimMaskMode rim, BlobOptions opts, int closeRadius,
         DetectionDiagnosticHooks? hooks = null,
         double meanNcc = double.NaN,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        bool[]? deviationMask = null)
     {
         if (rim == RimMaskMode.ColourFlood)
         {
@@ -160,6 +161,56 @@ public static class DeviationBlobDetector
             else
             {
                 for (int i = 0; i < n; i++) if (rimMask[i]) fg[i] = false;
+            }
+        }
+
+        // mithril#1116: deviation-mask subtract — applied AFTER the existing rim
+        // subtract, BEFORE the morph-close. The mask combines the texture-alpha-
+        // derived floor-boundary band and the screenshot-derived fog-of-war mask
+        // (built by DeviationMaskCombiner upstream). Null = pre-#1116 behaviour
+        // (byte-identical fg buffer). Mirrors the rim-subtract idiom above —
+        // diagnostic counters tally only when the OnDeviationMask sink is wired;
+        // the null-hook path skips the tally and is a single subtract loop.
+        if (deviationMask is not null)
+        {
+            if (deviationMask.Length != n)
+            {
+                // Defensive: dimension mismatch is a silent no-op + LogWarning.
+                // The fg buffer is left unchanged so downstream stages can't
+                // crash on an out-of-range index from a misaligned producer.
+                logger?.LogWarning(
+                    "DeviationMask length {Len} != expected {Expected} ({W}x{H}) — skipping subtract.",
+                    deviationMask.Length, n, w, h);
+            }
+            else if (hooks?.OnDeviationMask is not null)
+            {
+                int maskedCount = 0, fgInputCount = 0, fgSurvivorCount = 0;
+                for (int i = 0; i < n; i++) if (fg[i]) fgInputCount++;
+                for (int i = 0; i < n; i++)
+                {
+                    if (deviationMask[i])
+                    {
+                        maskedCount++;
+                        fg[i] = false;
+                    }
+                }
+                for (int i = 0; i < n; i++) if (fg[i]) fgSurvivorCount++;
+
+                hooks.OnDeviationMask(new DeviationMaskSnapshot(
+                    Rotate180: false,
+                    Width: w, Height: h,
+                    MaskPixelCount: maskedCount,
+                    FgInputCount: fgInputCount,
+                    FgSurvivorCount: fgSurvivorCount,
+                    MaskBuffer: ((bool[])deviationMask.Clone()).AsMemory()));
+                logger?.LogTrace(
+                    "DeviationMask (rotate180=False): masked={Masked} of {Total} px, fg pre={Pre} post={Post}.",
+                    maskedCount, n, fgInputCount, fgSurvivorCount);
+            }
+            else
+            {
+                // Null-hook fast path — single subtract loop, no diagnostic tally.
+                for (int i = 0; i < n; i++) if (deviationMask[i]) fg[i] = false;
             }
         }
 

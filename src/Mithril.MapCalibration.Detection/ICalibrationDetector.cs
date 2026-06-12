@@ -62,6 +62,19 @@ public sealed record DetectionRequest(
     /// retention and LogTrace formatting for the null fields.
     /// </summary>
     public DetectionDiagnosticHooks? Diagnostics { get; init; }
+
+    /// <summary>
+    /// Optional binary mask (mithril#1116) for the deviation-mask subtract step:
+    /// pixels with <c>true</c> are excluded from the working <c>fg</c> buffer
+    /// AFTER the existing rim subtract and BEFORE morph-close, inside
+    /// <see cref="DeviationBlobDetector.DetectIconBlobs"/>. Combines the
+    /// texture-alpha-derived floor-boundary band and the screenshot-derived
+    /// fog-of-war mask (built upstream by <c>DeviationMaskCombiner</c>).
+    /// Length MUST equal <c>Width*Height</c> of the deviation buffer; a
+    /// mismatch is a silent no-op + <c>LogWarning</c>, never a crash.
+    /// <c>null</c> = no mask applied (byte-identical to pre-#1116 behaviour).
+    /// </summary>
+    public bool[]? DeviationMask { get; init; }
 }
 
 /// <summary>
