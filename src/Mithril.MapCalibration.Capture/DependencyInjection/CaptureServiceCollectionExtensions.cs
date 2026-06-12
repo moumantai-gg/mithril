@@ -92,6 +92,18 @@ public static partial class CaptureServiceCollectionExtensions
             services.AddMithrilVersionedSettings<MapCalibrationLocateOptions>(
                 Path.Combine(settingsDir, "map-calibration-locate.json"),
                 MapCalibrationLocateOptionsJsonContext.Default.MapCalibrationLocateOptions);
+
+            // mithril#1116: persisted detector-stage knobs (deviation mask +
+            // fog-of-war filter). Same pattern as MapCalibrationLocateOptions
+            // above — registered BEFORE the Detection tier so Detection's
+            // TryAddSingleton<MapCalibrationDetectorOptions> becomes a no-op
+            // fallback and this JSON-backed + migrate-dispatched +
+            // SettingsAutoSaver-wired singleton wins. Separate file from the
+            // locate options so the two surfaces can evolve their schemas
+            // independently.
+            services.AddMithrilVersionedSettings<MapCalibrationDetectorOptions>(
+                Path.Combine(settingsDir, "map-calibration-detector.json"),
+                MapCalibrationDetectorOptionsJsonContext.Default.MapCalibrationDetectorOptions);
         }
 
         // Detection tier (Phase-1 detect→solve engine + #931 cache providers +
