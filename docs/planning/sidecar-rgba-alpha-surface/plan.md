@@ -30,12 +30,28 @@ The TDD ordering mirrors prior calibration specs (#1061, #1070, #1123): vocabula
 
 **Acceptance:** Documented per-area alpha distribution (record in this plan + sidecar-readme), one of PASS/FAIL decision recorded.
 
-**Status placeholder (replace with measurements when Task 0 lands):**
+**Status (2026-06-12, resolved via [#1141](https://github.com/moumantai-gg/mithril/issues/1141)):**
 
 ```text
-Areas sampled:           TBD
-Per-area alpha summary:  TBD
-Decision:                TBD (PASS / FAIL)
+Areas sampled:           5 (3 indoor + 2 outdoor controls)
+                         indoor:  HogansKeepBasement (DXT5, 1024x1024)
+                                  GoblinDungeon_TopFloor (DXT5, 800x800)
+                                  GoblinDungeon main (RGBA32, 398x1024)
+                         outdoor: AreaSerbule (RGB24, 1961x2048)
+                                  AreaEltibule (RGB24, 2048x2033)
+
+Per-area alpha summary:  Indoor textures carry meaningful alpha
+                         (% alpha=0): 81.96% / 72.99% / 91.58%.
+                         Visual inspection confirms opaque pixels
+                         trace floor extent; transparent = not-floor.
+                         Outdoor textures are RGB24 — no alpha
+                         channel at all (decoder synthesizes 255).
+
+Decision:                PASS for indoor (Mode-A target).
+                         Outdoor RGB24 maps cleanly onto the spec's
+                         existing "no alpha → mask null → fog only"
+                         safe-degrade path (§7); luminance-heuristic
+                         fallback NOT required.
 ```
 
 ---

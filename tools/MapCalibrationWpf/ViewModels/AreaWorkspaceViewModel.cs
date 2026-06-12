@@ -73,7 +73,6 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
         Calibration = cal with
         {
             Source = CalibrationSource.BundledBaseline,
-            CalibrationZoom = 1.0,
             SchemaVersion = 1,
         };
         SolverReadout.Calibration = Calibration;
@@ -105,7 +104,6 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
             && Math.Abs(a.ResidualPixels - b.ResidualPixels) < eps
             && a.ReferenceCount == b.ReferenceCount
             && a.MirrorNorth == b.MirrorNorth
-            && Math.Abs(a.CalibrationZoom - b.CalibrationZoom) < eps
             && a.Source == b.Source
             && a.SchemaVersion == b.SchemaVersion;
     }
@@ -188,8 +186,7 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     // (drawn over the loaded base-texture image), so projection through a
     // frame-typed struct keeps the pixel comparison explicit.
     private static WorldToTextureCalibration AsTexture(AreaCalibration cal) =>
-        new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
-            cal.MirrorNorth, cal.CalibrationZoom);
+        new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians, cal.MirrorNorth);
 
     private RefViewModel? RefForLandmark(LandmarkPickerItem item) =>
         Refs.FirstOrDefault(r =>
