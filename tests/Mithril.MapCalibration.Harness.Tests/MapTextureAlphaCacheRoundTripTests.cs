@@ -89,6 +89,57 @@ public sealed class MapTextureAlphaCacheRoundTripTests
     }
 
     [Fact]
+    public void All_zero_alpha_is_emitted_not_skipped()
+    {
+        // α=0 everywhere is a real (degenerate) alpha channel; the
+        // consumer's TryGetTextureAlpha returns the GrayImage and the downstream
+        // mask cache's degenerate-alpha branch (spec §7) handles it. The emitter
+        // MUST emit — only α=255 everywhere is the "RGB-only source" sentinel
+        // that skips. PR #1145 review raised this as a coverage gap.
+        var dir = Path.Combine(Path.GetTempPath(), "mithril1140-tex-alpha-allzero-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var png = WriteRgbaPng(dir, (_, _) => 0);
+            var result = MapTextureCacheEmitter.EmitAlphaFromPng(
+                png, Area, dir, pgVersion: "test-1", extractorVersion: "test-1");
+
+            result.Should().NotBeNull("α=0 everywhere is a real (degenerate) alpha channel, not the RGB-only sentinel");
+
+            var tex = Reader(dir).TryGetTextureAlpha(Area);
+            tex.Should().NotBeNull();
+            tex!.Pixels.Should().AllSatisfy(b => b.Should().Be(0));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("Map_../../../escape")]
+    [InlineData("Map_with/slash")]
+    [InlineData(@"Map_with\backslash")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Invalid_area_name_is_rejected(string badArea)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "mithril1140-tex-alpha-badarea-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var png = WriteRgbaPng(dir, ExpectedAlpha);
+            var act = () => MapTextureCacheEmitter.EmitAlphaFromPng(
+                png, badArea, dir, pgVersion: "test-1", extractorVersion: "test-1");
+            act.Should().Throw<ArgumentException>("path-escaping area names must be rejected before reaching Path.Combine");
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
     public void Source_with_no_alpha_channel_skips_emit_and_consumer_safe_degrades()
     {
         var dir = Path.Combine(Path.GetTempPath(), "mithril1140-tex-alpha-rgb-" + Guid.NewGuid().ToString("N"));

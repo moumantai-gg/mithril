@@ -139,16 +139,22 @@ namespace Mithril.Tools.AssetExtractor
                     Console.Error.WriteLine($"error: {ex.Message}");
                     return ExitBundleMissing;
                 }
-                var (manifestPath, sha) = MapTextureCacheEmitter.EmitFromPng(
-                    pngPath, asset, args.OutDir, pgVersion, extractorVersion);
+                // Decode the PNG ONCE for both channels; the Gray/Alpha emit
+                // overloads accept pre-loaded GrayImages so we don't re-run
+                // ReadBgra twice (which would double the I/O + a transient 4-bpp
+                // buffer at outdoor-texture scale).
+                var (gray, alphaImage) = ImageIo.LoadGrayAndAlpha(pngPath);
+
+                var (manifestPath, sha) = MapTextureCacheEmitter.EmitFromGray(
+                    gray, asset, args.OutDir, pgVersion, extractorVersion);
                 artifacts.Add(new ResultArtifact("texture", asset, manifestPath, sha));
 
                 // mithril#1140: emit the alpha companion when the source PNG
                 // has a real alpha channel. RGB-only formats (RGB24 / BC1)
                 // return null → no alpha artifact; the consumer's
                 // TryGetTextureAlpha safe-degrades.
-                var alphaResult = MapTextureCacheEmitter.EmitAlphaFromPng(
-                    pngPath, asset, args.OutDir, pgVersion, extractorVersion);
+                var alphaResult = MapTextureCacheEmitter.EmitAlphaFromGray(
+                    alphaImage, asset, args.OutDir, pgVersion, extractorVersion);
                 if (alphaResult is { } alpha)
                 {
                     artifacts.Add(new ResultArtifact("texture-alpha", asset, alpha.ManifestPath, alpha.PixelSha256));

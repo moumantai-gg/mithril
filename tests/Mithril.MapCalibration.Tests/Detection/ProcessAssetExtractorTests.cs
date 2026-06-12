@@ -84,6 +84,34 @@ public sealed class ProcessAssetExtractorTests : IDisposable
     }
 
     [Fact]
+    public async Task Multi_artifact_response_surfaces_texture_plus_alpha()
+    {
+        // mithril#1140: indoor --asset calls now emit TWO artifacts (kind
+        // "texture" + "texture-alpha"). Verify the loose-parsing adapter
+        // preserves both, in order, with their distinct kinds + SHAs.
+        const string multiArtifactJson =
+            "{\"status\":\"ok\",\"pgVersion\":\"1\",\"extractorVersion\":\"1\"," +
+            "\"artifacts\":[" +
+                "{\"kind\":\"texture\",\"area\":\"Map_HogansKeepBasement\",\"path\":\"C:/cache/m.json\",\"pixelSha256\":\"aaa\"}," +
+                "{\"kind\":\"texture-alpha\",\"area\":\"Map_HogansKeepBasement\",\"path\":\"C:/cache/m-alpha.json\",\"pixelSha256\":\"bbb\"}" +
+            "]}";
+
+        var sut = new ProcessAssetExtractor(_fakeExe, TimeSpan.FromSeconds(5),
+            launcher: (_, _) => Task.FromResult(new ProcessRunResult(0, multiArtifactJson, "")));
+
+        var result = await sut.ExtractAsync(
+            new ExtractRequest("C:/PG", "C:/cache", ExtractKind.Texture, "Map_HogansKeepBasement", null),
+            CancellationToken.None);
+
+        result.Ok.Should().BeTrue();
+        result.Artifacts.Should().HaveCount(2);
+        result.Artifacts[0].Kind.Should().Be("texture");
+        result.Artifacts[0].PixelSha256.Should().Be("aaa");
+        result.Artifacts[1].Kind.Should().Be("texture-alpha");
+        result.Artifacts[1].PixelSha256.Should().Be("bbb");
+    }
+
+    [Fact]
     public async Task Tpk_path_is_added_to_args_when_set()
     {
         ProcessStartInfo? captured = null;
