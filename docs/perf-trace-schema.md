@@ -66,6 +66,7 @@ Once `TelemetrySettings.EnableOtlpExport` is enabled (Settings → Diagnostics �
 | `calibration_synthesis_rerank` | Map auto-calibration Detection layer (synthesis-J re-rank) via [`MapCalibrationDiagnostics`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) | One span per solve carrying the synthesis-J re-rank outcome. Tag list TBD per Task 16 of the synthesis-rerank plan. Scaffold-only — producer wiring lands in Task 16. |
 | `calibration.drift_check` | [`AutoCalibrationEngine.CheckDriftAsync`](../src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs) via `MithrilActivitySources.MapCalibration` (mithril#1046) | One span per hotkey-triggered drift check on a scene with a stored calibration; `outcome` tag distinguishes early-exit vs `Ok` vs `Drift`. |
 | `calibration.refine.primary` / `calibration.refine.fallback` | [`CompositeMapRegionRefiner`](../src/Mithril.MapCalibration.Detection/CompositeMapRegionRefiner.cs) via [`MapCalibrationDiagnostics.ActivitySource`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) (mithril#1061) | Per-branch spans from the locate dispatcher. Primary wraps `FeatureMatchingRefiner` (ORB+Lowe); fallback wraps `SobelPaddedPyramidRefiner`. Tags below. |
+| `texture.alpha.load` | [`CachedBaseTextureProvider.TryGetTextureAlpha`](../src/Mithril.MapCalibration.Detection/Internal/CachedBaseTextureProvider.cs) via [`MapCalibrationDiagnostics.ActivitySource`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) (mithril#1116 sidecar prereq) | One span per alpha-cache lookup. `texture.alpha.available` distinguishes success vs reject; `texture.alpha.rejected` carries the rejection reason (enum below). Sibling gray path `TryGetBaseTexture` is not yet span-instrumented — symmetry is a follow-up. |
 | `calibration.area.select_scene` / `calibration.area.calibrate_current` | [`AreaCalibrationService`](../src/Legolas.Module/Services/AreaCalibrationService.cs) via `MithrilActivitySources.LegolasCalibration` (mithril#1093) | Per AreaCalibrationService scene-handoff / per user-driven calibrate-current invocation. |
 | `calibration.ghosts.rebuild` | [`MapOverlayViewModel.RebuildCalibrationGhosts`](../src/Legolas.Module/ViewModels/MapOverlayViewModel.cs) via `MithrilActivitySources.LegolasCalibration` (mithril#1093) | Per VM ghost-pass rebuild; companion histogram `mithril.legolas.calibration.ghosts.rebuild_ms` records wall-clock. |
 | `meter_counter` | All `Meter`-counter producers (Arda lines/verb-unmatched/grammar-break, reference fetch_outcome, domain-event-published, overlay projection.latency_ms + frame.markers, map-calibration synthesis-J histograms + disagree counter, Legolas calibration picker/projection/drawer/rebuild instruments) | Sums per (instrument, tag-set) flushed once per second |
@@ -336,6 +337,21 @@ Per-branch spans from `CompositeMapRegionRefiner` — the locate-stage dispatche
 ```powershell
 # Fallback hit-rate per area-attempt across a session
 Get-Content $Path | jq -c 'select(.Kind=="scope" and .Name=="calibration.refine.fallback") | {outcome:.Tags.outcome, ncc:.Tags.ncc, scale:.Tags.scale}'
+```
+
+### `texture.alpha.load` (mithril#1116 sidecar prereq)
+
+One span per `CachedBaseTextureProvider.TryGetTextureAlpha` invocation — the alpha-channel reader the sidecar populates (`map-texture-<area>-alpha.{json,bin}`). Lives on [`MapCalibrationDiagnostics.ActivitySource`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) (`"Mithril.MapCalibration.Detection"`). The sibling gray reader `TryGetBaseTexture` is not yet instrumented; symmetry is out of scope for this PR (the alpha path is the new code path, gray is pre-existing).
+
+| Tag | Type | Notes |
+|---|---|---|
+| `area` | string | The `mapAssetKey` passed in (e.g. `"Map_HogansKeepBasement"`). Safe. Always emitted (even on `empty_key` rejection it carries the original whitespace/null marker). |
+| `texture.alpha.available` | bool | `true` only on the success path (manifest + blob present, `pixelSha256` round-tripped, size sanity passed, canonical-hash gate accepted — or absent gate). `false` on every reject branch. |
+| `texture.alpha.rejected` | string | Rejection reason — one of `empty_key` / `cache_dir_absent` / `manifest_missing` / `blob_missing` / `hash_mismatch` / `size_mismatch` / `canonical_gate_reject`. Absent on the success path. `manifest_missing` and `blob_missing` are coarse-grained — the underlying log message distinguishes "file not found" vs "parse failed" vs "decompress failed"; the tag groups them by parent branch. |
+
+```powershell
+# Alpha-cache hit rate per area across a session
+Get-Content $Path | jq -c 'select(.Kind=="scope" and .Name=="texture.alpha.load") | {area:.Tags.area, available:.Tags."texture.alpha.available", rejected:.Tags."texture.alpha.rejected"}'
 ```
 
 ### `calibration.drift_check` (mithril#1046)

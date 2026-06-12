@@ -33,4 +33,21 @@ public interface IBaseTextureProvider
     /// Player-Log-Signals § Map asset loads</see>.</para>
     /// </summary>
     GrayImage? TryGetBaseTexture(string mapAssetKey);
+
+    /// <summary>
+    /// The texture's alpha channel for <paramref name="mapAssetKey"/> as a
+    /// single-channel <see cref="GrayImage"/>: 0 = transparent (not floor),
+    /// 255 = opaque (floor). Same width × height as <see cref="TryGetBaseTexture"/>
+    /// for the same key.
+    ///
+    /// <para>Backed by a parallel <c>map-texture-&lt;area&gt;-alpha.{json,bin}</c>
+    /// cache file the sidecar writes alongside the existing gray-pixel cache.
+    /// Sidecar implementations from before mithril#1116 don't emit alpha — the
+    /// safe-degrade null return is the expected v1-sidecar behavior. Consumers
+    /// (<c>FloorBoundaryMaskCache</c> in mithril#1116) handle null gracefully.</para>
+    /// </summary>
+    /// <returns><see langword="null"/> when the sidecar didn't emit alpha for
+    /// this area, the manifest/blob is missing, integrity check fails, or the
+    /// canonical-hash gate rejects.</returns>
+    GrayImage? TryGetTextureAlpha(string mapAssetKey);
 }

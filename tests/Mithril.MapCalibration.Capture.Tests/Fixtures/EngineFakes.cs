@@ -249,6 +249,8 @@ internal sealed class FakeBaseTextureProvider : IBaseTextureProvider
         Calls.Add(mapAssetKey);
         return ResolveAs;
     }
+
+    public GrayImage? TryGetTextureAlpha(string mapAssetKey) => null;
 }
 
 /// <summary>
