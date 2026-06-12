@@ -7,8 +7,18 @@
         "width": 512,
         "height": 419
       },
+      "Map_AnimalNexus-alpha": {
+        "sha": "ba58d256218f16bde8c4ba877e4b53641897a5fc029885c25577aeb9ef5260ac",
+        "width": 512,
+        "height": 419
+      },
       "Map_AreaCasino": {
         "sha": "20de457dc78165fd98be5074d73a1c1684ce2f514fec234cb4893bf1a3a77b1a",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_AreaCasino-alpha": {
+        "sha": "1e07fb29a202641f30ae047c1046137c0449a715f35dea363bc0d334d5b3c4cb",
         "width": 1024,
         "height": 1024
       },
@@ -67,8 +77,18 @@
         "width": 2048,
         "height": 2048
       },
+      "Map_AreaSunVale-alpha": {
+        "sha": "d71ee95c3c4a6e4d33383fcdda8c5915ca0f65d818f0a3e79e7dfdef76c80765",
+        "width": 2048,
+        "height": 2048
+      },
       "Map_BoardedUpBasement": {
         "sha": "5e5d3111c68de950d04b6b750b23bdb6270fee3920d691f13c7bd43ecccce06c",
+        "width": 205,
+        "height": 512
+      },
+      "Map_BoardedUpBasement-alpha": {
+        "sha": "d4ed392f1ce689032b858407711875ce649e5a78c01f1862d192e0689f918559",
         "width": 205,
         "height": 512
       },
@@ -77,8 +97,18 @@
         "width": 395,
         "height": 512
       },
+      "Map_Borghild-alpha": {
+        "sha": "1a812962108432a73ba7562d2b16c90954e7c89251a8b41d6556f392e0a89a2a",
+        "width": 395,
+        "height": 512
+      },
       "Map_BrainBugCave": {
         "sha": "b752defeb4e6f94197f6ca5933df965543d3186bfb2bca7fcc5de1117fb7fccf",
+        "width": 512,
+        "height": 307
+      },
+      "Map_BrainBugCave-alpha": {
+        "sha": "885a25839dc50c5172c7b10ff57ba67a8cc652e1c837d3d0fcc048d97aff24fd",
         "width": 512,
         "height": 307
       },
@@ -87,8 +117,18 @@
         "width": 452,
         "height": 512
       },
+      "Map_CarpalTunnels-alpha": {
+        "sha": "545c1d9eb80ee489d050e8824a764eea55ea416b119d6ed1aadb02565af617f3",
+        "width": 452,
+        "height": 512
+      },
       "Map_CrystalCavern": {
         "sha": "c72479d64ba84caa7a3d557db4018f99828516fce6b4fc72dfc971c44bfc79cc",
+        "width": 236,
+        "height": 512
+      },
+      "Map_CrystalCavern-alpha": {
+        "sha": "dced332f30cbdc491ea12ca4230c0daa134a8315e282cd0aac2dc630f2818433",
         "width": 236,
         "height": 512
       },
@@ -97,8 +137,18 @@
         "width": 590,
         "height": 1024
       },
+      "Map_DarkChapel-alpha": {
+        "sha": "83d67fbdf8840f46ba4b8f68ce497db0515fb6f7471d931a2fc54293b7dbf38d",
+        "width": 590,
+        "height": 1024
+      },
       "Map_EltibuleCrypt": {
         "sha": "1161888649ca872a142059a104741e77e4895ced7cfb1a263a5668d3c12a4b6e",
+        "width": 256,
+        "height": 205
+      },
+      "Map_EltibuleCrypt-alpha": {
+        "sha": "49c95e1254309a99eb0cb29beeedd4e6f32f3ead92c9b0323783324c52c90a91",
         "width": 256,
         "height": 205
       },
@@ -107,8 +157,18 @@
         "width": 398,
         "height": 1024
       },
+      "Map_GoblinDungeon-alpha": {
+        "sha": "5ffca075681d18f07c5dbefdfcfc3d0a8c08f88ab388eff4be7ae4787dcbbca7",
+        "width": 398,
+        "height": 1024
+      },
       "Map_GoblinDungeon_TopFloor": {
         "sha": "b3503ce61374703ee2af576608548bf89553690d614ec9c5627341dd0c1ed87b",
+        "width": 800,
+        "height": 800
+      },
+      "Map_GoblinDungeon_TopFloor-alpha": {
+        "sha": "2e39f102118e58be21a7c68f4e15c4e7b40cb8853311dfa25b048cd207944812",
         "width": 800,
         "height": 800
       },
@@ -117,8 +177,18 @@
         "width": 1024,
         "height": 1024
       },
+      "Map_HogansKeepBasement-alpha": {
+        "sha": "f8c23bea8f3bc705ea0c95c3338424e54a84095b5ec743d8d252a2fa75c4f314",
+        "width": 1024,
+        "height": 1024
+      },
       "Map_KhyruleksCrypt": {
         "sha": "e3e0eb2fd736fe89be7d442310c3572941c6451e44a8d520a30108961eddd4b8",
+        "width": 525,
+        "height": 1024
+      },
+      "Map_KhyruleksCrypt-alpha": {
+        "sha": "149552df271873ec2c0e4639b593f823ba9ee18994e7d9e2360114d5d651da8a",
         "width": 525,
         "height": 1024
       },
@@ -132,8 +202,18 @@
         "width": 569,
         "height": 1024
       },
+      "Map_KurTower-alpha": {
+        "sha": "9fdeab546c5dee9b98e24173c9ec68ac032b215517467f76160f1e58e1e33ed3",
+        "width": 569,
+        "height": 1024
+      },
       "Map_Labyrinth": {
         "sha": "c49641927315c248e3e63280a5220419b7adb9f27662c1e0a2ebc28aa82b80ea",
+        "width": 1800,
+        "height": 1800
+      },
+      "Map_Labyrinth-alpha": {
+        "sha": "660090cb04903c761b24d6af01ca0a322212af2821fa2277fb6156964461b519",
         "width": 1800,
         "height": 1800
       },
@@ -142,8 +222,18 @@
         "width": 541,
         "height": 1024
       },
+      "Map_MyconianCave-alpha": {
+        "sha": "e8e25e70a1d144abf54569f6c23be6fc4ea25fecba12b0e6ab5492088747184f",
+        "width": 541,
+        "height": 1024
+      },
       "Map_NewPrestonbule": {
         "sha": "e95a4d325c8ccced3cbcb45f67e0575e6487d9999b8b32dbe94ff4dbfbe0778a",
+        "width": 512,
+        "height": 512
+      },
+      "Map_NewPrestonbule-alpha": {
+        "sha": "95d99194821ea678f21a777287d0735a2f36893fc82e2035687065d5840f777c",
         "width": 512,
         "height": 512
       },
@@ -152,8 +242,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_NewbieIslandDungeon-alpha": {
+        "sha": "a8e96646938376f2139f35776d8a1edb9aa53bbca8ce5614297d65dcb5086549",
+        "width": 512,
+        "height": 512
+      },
       "Map_NoNameCave": {
         "sha": "3b4a753a0217bd6a0f67e666bd02434c14cd3e241d4dc98f412c47d3735c2a67",
+        "width": 358,
+        "height": 512
+      },
+      "Map_NoNameCave-alpha": {
+        "sha": "93efeeb63f37f028770f039439e939913bd7a8ed431ed0782fff2e58495ce22f",
         "width": 358,
         "height": 512
       },
@@ -167,8 +267,18 @@
         "width": 1024,
         "height": 1024
       },
+      "Map_PovusCaves_AktaariCave-alpha": {
+        "sha": "900680ed6ef05fbc1a3dd35dfb9f9bdcb1ec0bd3443e4b281b54171c04ef4d51",
+        "width": 1024,
+        "height": 1024
+      },
       "Map_PovusCaves_ElvenJudgement": {
         "sha": "7f6ee2e7a2b1c2fe7b19bed5e94d9d02eccebe50db4d3e641ba2df460f63d3c5",
+        "width": 914,
+        "height": 1024
+      },
+      "Map_PovusCaves_ElvenJudgement-alpha": {
+        "sha": "ab2e5d66d610719e499d3f9def3ff3e6e7c8183d3b1ad51b4ecde490b43f55d1",
         "width": 914,
         "height": 1024
       },
@@ -177,8 +287,18 @@
         "width": 1500,
         "height": 1500
       },
+      "Map_PovusCaves_ErrrukasCave-alpha": {
+        "sha": "f5d78fcfdb027427c0bd7615cfc49de5306f2bfcec84fdab7576d68ca5cf5872",
+        "width": 1500,
+        "height": 1500
+      },
       "Map_PovusCaves_ForthragarianCaves": {
         "sha": "1f640d5d87f591163b4c297de32e8068b2ab9655eb958cee84a79e637a6940f8",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_PovusCaves_ForthragarianCaves-alpha": {
+        "sha": "1284190bc4874ebd18779f9f505d687367da6c8198d73a368431d459ce72eb81",
         "width": 1024,
         "height": 1024
       },
@@ -187,8 +307,18 @@
         "width": 2000,
         "height": 1720
       },
+      "Map_PovusCaves_Level1-alpha": {
+        "sha": "358b8afa6c6f2923cd4ef2751678e5f7253e8966bbde10202de3f6f5c89e4bd5",
+        "width": 2000,
+        "height": 1720
+      },
       "Map_PovusCaves_Level2": {
         "sha": "7102121a71d78c73831ba9a69589fcbca77541d67683ba7b56f12c01e69aa440",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_PovusCaves_Level2-alpha": {
+        "sha": "21104826c44274f3a758a890ac55d9677bd7a886b53cfe1beb85339bf8763746",
         "width": 1024,
         "height": 1024
       },
@@ -197,8 +327,18 @@
         "width": 1024,
         "height": 1024
       },
+      "Map_PovusCaves_Level3-alpha": {
+        "sha": "b30c25a80d84edd164997805c5fb03b008497220c74805f48c6e9d906a9078a7",
+        "width": 1024,
+        "height": 1024
+      },
       "Map_PovusCaves_Level4": {
         "sha": "193bb672a6a47ad88aba1a47cb533d130a16aad9e94b783ea1d8b8a11f3a997e",
+        "width": 1500,
+        "height": 700
+      },
+      "Map_PovusCaves_Level4-alpha": {
+        "sha": "23bbdff93aab0b2e15c08124ccea1814411ea480b3eea7fa2e2c9655d818343e",
         "width": 1500,
         "height": 700
       },
@@ -207,8 +347,18 @@
         "width": 1024,
         "height": 1024
       },
+      "Map_PovusCaves_NightmareCaves-alpha": {
+        "sha": "6d6c1ee9499addbecf8d46867a7b299d39276edcee4a017a53cfc85daa801f5b",
+        "width": 1024,
+        "height": 1024
+      },
       "Map_PuckHalls": {
         "sha": "e52849ccdab27ed57775e2e437ce82e497d198a8a5f876b898c43ecdced0fec1",
+        "width": 439,
+        "height": 512
+      },
+      "Map_PuckHalls-alpha": {
+        "sha": "b22727bea8289a29fcf12ad531a1703f412c84a488a2774d4ad6b7f537597e02",
         "width": 439,
         "height": 512
       },
@@ -217,8 +367,18 @@
         "width": 512,
         "height": 455
       },
+      "Map_PvPArena-alpha": {
+        "sha": "1a58786af4782100c54419856e45d3c23378efa95af8b9f001edca4d58f93623",
+        "width": 512,
+        "height": 455
+      },
       "Map_RahuSewer": {
         "sha": "61492d8244cdc1b49a98fb4fa009ae60f82d1e9d685f240289f5d958730c8914",
+        "width": 2048,
+        "height": 2048
+      },
+      "Map_RahuSewer-alpha": {
+        "sha": "23e7febc62a11d2de7d61f5d684aed21176ddb950442112d6b123a3b7c1a0bc3",
         "width": 2048,
         "height": 2048
       },
@@ -227,8 +387,18 @@
         "width": 1024,
         "height": 838
       },
+      "Map_RanalonBase-alpha": {
+        "sha": "ed36fef9b18ad2c6106541f702ebf17aa3cc6bd5893d4ff625672c0fd5dabffd",
+        "width": 1024,
+        "height": 838
+      },
       "Map_SerbuleSewer": {
         "sha": "2bda551638e51df57efd5ab5298fa000f94c8e2e5e5f6238e8a89ba14175ecba",
+        "width": 645,
+        "height": 1024
+      },
+      "Map_SerbuleSewer-alpha": {
+        "sha": "6633e3eaef6c8bdfae12049621ff8635208c1f769097c50953c5364851911b7f",
         "width": 645,
         "height": 1024
       },
@@ -237,8 +407,18 @@
         "width": 512,
         "height": 427
       },
+      "Map_SnowbloodCave-alpha": {
+        "sha": "371dde87e4786e1671824e67582a003efe7322d1bbfdebf92eba22162bbf5d48",
+        "width": 512,
+        "height": 427
+      },
       "Map_SpiderCave": {
         "sha": "c8e5add5c416a5eb5c4aa7c25e135f26bd6dbcfa5f662221e4772146abb37cdf",
+        "width": 512,
+        "height": 512
+      },
+      "Map_SpiderCave-alpha": {
+        "sha": "6eb752c5921f49fe88d58580f192c6ccc1d27420d1ff0b1c23436a956c35286e",
         "width": 512,
         "height": 512
       },
@@ -247,8 +427,18 @@
         "width": 560,
         "height": 560
       },
+      "Map_StatehelmCaves_SafeHouseA-alpha": {
+        "sha": "4c8cb26f261571b61781a7b1ad175839a6288ea6d0816fb99b58080ce95c8884",
+        "width": 560,
+        "height": 560
+      },
       "Map_SunValeCave1": {
         "sha": "65d4806e8f9235d805626d8dc1f2d93db51261d9cd28bd72531cce34d06410ca",
+        "width": 512,
+        "height": 512
+      },
+      "Map_SunValeCave1-alpha": {
+        "sha": "f1fda683b386f73afe48dc657151566fa509958ca475517284f9782216d96a55",
         "width": 512,
         "height": 512
       },
@@ -257,8 +447,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_SunValeCave2-alpha": {
+        "sha": "7c7f2e8573bf0688d9280af5029a45cdf7ba22ad7ad5f868b21202bde46c7dde",
+        "width": 512,
+        "height": 512
+      },
       "Map_SunValeCave3": {
         "sha": "5318b672c029ee67b6e6df19c5130ec41026fd207f164708fdef0acaf1401b6b",
+        "width": 2000,
+        "height": 2000
+      },
+      "Map_SunValeCave3-alpha": {
+        "sha": "2221c333a2e452efe7e133b4d5d4657d6cbca89684fa8a9258343a7236c9d0fc",
         "width": 2000,
         "height": 2000
       },
@@ -267,8 +467,18 @@
         "width": 1024,
         "height": 1024
       },
+      "Map_TheWintertide-alpha": {
+        "sha": "1af136939cc55fc7d3188c67009ad02288d3561bbef3af5ff94d94e0d154fa88",
+        "width": 1024,
+        "height": 1024
+      },
       "Map_TowerView": {
         "sha": "0b3d6e7cf45ed95a2b7e692fd68fb279ec8434c8e7c7bb5876924996fc0cd8a4",
+        "width": 256,
+        "height": 512
+      },
+      "Map_TowerView-alpha": {
+        "sha": "09d88d809f819537ee538a0a9aab250181461cef01cdd9f56ad35dab121e18cf",
         "width": 256,
         "height": 512
       },
@@ -282,8 +492,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Drug-1-alpha": {
+        "sha": "6aca7d8f0e7907c8e6e467bc3b81d5e096c535a257657e48cfd87d6ef2573f0c",
+        "width": 512,
+        "height": 512
+      },
       "Map_WarCache_Drug-2": {
         "sha": "02514fdd86ffe719582f30a351df7175bbad633ca90621f28d59ab7e6803e535",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Drug-2-alpha": {
+        "sha": "558ce3b27d60b3431b1fcbf881c0a14770d0ede638f2760ec32700df86692197",
         "width": 512,
         "height": 512
       },
@@ -292,8 +512,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Drug-3-alpha": {
+        "sha": "0d683ea59563f760a7c5242ac37984a43a2868809892a5fb301e551beed3e419",
+        "width": 512,
+        "height": 512
+      },
       "Map_WarCache_Drug-4": {
         "sha": "0559501636205989853625536b509ea6ac3687fe95167de78fc39bbc8ac1eaf2",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Drug-4-alpha": {
+        "sha": "44d64a542ce048bc75f6e804ab055fa5a7c35003e3ddfbc5a9e82c05ad936596",
         "width": 512,
         "height": 512
       },
@@ -302,8 +532,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Flood-1-alpha": {
+        "sha": "995cd24b03dc5c196b364fcca65c4156b1bcce191115f3f46e8aaed65daacd4a",
+        "width": 512,
+        "height": 512
+      },
       "Map_WarCache_Flood-2A": {
         "sha": "34efa8a18abd837e07b3f9341d2891f2201e500165f0245d7e89de7fe8a91ebc",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Flood-2A-alpha": {
+        "sha": "a813f12426a7f34907a22b63d198bc4c02027bbb8a13aeac69527291b6cbf5b1",
         "width": 512,
         "height": 512
       },
@@ -312,8 +552,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Flood-2B-alpha": {
+        "sha": "4cffed849355f08f876a9dc7b857711e3b3d21b5489cd57892cd82089318b59d",
+        "width": 512,
+        "height": 512
+      },
       "Map_WarCache_Flood-2C": {
         "sha": "dc95c76c6a73fae107e7f5580924dbc02342c068d4d86159021ed2f99a4e6478",
+        "width": 1000,
+        "height": 1000
+      },
+      "Map_WarCache_Flood-2C-alpha": {
+        "sha": "7012528dc6f10a1e16df56257e674f3ba061c7fcd46f242222c8e246020838ed",
         "width": 1000,
         "height": 1000
       },
@@ -322,8 +572,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Mummy-1-alpha": {
+        "sha": "11681a26070083069f931c8cdccc853463950ae58acf65fe361ee1ceced6d357",
+        "width": 512,
+        "height": 512
+      },
       "Map_WarCache_Mummy-2": {
         "sha": "f99abee13a6bab4f4dabff891bc1c001463df1d6e0cdbb85f74e4edd294e8d4a",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Mummy-2-alpha": {
+        "sha": "ce6bd2b20164acec69100057a55fd198af65dec02cac868634fb00718a6e6bf1",
         "width": 512,
         "height": 512
       },
@@ -332,8 +592,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Mummy-3-alpha": {
+        "sha": "a9847b4f0c1ed7f1eefe46fe66acf9897f982ac60f4ef6df74131f779a0325e7",
+        "width": 512,
+        "height": 512
+      },
       "Map_WarCache_Scorp-1": {
         "sha": "056a6d671c19ff3de22c4695d7a60153122e9ead727a7737fcf67a8adfe7344f",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Scorp-1-alpha": {
+        "sha": "c47d3cd71470bd86dccba47ccac2de924122977c40d0f4dfa8fe762e59db0e63",
         "width": 512,
         "height": 512
       },
@@ -342,8 +612,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Scorp-2-alpha": {
+        "sha": "85d9c26bd65d524e217cc3122d25a1767c8de07b3453c79466ee1ec70f9548ae",
+        "width": 512,
+        "height": 512
+      },
       "Map_WarCache_Scorp-3": {
         "sha": "bd6805be66ce1817d6f042a0d4a5521da557884251baed2d5e98f9b24d2c2a81",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Scorp-3-alpha": {
+        "sha": "f71b8fb7b3252c252287897c53c56b4abe2b10c0a4cfb89e6a75c2590ff7daf4",
         "width": 512,
         "height": 512
       },
@@ -352,8 +632,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Scorp-4-alpha": {
+        "sha": "ff60b468f94cec487dba12c3559d2322f3f54db78e354e3dbe05a1fafb966cd4",
+        "width": 512,
+        "height": 512
+      },
       "Map_WarCache_Torn-1": {
         "sha": "72665b57699b8af9bf87e94d7e6a7416ee2f591dc60e10ce716b52b7d9b5fff6",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Torn-1-alpha": {
+        "sha": "0e599ea690b97f1a01ebbdb75bfc5b7eaa67555efa701ac94ac729954ccf8ee1",
         "width": 512,
         "height": 512
       },
@@ -362,8 +652,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Torn-2-alpha": {
+        "sha": "6a0d553644e6c420a97a060ebb839ff2ac51ca65f24154e26941913327daba76",
+        "width": 512,
+        "height": 512
+      },
       "Map_WarCache_Torn-3": {
         "sha": "d4897596f61f70c1ab454b08f2e96fdc30aea440293175bfb94b10603d54350c",
+        "width": 512,
+        "height": 512
+      },
+      "Map_WarCache_Torn-3-alpha": {
+        "sha": "9433385bd474bf8a593ec72c9e83cedb4add42857195200f4913ad0f023dbd25",
         "width": 512,
         "height": 512
       },
@@ -372,8 +672,18 @@
         "width": 512,
         "height": 512
       },
+      "Map_WarCache_Torn-4-alpha": {
+        "sha": "7768a99ade5eb4fa772eeda1da22b736d7194cb4f0bb2134bb128e5867710505",
+        "width": 512,
+        "height": 512
+      },
       "Map_WardenCave": {
         "sha": "c6dc01ca79d47f261b504b6be76036c71d50f490b14bb229c4e58aee17f23356",
+        "width": 1024,
+        "height": 1024
+      },
+      "Map_WardenCave-alpha": {
+        "sha": "3b9dff47911992a7e520088a8496f5ece06f163d6ffbeff87fcef71cabc5f92f",
         "width": 1024,
         "height": 1024
       },
@@ -382,8 +692,18 @@
         "width": 1024,
         "height": 646
       },
+      "Map_WindyViewCave-alpha": {
+        "sha": "6a335d1154eff5337f67add9201758295dd3cb49fee7158afbb03abf8e8133d8",
+        "width": 1024,
+        "height": 646
+      },
       "Map_WinterNexus": {
         "sha": "ff3e789b9d3cb47e707ecfd1eebda876d314733ca7b8ba20a45b0446c4fc7e15",
+        "width": 512,
+        "height": 448
+      },
+      "Map_WinterNexus-alpha": {
+        "sha": "e8bcb88ca803d42f7f798874c99402a6a52aac5e228e240eed17619e9e68818c",
         "width": 512,
         "height": 448
       },
@@ -392,8 +712,18 @@
         "width": 819,
         "height": 1024
       },
+      "Map_WolfCave-alpha": {
+        "sha": "55b88ec8599fea35441693b26849f11c70d5c4b1fc8f609dd84cb790db3e297d",
+        "width": 819,
+        "height": 1024
+      },
       "Map_YetiCave": {
         "sha": "4c39e0fbccced50de2bd0dc914979996f03374c050789cffceb6c51cc6a2a6fd",
+        "width": 333,
+        "height": 1024
+      },
+      "Map_YetiCave-alpha": {
+        "sha": "31919d47c56105392c4345c456a393f2fe7f64bb1209b995f66ff19ab9af3e06",
         "width": 333,
         "height": 1024
       }
