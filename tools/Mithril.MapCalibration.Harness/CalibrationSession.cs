@@ -231,8 +231,7 @@ public sealed partial class CalibrationSession : ObservableObject, ICandidateSin
     // projecting through a frame-typed struct keeps the pixel comparison
     // explicit instead of going through the deleted PixelPoint surface.
     private static WorldToTextureCalibration AsTexture(AreaCalibration cal) =>
-        new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians,
-            cal.MirrorNorth, cal.CalibrationZoom);
+        new(cal.OriginX, cal.OriginY, cal.Scale, cal.RotationRadians, cal.MirrorNorth);
 
     // Prefer the enabled ref at this coord; disabled refs carry no residual, so
     // a disabled ref must not supply a projection marker's ResidualPx. (The

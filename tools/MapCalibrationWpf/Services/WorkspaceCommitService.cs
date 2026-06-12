@@ -19,7 +19,6 @@ public sealed class WorkspaceCommitService
         var stamped = calibration with
         {
             Source = CalibrationSource.BundledBaseline,
-            CalibrationZoom = 1.0,
             SchemaVersion = 1,
         };
         BaselineFile.UpsertAnchor(RepoPaths.BaselineJsonPath(), area, stamped);
