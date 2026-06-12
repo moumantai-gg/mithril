@@ -719,8 +719,19 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // When DeviationMaskingEnabled is false, OR both engine deps are null
         // (the test-graph fallback), OR both upstream sources are empty, the request's
         // DeviationMask stays null → byte-identical pre-#1116 detector behaviour.
+        //
+        // The whole mask-build block is wrapped in a `calibration.detect.mask` span
+        // so a perf-trace session can see how often each upstream contributes and how
+        // much of the crop the combined mask covers. The span name lives on the
+        // Capture-layer source (siblings: calibration.attempt / .capture / .refine /
+        // .solve); tag vocabulary is documented in docs/perf-trace-schema.md.
+        using var maskSpan = MithrilActivitySources.MapCalibration.StartActivity("calibration.detect.mask");
+        maskSpan?.SetTag("area", area);
+
         GrayImage? combinedMask = null;
         bool[]? deviationMask = null;
+        bool boundaryAvailable = false;
+        bool fogAvailable = false;
         if (_detectorOptions is { DeviationMaskingEnabled: true }
             && _boundaryMaskCache is not null
             && _fogOfWarDetector is not null)
@@ -729,19 +740,23 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             GrayImage? boundaryResampled = boundaryNative is null
                 ? null
                 : ImageOps.Resize(boundaryNative, crop.Width, crop.Height);
+            boundaryAvailable = boundaryResampled is not null;
             // FogOfWarDetector.Detect returns an all-zeros mask when fog detection
             // is disabled, so we can call it unconditionally (the combiner reduces
             // an empty-fog input to "boundary only"). Keep the call gated on the
             // master DeviationMaskingEnabled flag above — if masking is off we
             // shouldn't pay the variance scan at all.
             var fog = _fogOfWarDetector.Detect(crop);
+            // mask.fog.available reflects "fog detection was enabled AND ran" — the
+            // Detect call always runs when masking is on (returns all-zeros when the
+            // sub-flag is off), so the span tag tracks the contribution flag, not
+            // whether Detect returned a non-null GrayImage.
+            fogAvailable = _detectorOptions.FogOfWarDetectionEnabled;
             // Only build the combined mask when at least one source contributes.
             // (Combine returns an all-zeros mask in the both-null/empty case, but
             // we can skip the OR/copy entirely + leave DeviationMask null so the
             // detector's null-path stays byte-identical to pre-#1116.)
-            bool boundaryContributes = boundaryResampled is not null;
-            bool fogContributes = _detectorOptions.FogOfWarDetectionEnabled;
-            if (boundaryContributes || fogContributes)
+            if (boundaryAvailable || fogAvailable)
             {
                 combinedMask = DeviationMaskCombiner.Combine(
                     boundaryResampled, fog, crop.Width, crop.Height);
@@ -755,11 +770,17 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                         maskedCount++;
                     }
                 }
+                double coverage = deviationMask.Length == 0
+                    ? 0.0
+                    : (double)maskedCount / deviationMask.Length;
+                maskSpan?.SetTag("mask.coverage", coverage);
                 _logger?.LogTrace(
                     "Auto-calibration {Area}: deviation mask built (boundary={Boundary}, fog={Fog}; {Masked}/{Total} px masked).",
-                    area, boundaryContributes, fogContributes, maskedCount, deviationMask.Length);
+                    area, boundaryAvailable, fogAvailable, maskedCount, deviationMask.Length);
             }
         }
+        maskSpan?.SetTag("mask.boundary.available", boundaryAvailable);
+        maskSpan?.SetTag("mask.fog.available", fogAvailable);
         attempt.DeviationMaskImage = combinedMask;
 
         var request = new DetectionRequest(
