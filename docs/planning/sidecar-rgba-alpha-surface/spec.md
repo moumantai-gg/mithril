@@ -207,7 +207,7 @@ The catalogue's existing entry shape ([`CanonicalAssetHashEntry`](../../../src/M
 The existing sidecar load span (from #931) gains tags for the alpha path:
 
 - `texture.alpha.available` (bool) — alpha cache present + verified
-- `texture.alpha.rejected` (enum: `manifest_missing` / `blob_missing` / `hash_mismatch` / `canonical_gate_reject` / `size_mismatch`)
+- `texture.alpha.rejected` (enum: `empty_key` / `cache_dir_absent` / `manifest_missing` / `blob_missing` / `hash_mismatch` / `size_mismatch` / `canonical_gate_reject`). The `manifest_missing` and `blob_missing` values cover both the "file not found" and "parse failed / decompress failed" cases — the granularity differentiation lives in the log message body, not the tag. `docs/perf-trace-schema.md` is the live contract.
 
 Updates `docs/perf-trace-schema.md` and the byte-parity test in `tests/Mithril.Shared.Tests/PerfTracerTests.cs`.
 
@@ -231,8 +231,8 @@ The cache dir is supplied by the consumer (typically `%LocalAppData%/Mithril/ass
 | Failure | Behavior |
 |---|---|
 | Sidecar didn't emit alpha (v1 sidecar still installed) | Provider returns `null`. Consumer (mask cache) falls through to fog mask only. Telemetry `texture.alpha.rejected=manifest_missing`. |
-| Manifest parse fails | Provider returns `null`, `LogWarning`, telemetry `rejected=manifest_malformed`. |
-| Blob decompress fails | Provider returns `null`, `LogWarning`, telemetry `rejected=blob_corrupt`. |
+| Manifest parse fails (malformed JSON, missing required fields) | Provider returns `null`, `LogWarning`, telemetry `rejected=manifest_missing`. The log message distinguishes "not found" from "malformed" while the tag groups by branch outcome. |
+| Blob decompress fails (corrupt DeflateStream, file unreadable) | Provider returns `null`, `LogWarning`, telemetry `rejected=blob_missing`. Same log-vs-tag granularity split as manifest parse. |
 | SHA-256 mismatch | Provider returns `null`, `LogWarning`, telemetry `rejected=hash_mismatch`. |
 | Canonical-hash gate rejects | Provider returns `null`, `LogWarning`, telemetry `rejected=canonical_gate_reject`. |
 | Width × height mismatch with gray companion | Provider returns `null`, `LogWarning`, telemetry `rejected=size_mismatch`. Indicates sidecar bug; flag loudly. |
