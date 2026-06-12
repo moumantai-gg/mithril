@@ -94,5 +94,6 @@ public sealed class LiveMapViewServiceTests
     private sealed class TestBaseTextureProvider : IBaseTextureProvider
     {
         public GrayImage? TryGetBaseTexture(string mapAssetKey) => new GrayImage(16, 16, new byte[256]);
+        public GrayImage? TryGetTextureAlpha(string mapAssetKey) => null;
     }
 }

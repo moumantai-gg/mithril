@@ -48,6 +48,10 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
         _logger = logger;
     }
 
+    // mithril#1116 Task 1: alpha-surface stub. Real implementation (parallel
+    // map-texture-<area>-alpha.{json,bin} cache reader) lands in Task 2.
+    public GrayImage? TryGetTextureAlpha(string mapAssetKey) => null;
+
     public GrayImage? TryGetBaseTexture(string mapAssetKey)
     {
         if (string.IsNullOrWhiteSpace(mapAssetKey))
