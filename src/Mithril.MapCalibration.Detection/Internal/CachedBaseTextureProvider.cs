@@ -48,9 +48,67 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
         _logger = logger;
     }
 
-    // mithril#1116 Task 1: alpha-surface stub. Real implementation (parallel
-    // map-texture-<area>-alpha.{json,bin} cache reader) lands in Task 2.
-    public GrayImage? TryGetTextureAlpha(string mapAssetKey) => null;
+    // mithril#1116: parallel alpha-surface cache reader. Mirrors
+    // TryGetBaseTexture exactly but reads map-texture-<area>-alpha.{json,bin}
+    // and asks the canonical-hash gate about "<area>-alpha" (same Check API).
+    public GrayImage? TryGetTextureAlpha(string mapAssetKey)
+    {
+        if (string.IsNullOrWhiteSpace(mapAssetKey))
+            return null;
+        if (string.IsNullOrWhiteSpace(_cacheDir) || !Directory.Exists(_cacheDir))
+        {
+            _logger?.LogInformation(
+                "Base-texture cache dir {CacheDir} absent — no alpha for {MapAsset} (safe-degrade).",
+                _cacheDir, mapAssetKey);
+            return null;
+        }
+
+        var manifestPath = Path.Combine(_cacheDir, $"map-texture-{mapAssetKey}-alpha.json");
+        var blobPath = Path.Combine(_cacheDir, $"map-texture-{mapAssetKey}-alpha.bin");
+
+        var manifest = ReadManifest(manifestPath, mapAssetKey);
+        if (manifest is null) return null;
+
+        var pixels = ReadDecompressedPixels(blobPath, mapAssetKey);
+        if (pixels is null) return null;
+
+        var actualHash = Convert.ToHexStringLower(SHA256.HashData(pixels));
+        if (!string.Equals(actualHash, manifest.PixelSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            _logger?.LogWarning(
+                "Alpha pixel hash mismatch for {MapAsset} (manifest {Expected}, blob {Actual}) — alpha rejected (safe-degrade).",
+                mapAssetKey, manifest.PixelSha256, actualHash);
+            return null;
+        }
+
+        int count = manifest.Width * manifest.Height;
+        if (count <= 0 || pixels.Length != count)
+        {
+            _logger?.LogWarning(
+                "Alpha blob length {Len} != width*height={Expected} for {MapAsset} — alpha rejected (safe-degrade).",
+                pixels.Length, count, mapAssetKey);
+            return null;
+        }
+
+        // Canonical-hash gate (decode-tool drift / corruption). Use the existing
+        // Check(...) API with the "<area>-alpha" artifact key convention — no
+        // new gate method needed.
+        if (_hashGate is not null)
+        {
+            var verdict = _hashGate.Check(_pgVersion, $"{mapAssetKey}-alpha", manifest.PixelSha256);
+            if (!verdict.Accepted)
+            {
+                _logger?.LogWarning(
+                    "Alpha for {MapAsset} rejected by canonical-hash gate: {Reason} — alpha rejected (safe-degrade).",
+                    mapAssetKey, verdict.Reason);
+                return null;
+            }
+        }
+
+        _logger?.LogInformation("Loaded alpha for {MapAsset} ({W}x{H}) from {CacheDir} (pixelSha256 verified).",
+            mapAssetKey, manifest.Width, manifest.Height, _cacheDir);
+        return new GrayImage(manifest.Width, manifest.Height, pixels);
+    }
 
     public GrayImage? TryGetBaseTexture(string mapAssetKey)
     {
