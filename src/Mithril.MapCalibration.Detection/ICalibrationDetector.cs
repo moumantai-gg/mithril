@@ -62,6 +62,19 @@ public sealed record DetectionRequest(
     /// retention and LogTrace formatting for the null fields.
     /// </summary>
     public DetectionDiagnosticHooks? Diagnostics { get; init; }
+
+    /// <summary>
+    /// Optional binary mask (mithril#1116) for the deviation-mask subtract step:
+    /// pixels with <c>true</c> are excluded from the working <c>fg</c> buffer
+    /// AFTER the existing rim subtract and BEFORE morph-close, inside
+    /// <see cref="DeviationBlobDetector.DetectIconBlobs"/>. Combines the
+    /// texture-alpha-derived floor-boundary band and the screenshot-derived
+    /// fog-of-war mask (built upstream by <c>DeviationMaskCombiner</c>).
+    /// Length MUST equal <c>Width*Height</c> of the deviation buffer; a
+    /// mismatch is a silent no-op + <c>LogWarning</c>, never a crash.
+    /// <c>null</c> = no mask applied (byte-identical to pre-#1116 behaviour).
+    /// </summary>
+    public bool[]? DeviationMask { get; init; }
 }
 
 /// <summary>
@@ -88,7 +101,17 @@ public sealed record DetectionDiagnosticHooks(
     Action<DeviationSnapshot>? OnDeviation,
     Action<RimMaskSnapshot>? OnRimMask,
     Action<MorphSnapshot>? OnMorph,
-    Action<BlobClassification>? OnBlobClassified);
+    Action<BlobClassification>? OnBlobClassified)
+{
+    /// <summary>
+    /// Fires after the mithril#1116 deviation-mask subtract step
+    /// (boundary + fog), before morph-close. Null = no observer attached;
+    /// producer cost is zero. Added as an init-only property (not a
+    /// positional parameter) so existing four-arg constructor call sites
+    /// remain source-compatible.
+    /// </summary>
+    public Action<DeviationMaskSnapshot>? OnDeviationMask { get; init; }
+}
 
 /// <summary>
 /// One observation per orientation pass (mithril#1123). Emitted from inside
@@ -193,6 +216,44 @@ public sealed record RimMaskSnapshot(
         System.Diagnostics.Debug.Assert(
             buffer.Length == width * height,
             $"RimMaskSnapshot.{name}.Length ({buffer.Length}) must equal Width*Height ({width}*{height}={width * height}).");
+        return buffer;
+    }
+}
+
+/// <summary>
+/// Snapshot emitted by <see cref="DeviationBlobDetector.DetectIconBlobs"/>
+/// immediately after the mithril#1116 deviation-mask subtract step (alpha-
+/// boundary + fog-of-war mask), before morph-close. Parallels
+/// <see cref="RimMaskSnapshot"/>; same shape, different masking source.
+/// </summary>
+/// <remarks>
+/// <see cref="MaskPixelCount"/> is the count of <c>true</c> pixels in the
+/// combined deviation mask (boundary OR fog) at emission time —
+/// the set of pixels the subtract step removed from the foreground.
+/// <see cref="FgInputCount"/> / <see cref="FgSurvivorCount"/> bracket the
+/// subtract: input = fg-true count BEFORE the subtract; survivor = fg-true
+/// count AFTER. <see cref="MaskBuffer"/> is retained for the diagnostic bundle
+/// (mirrors <see cref="RimMaskSnapshot.RimMaskBuffer"/>).
+/// </remarks>
+public sealed record DeviationMaskSnapshot(
+    bool Rotate180,
+    int Width,
+    int Height,
+    int MaskPixelCount,
+    int FgInputCount,
+    int FgSurvivorCount,
+    ReadOnlyMemory<bool> MaskBuffer)
+{
+    /// <summary>mithril#1126: see <see cref="DeviationSnapshot.ForegroundBuffer"/>.</summary>
+    public ReadOnlyMemory<bool> MaskBuffer { get; init; } =
+        AssertBufferLengthMatches(MaskBuffer, Width, Height, nameof(MaskBuffer));
+
+    private static ReadOnlyMemory<bool> AssertBufferLengthMatches(
+        ReadOnlyMemory<bool> buffer, int width, int height, string name)
+    {
+        System.Diagnostics.Debug.Assert(
+            buffer.Length == width * height,
+            $"DeviationMaskSnapshot.{name}.Length ({buffer.Length}) must equal Width*Height ({width}*{height}={width * height}).");
         return buffer;
     }
 }

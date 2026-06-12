@@ -67,6 +67,7 @@ Once `TelemetrySettings.EnableOtlpExport` is enabled (Settings → Diagnostics �
 | `calibration.drift_check` | [`AutoCalibrationEngine.CheckDriftAsync`](../src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs) via `MithrilActivitySources.MapCalibration` (mithril#1046) | One span per hotkey-triggered drift check on a scene with a stored calibration; `outcome` tag distinguishes early-exit vs `Ok` vs `Drift`. |
 | `calibration.refine.primary` / `calibration.refine.fallback` | [`CompositeMapRegionRefiner`](../src/Mithril.MapCalibration.Detection/CompositeMapRegionRefiner.cs) via [`MapCalibrationDiagnostics.ActivitySource`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) (mithril#1061) | Per-branch spans from the locate dispatcher. Primary wraps `FeatureMatchingRefiner` (ORB+Lowe); fallback wraps `SobelPaddedPyramidRefiner`. Tags below. |
 | `texture.alpha.load` | [`CachedBaseTextureProvider.TryGetTextureAlpha`](../src/Mithril.MapCalibration.Detection/Internal/CachedBaseTextureProvider.cs) via [`MapCalibrationDiagnostics.ActivitySource`](../src/Mithril.MapCalibration/Diagnostics/MapCalibrationDiagnostics.cs) (mithril#1116 sidecar prereq) | One span per alpha-cache lookup. `texture.alpha.available` distinguishes success vs reject; `texture.alpha.rejected` carries the rejection reason (enum below). Sibling gray path `TryGetBaseTexture` is not yet span-instrumented — symmetry is a follow-up. |
+| `calibration.detect.mask` | [`AutoCalibrationEngine`](../src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs) via `MithrilActivitySources.MapCalibration` (mithril#1116) | One span per attempt around the deviation-mask build block. Tags carry per-attempt mask provenance: which upstream(s) contributed and the combined mask's coverage of the aligned-crop region. Absent on the "no mask" path (engine deps null or `DeviationMaskingEnabled = false`) — span still emits with both `available` flags `false` and `mask.coverage` absent. |
 | `calibration.area.select_scene` / `calibration.area.calibrate_current` | [`AreaCalibrationService`](../src/Legolas.Module/Services/AreaCalibrationService.cs) via `MithrilActivitySources.LegolasCalibration` (mithril#1093) | Per AreaCalibrationService scene-handoff / per user-driven calibrate-current invocation. |
 | `calibration.ghosts.rebuild` | [`MapOverlayViewModel.RebuildCalibrationGhosts`](../src/Legolas.Module/ViewModels/MapOverlayViewModel.cs) via `MithrilActivitySources.LegolasCalibration` (mithril#1093) | Per VM ghost-pass rebuild; companion histogram `mithril.legolas.calibration.ghosts.rebuild_ms` records wall-clock. |
 | `meter_counter` | All `Meter`-counter producers (Arda lines/verb-unmatched/grammar-break, reference fetch_outcome, domain-event-published, overlay projection.latency_ms + frame.markers, map-calibration synthesis-J histograms + disagree counter, Legolas calibration picker/projection/drawer/rebuild instruments) | Sums per (instrument, tag-set) flushed once per second |
@@ -352,6 +353,24 @@ One span per `CachedBaseTextureProvider.TryGetTextureAlpha` invocation — the a
 ```powershell
 # Alpha-cache hit rate per area across a session
 Get-Content $Path | jq -c 'select(.Kind=="scope" and .Name=="texture.alpha.load") | {area:.Tags.area, available:.Tags."texture.alpha.available", rejected:.Tags."texture.alpha.rejected"}'
+```
+
+### `calibration.detect.mask` (mithril#1116)
+
+One span per auto-calibration attempt around the deviation-mask build block in [`AutoCalibrationEngine`](../src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs). Lives on the Capture-layer source [`MithrilActivitySources.MapCalibration`](../src/Mithril.Shared/Diagnostics/Telemetry/MithrilActivitySources.cs) — sibling of `calibration.attempt` / `calibration.capture` / `calibration.refine` / `calibration.solve`, all of which fire on the same source. The span covers the full mask build: per-area boundary-mask cache lookup + resample, per-attempt fog-of-war variance scan, and the OR-combine that feeds `DetectionRequest.DeviationMask`.
+
+The span emits on every attempt, including the "no mask" paths (`DeviationMaskingEnabled = false`, engine deps null, or both upstream sources empty). In that case `mask.boundary.available` and `mask.fog.available` are both `false` and `mask.coverage` is absent — the span's presence + zero tags is the signal that masking was inactive for this attempt.
+
+| Tag | Type | Notes |
+|---|---|---|
+| `area` | string | The Arda parent area key (e.g. `AreaSerbule`). Safe. Always emitted. |
+| `mask.boundary.available` | bool | `true` when `FloorBoundaryMaskCache.GetOrCompute` returned a non-null mask for the texture's alpha (and the resample to the crop's dims succeeded). `false` on the alpha-unavailable / degenerate-alpha paths and when masking is off. Always emitted. |
+| `mask.fog.available` | bool | `true` when fog detection was enabled AND the per-attempt `FogOfWarDetector.Detect` ran. `false` when `FogOfWarDetectionEnabled = false` or when the master `DeviationMaskingEnabled` flag is off. Always emitted. |
+| `mask.coverage` | double | Fraction of pixels in the combined mask that are non-zero (i.e. "masked-out" pixels the detector will skip), in `[0.0, 1.0]`. Emitted only when at least one upstream contributed and the combined mask was built; absent on the "no mask" paths so consumers can distinguish "mask built but covers nothing" (0.0) from "no mask built" (absent). |
+
+```powershell
+# Mask-source contribution rate per area across a session
+Get-Content $Path | jq -c 'select(.Kind=="scope" and .Name=="calibration.detect.mask") | {area:.Tags.area, boundary:.Tags."mask.boundary.available", fog:.Tags."mask.fog.available", coverage:.Tags."mask.coverage"}'
 ```
 
 ### `calibration.drift_check` (mithril#1046)

@@ -54,6 +54,31 @@ public static class DetectionServiceCollectionExtensions
             sp.GetRequiredService<MapCalibrationSolverOptions>()));
 
         services.TryAddSingleton<MapCalibrationLocateOptions>();
+        // mithril#1116: deviation-mask + fog-of-war detector knobs. Same fallback
+        // shape as MapCalibrationLocateOptions above — the shell-side capture
+        // wiring registers the JSON-persisted singleton via
+        // AddMithrilVersionedSettings<MapCalibrationDetectorOptions> against
+        // map-calibration-detector.json BEFORE calling this method, so this
+        // TryAddSingleton is the plain-defaults fallback for test graphs that
+        // don't care about persistence.
+        services.TryAddSingleton<MapCalibrationDetectorOptions>();
+
+        // mithril#1116: per-area dilated floor-boundary alpha-edge cache + per-frame
+        // fog-of-war classifier. AutoCalibrationEngine resolves both and feeds the
+        // OR-combined mask into DetectionRequest.DeviationMask. Both are internal
+        // sealed; Mithril.MapCalibration.Capture is on the InternalsVisibleTo list
+        // so the engine can take them as constructor deps. DeviationMaskCombiner is
+        // a static utility — no registration needed. Explicit factory lambdas so
+        // ILogger<T> is optional (resolved via ILoggerFactory.CreateLogger when a
+        // factory is registered; null in test graphs that skip the logging wiring).
+        services.TryAddSingleton(sp => new FloorBoundaryMaskCache(
+            sp.GetRequiredService<IBaseTextureProvider>(),
+            sp.GetRequiredService<MapCalibrationDetectorOptions>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger<FloorBoundaryMaskCache>()));
+        services.TryAddSingleton(sp => new FogOfWarDetector(
+            sp.GetRequiredService<MapCalibrationDetectorOptions>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger<FogOfWarDetector>()));
+
         services.TryAddSingleton<CachedOrbDescriptorProvider>(sp =>
         {
             var opts = sp.GetRequiredService<MapCalibrationLocateOptions>();

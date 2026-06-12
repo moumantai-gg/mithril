@@ -68,7 +68,11 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
             dev, w, h, request.LowNcc, rim, request.BlobOptions, closeRadius: 1,
             hooks: request.Diagnostics,
             meanNcc: meanNcc,
-            logger: _logger);
+            logger: _logger,
+            // mithril#1116: combined boundary+fog mask threaded from the request.
+            // Null when no mask was built (pre-#1116 paths / disabled by settings)
+            // — DetectIconBlobs treats null as no-op so behavior is unchanged.
+            deviationMask: request.DeviationMask);
 
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
 

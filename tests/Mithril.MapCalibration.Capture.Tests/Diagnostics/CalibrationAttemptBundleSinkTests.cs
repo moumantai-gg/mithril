@@ -741,7 +741,9 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         var parsed = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
 
         parsed.Should().NotBeNull();
-        parsed!.SchemaVersion.Should().Be(3);
+        // mithril#1116 bumped the sink to schema v4 (additive DeviationMask field).
+        // The Synthesis section's shape is unchanged from v3.
+        parsed!.SchemaVersion.Should().Be(4);
         parsed.Synthesis.Should().NotBeNull();
         parsed.Synthesis!.Mode.Should().Be("shadow");
         parsed.Synthesis.J.Should().Be(7.5);
@@ -764,7 +766,8 @@ public sealed class CalibrationAttemptBundleSinkTests : IDisposable
         using var fs = File.OpenRead(path);
         var parsed = JsonSerializer.Deserialize(fs, CalibrationBundleJsonContext.Default.AttemptJson);
 
-        parsed!.SchemaVersion.Should().Be(3);
+        // mithril#1116 bumped the sink to schema v4 (additive DeviationMask field).
+        parsed!.SchemaVersion.Should().Be(4);
         parsed.Synthesis.Should().BeNull();
     }
 

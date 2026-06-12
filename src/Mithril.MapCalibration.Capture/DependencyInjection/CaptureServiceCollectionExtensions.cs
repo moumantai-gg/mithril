@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration.Detection.DependencyInjection;
+using Mithril.MapCalibration.Detection.Internal;
 using Mithril.MapCalibration.Internal;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Game;
@@ -91,6 +92,18 @@ public static partial class CaptureServiceCollectionExtensions
             services.AddMithrilVersionedSettings<MapCalibrationLocateOptions>(
                 Path.Combine(settingsDir, "map-calibration-locate.json"),
                 MapCalibrationLocateOptionsJsonContext.Default.MapCalibrationLocateOptions);
+
+            // mithril#1116: persisted detector-stage knobs (deviation mask +
+            // fog-of-war filter). Same pattern as MapCalibrationLocateOptions
+            // above — registered BEFORE the Detection tier so Detection's
+            // TryAddSingleton<MapCalibrationDetectorOptions> becomes a no-op
+            // fallback and this JSON-backed + migrate-dispatched +
+            // SettingsAutoSaver-wired singleton wins. Separate file from the
+            // locate options so the two surfaces can evolve their schemas
+            // independently.
+            services.AddMithrilVersionedSettings<MapCalibrationDetectorOptions>(
+                Path.Combine(settingsDir, "map-calibration-detector.json"),
+                MapCalibrationDetectorOptionsJsonContext.Default.MapCalibrationDetectorOptions);
         }
 
         // Detection tier (Phase-1 detect→solve engine + #931 cache providers +
@@ -193,7 +206,16 @@ public static partial class CaptureServiceCollectionExtensions
             assetExtractor: sp.GetService<IAssetExtractor>(),
             gameConfig: sp.GetRequiredService<GameConfig>(),
             assetCacheDir: assetCacheDir,
-            pgVersion: pgVersion));
+            pgVersion: pgVersion,
+            // mithril#1116: deviation-mask wiring (detector options + boundary cache
+            // + per-frame fog detector). All three resolve from the detection-side
+            // DI registration in DetectionServiceCollectionExtensions; the engine
+            // gates mask construction on DeviationMaskingEnabled + non-null cache/
+            // detector so a missing detection registration safely degrades to the
+            // pre-#1116 no-mask path.
+            detectorOptions: sp.GetRequiredService<MapCalibrationDetectorOptions>(),
+            boundaryMaskCache: sp.GetRequiredService<FloorBoundaryMaskCache>(),
+            fogOfWarDetector: sp.GetRequiredService<FogOfWarDetector>()));
         services.AddSingleton<IAutoCalibrationRunner>(sp => sp.GetRequiredService<AutoCalibrationEngine>());
 
         // Bbox draw controller (shell-side, over IOverlayWindow). On a confirmed snip

@@ -76,6 +76,16 @@ public sealed class MapCalibrationSolveEngine
                 var rimSink = callerHooks.OnRimMask;
                 var morphSink = callerHooks.OnMorph;
                 var blobSink = callerHooks.OnBlobClassified;
+                // mithril#1116: forward OnDeviationMask through the orientation
+                // wrap too. The hook is an init-only property on
+                // DetectionDiagnosticHooks (not a positional ctor param), so
+                // the wrap is set via `with` after the four-arg construction —
+                // same Rotate180 rewriting pattern as the other four sinks.
+                // DeviationBlobDetector emits with Rotate180=false (it has no
+                // knowledge of which orientation pass it's in); without this
+                // forward, a subscriber via request.Diagnostics.OnDeviationMask
+                // would be silently swallowed by the wrap.
+                var devMaskSink = callerHooks.OnDeviationMask;
                 wrappedHooks = new DetectionDiagnosticHooks(
                     OnDeviation: devSink is null ? null
                         : s => devSink(s with { Rotate180 = orientationFlag }),
@@ -84,7 +94,11 @@ public sealed class MapCalibrationSolveEngine
                     OnMorph: morphSink is null ? null
                         : s => morphSink(s with { Rotate180 = orientationFlag }),
                     OnBlobClassified: blobSink is null ? null
-                        : c => blobSink(c with { Rotate180 = orientationFlag }));
+                        : c => blobSink(c with { Rotate180 = orientationFlag }))
+                {
+                    OnDeviationMask = devMaskSink is null ? null
+                        : s => devMaskSink(s with { Rotate180 = orientationFlag }),
+                };
             }
             var req = request with
             {
