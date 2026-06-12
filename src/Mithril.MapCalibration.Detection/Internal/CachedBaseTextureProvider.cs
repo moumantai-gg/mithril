@@ -4,6 +4,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Diagnostics;
 
 namespace Mithril.MapCalibration.Detection.Internal;
 
@@ -51,15 +52,32 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
     // mithril#1116: parallel alpha-surface cache reader. Mirrors
     // TryGetBaseTexture exactly but reads map-texture-<area>-alpha.{json,bin}
     // and asks the canonical-hash gate about "<area>-alpha" (same Check API).
+    //
+    // Telemetry: the body is wrapped in a `texture.alpha.load` span on
+    // MapCalibrationDiagnostics.ActivitySource. Outcome tags distinguish
+    // success vs each rejection branch so a Seq/OTLP triager can split
+    // "missing manifest" / "missing blob" / "hash mismatch" / "size mismatch"
+    // / "gate reject" without parsing logs. The sibling gray path
+    // (TryGetBaseTexture) is not yet span-instrumented — symmetry is a
+    // follow-up; this PR only adds observability to the new alpha path.
     public GrayImage? TryGetTextureAlpha(string mapAssetKey)
     {
+        using var span = MapCalibrationDiagnostics.ActivitySource.StartActivity("texture.alpha.load");
+        span?.SetTag("area", mapAssetKey);
+
         if (string.IsNullOrWhiteSpace(mapAssetKey))
+        {
+            span?.SetTag("texture.alpha.available", false);
+            span?.SetTag("texture.alpha.rejected", "empty_key");
             return null;
+        }
         if (string.IsNullOrWhiteSpace(_cacheDir) || !Directory.Exists(_cacheDir))
         {
             _logger?.LogInformation(
                 "Base-texture cache dir {CacheDir} absent — no alpha for {MapAsset} (safe-degrade).",
                 _cacheDir, mapAssetKey);
+            span?.SetTag("texture.alpha.available", false);
+            span?.SetTag("texture.alpha.rejected", "cache_dir_absent");
             return null;
         }
 
@@ -67,10 +85,20 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
         var blobPath = Path.Combine(_cacheDir, $"map-texture-{mapAssetKey}-alpha.bin");
 
         var manifest = ReadManifest(manifestPath, mapAssetKey);
-        if (manifest is null) return null;
+        if (manifest is null)
+        {
+            span?.SetTag("texture.alpha.available", false);
+            span?.SetTag("texture.alpha.rejected", "manifest_missing");
+            return null;
+        }
 
         var pixels = ReadDecompressedPixels(blobPath, mapAssetKey);
-        if (pixels is null) return null;
+        if (pixels is null)
+        {
+            span?.SetTag("texture.alpha.available", false);
+            span?.SetTag("texture.alpha.rejected", "blob_missing");
+            return null;
+        }
 
         var actualHash = Convert.ToHexStringLower(SHA256.HashData(pixels));
         if (!string.Equals(actualHash, manifest.PixelSha256, StringComparison.OrdinalIgnoreCase))
@@ -78,6 +106,8 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
             _logger?.LogWarning(
                 "Alpha pixel hash mismatch for {MapAsset} (manifest {Expected}, blob {Actual}) — alpha rejected (safe-degrade).",
                 mapAssetKey, manifest.PixelSha256, actualHash);
+            span?.SetTag("texture.alpha.available", false);
+            span?.SetTag("texture.alpha.rejected", "hash_mismatch");
             return null;
         }
 
@@ -87,6 +117,8 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
             _logger?.LogWarning(
                 "Alpha blob length {Len} != width*height={Expected} for {MapAsset} — alpha rejected (safe-degrade).",
                 pixels.Length, count, mapAssetKey);
+            span?.SetTag("texture.alpha.available", false);
+            span?.SetTag("texture.alpha.rejected", "size_mismatch");
             return null;
         }
 
@@ -101,12 +133,15 @@ internal sealed class CachedBaseTextureProvider : IBaseTextureProvider
                 _logger?.LogWarning(
                     "Alpha for {MapAsset} rejected by canonical-hash gate: {Reason} — alpha rejected (safe-degrade).",
                     mapAssetKey, verdict.Reason);
+                span?.SetTag("texture.alpha.available", false);
+                span?.SetTag("texture.alpha.rejected", "canonical_gate_reject");
                 return null;
             }
         }
 
         _logger?.LogInformation("Loaded alpha for {MapAsset} ({W}x{H}) from {CacheDir} (pixelSha256 verified).",
             mapAssetKey, manifest.Width, manifest.Height, _cacheDir);
+        span?.SetTag("texture.alpha.available", true);
         return new GrayImage(manifest.Width, manifest.Height, pixels);
     }
 
