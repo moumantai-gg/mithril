@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration.Detection.DependencyInjection;
+using Mithril.MapCalibration.Detection.Internal;
 using Mithril.MapCalibration.Internal;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Game;
@@ -193,7 +194,16 @@ public static partial class CaptureServiceCollectionExtensions
             assetExtractor: sp.GetService<IAssetExtractor>(),
             gameConfig: sp.GetRequiredService<GameConfig>(),
             assetCacheDir: assetCacheDir,
-            pgVersion: pgVersion));
+            pgVersion: pgVersion,
+            // mithril#1116: deviation-mask wiring (detector options + boundary cache
+            // + per-frame fog detector). All three resolve from the detection-side
+            // DI registration in DetectionServiceCollectionExtensions; the engine
+            // gates mask construction on DeviationMaskingEnabled + non-null cache/
+            // detector so a missing detection registration safely degrades to the
+            // pre-#1116 no-mask path.
+            detectorOptions: sp.GetRequiredService<MapCalibrationDetectorOptions>(),
+            boundaryMaskCache: sp.GetRequiredService<FloorBoundaryMaskCache>(),
+            fogOfWarDetector: sp.GetRequiredService<FogOfWarDetector>()));
         services.AddSingleton<IAutoCalibrationRunner>(sp => sp.GetRequiredService<AutoCalibrationEngine>());
 
         // Bbox draw controller (shell-side, over IOverlayWindow). On a confirmed snip

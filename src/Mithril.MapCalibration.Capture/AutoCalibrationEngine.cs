@@ -8,6 +8,7 @@ using Arda.World.Player;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Capture.Diagnostics;
 using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Detection.Internal;
 using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Game;
 using Mithril.Shared.MapCalibration;
@@ -87,7 +88,24 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private readonly string? _assetCacheDir;
     private readonly string? _pgVersion;
 
-    public AutoCalibrationEngine(
+    // mithril#1116: deviation-mask wiring. All three nullable so test graphs that
+    // don't opt in (most of them) get byte-identical pre-#1116 behaviour — when
+    // any of these is null the engine skips mask construction and DetectionRequest.
+    // DeviationMask stays null (the "no mask" path the detector treats as identical
+    // to pre-#1116).
+    private readonly MapCalibrationDetectorOptions? _detectorOptions;
+    private readonly FloorBoundaryMaskCache? _boundaryMaskCache;
+    private readonly FogOfWarDetector? _fogOfWarDetector;
+
+    // mithril#1116: ctor visibility is `internal` because the deviation-mask deps
+    // (FloorBoundaryMaskCache, FogOfWarDetector) are internal sealed in the
+    // Mithril.MapCalibration.Detection.Internal namespace. The class itself stays
+    // public (the IAutoCalibrationRunner seam is the cross-assembly contract); all
+    // current callers — CaptureServiceCollectionExtensions (same assembly) and the
+    // test-side EngineHarness/AutoCalibrationEngineTests (Mithril.MapCalibration.Capture.Tests,
+    // on Capture's InternalsVisibleTo list) — see the internal ctor without code
+    // changes.
+    internal AutoCalibrationEngine(
         IMapState mapState,
         ISceneAssetCache sceneCache,
         IGameWindowLocator windowLocator,
@@ -104,7 +122,10 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         IAssetExtractor? assetExtractor = null,
         GameConfig? gameConfig = null,
         string? assetCacheDir = null,
-        string? pgVersion = null)
+        string? pgVersion = null,
+        MapCalibrationDetectorOptions? detectorOptions = null,
+        FloorBoundaryMaskCache? boundaryMaskCache = null,
+        FogOfWarDetector? fogOfWarDetector = null)
     {
         _mapState = mapState;
         _sceneCache = sceneCache;
@@ -125,6 +146,9 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         _gameConfig = gameConfig;
         _assetCacheDir = assetCacheDir;
         _pgVersion = pgVersion;
+        _detectorOptions = detectorOptions;
+        _boundaryMaskCache = boundaryMaskCache;
+        _fogOfWarDetector = fogOfWarDetector;
     }
 
     /// <summary>
@@ -683,6 +707,61 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             OnMorph: morphSnaps.Add,
             OnBlobClassified: blobClasses.Add);
 
+        // mithril#1116: build the deviation mask BEFORE constructing DetectionRequest.
+        // Two upstream sources, both fail-soft:
+        //   - Floor-boundary mask (texture-side, per-area cached). Null when alpha
+        //     is unavailable for this assetKey or the alpha is degenerate. Computed
+        //     at the texture's native dims, then resampled to the aligned crop
+        //     so the combiner's per-pixel OR can run.
+        //   - Fog-of-war mask (screenshot-side, per-attempt). Always non-null but
+        //     all-zeros when FogOfWarDetectionEnabled is false; built directly at
+        //     the crop's dimensions so no resample is needed.
+        // When DeviationMaskingEnabled is false, OR both engine deps are null
+        // (the test-graph fallback), OR both upstream sources are empty, the request's
+        // DeviationMask stays null → byte-identical pre-#1116 detector behaviour.
+        GrayImage? combinedMask = null;
+        bool[]? deviationMask = null;
+        if (_detectorOptions is { DeviationMaskingEnabled: true }
+            && _boundaryMaskCache is not null
+            && _fogOfWarDetector is not null)
+        {
+            var boundaryNative = _boundaryMaskCache.GetOrCompute(assetKey);
+            GrayImage? boundaryResampled = boundaryNative is null
+                ? null
+                : ImageOps.Resize(boundaryNative, crop.Width, crop.Height);
+            // FogOfWarDetector.Detect returns an all-zeros mask when fog detection
+            // is disabled, so we can call it unconditionally (the combiner reduces
+            // an empty-fog input to "boundary only"). Keep the call gated on the
+            // master DeviationMaskingEnabled flag above — if masking is off we
+            // shouldn't pay the variance scan at all.
+            var fog = _fogOfWarDetector.Detect(crop);
+            // Only build the combined mask when at least one source contributes.
+            // (Combine returns an all-zeros mask in the both-null/empty case, but
+            // we can skip the OR/copy entirely + leave DeviationMask null so the
+            // detector's null-path stays byte-identical to pre-#1116.)
+            bool boundaryContributes = boundaryResampled is not null;
+            bool fogContributes = _detectorOptions.FogOfWarDetectionEnabled;
+            if (boundaryContributes || fogContributes)
+            {
+                combinedMask = DeviationMaskCombiner.Combine(
+                    boundaryResampled, fog, crop.Width, crop.Height);
+                deviationMask = new bool[combinedMask.Pixels.Length];
+                int maskedCount = 0;
+                for (int i = 0; i < deviationMask.Length; i++)
+                {
+                    if (combinedMask.Pixels[i] != 0)
+                    {
+                        deviationMask[i] = true;
+                        maskedCount++;
+                    }
+                }
+                _logger?.LogTrace(
+                    "Auto-calibration {Area}: deviation mask built (boundary={Boundary}, fog={Fog}; {Masked}/{Total} px masked).",
+                    area, boundaryContributes, fogContributes, maskedCount, deviationMask.Length);
+            }
+        }
+        attempt.DeviationMaskImage = combinedMask;
+
         var request = new DetectionRequest(
             Screenshot: crop,
             BaseTexture: alignedTexture,
@@ -696,6 +775,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             RenderSizePx = RenderSizePx,
             BlobScoreSink = blobScores.Add,
             Diagnostics = hooks,
+            DeviationMask = deviationMask,
         };
 
         _logger?.LogInformation(

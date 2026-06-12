@@ -88,6 +88,21 @@ public sealed class CalibrationAttemptContext
     /// </summary>
     public IReadOnlyList<BlobClassification>? BlobClassifications { get; set; }
 
+    /// <summary>
+    /// mithril#1116: the OR-combined deviation mask the engine fed into
+    /// <c>DetectionRequest.DeviationMask</c> for this attempt — floor-boundary
+    /// alpha-edge band (texture-derived) OR fog-of-war chrome (screenshot-derived),
+    /// sampled at the aligned crop dimensions (so width × height equal
+    /// <see cref="AlignedCrop"/>'s). Null when the engine ran with
+    /// <see cref="MapCalibrationDetectorOptions.DeviationMaskingEnabled"/> false,
+    /// when both upstream sources were null (no alpha + fog disabled), or when no
+    /// crop existed yet (pre-locate reject). When non-null the
+    /// <see cref="FilesystemCalibrationAttemptBundleSink"/> writes it to
+    /// <c>07a-deviation-mask.png</c> and the JSON pins
+    /// <see cref="AttemptFilesJson.DeviationMask"/> = the artifact name.
+    /// </summary>
+    public GrayImage? DeviationMaskImage { get; set; }
+
     // Outcome is set explicitly by the engine — either at each Fail() site, at
     // the end of the success path, or in the catch (exception → "error").
     public string Outcome { get; set; } = "unknown";

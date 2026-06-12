@@ -26,6 +26,13 @@
     <ProjectReference Include="..\Mithril.Persistence\Mithril.Persistence.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <!-- mithril#1116: AutoCalibrationEngine (the engine layer) builds the
+         deviation mask before constructing DetectionRequest, calling into
+         FloorBoundaryMaskCache + FogOfWarDetector. Both are internal sealed
+         (the public-surface seam is DetectionRequest.DeviationMask itself);
+         InternalsVisibleTo keeps them internal to consumers OUTSIDE the
+         calibration stack while letting the in-stack engine consume them. -->
+    <InternalsVisibleTo Include="Mithril.MapCalibration.Capture" />
     <InternalsVisibleTo Include="Mithril.MapCalibration.Capture.Tests" />
     <InternalsVisibleTo Include="Mithril.MapCalibration.Tests" />
   </ItemGroup>

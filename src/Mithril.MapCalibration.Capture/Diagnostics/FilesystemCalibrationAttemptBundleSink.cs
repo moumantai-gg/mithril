@@ -86,7 +86,12 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 Morphed: TryWriteMorphedPng(subdir, context, rotate180: false),
                 MorphedR180: TryWriteMorphedPng(subdir, context, rotate180: true),
                 BlobClassification: TryWriteBlobClassificationPng(subdir, context, rotate180: false),
-                BlobClassificationR180: TryWriteBlobClassificationPng(subdir, context, rotate180: true));
+                BlobClassificationR180: TryWriteBlobClassificationPng(subdir, context, rotate180: true),
+                // mithril#1116: OR-combined boundary + fog mask the engine fed into
+                // DetectionRequest.DeviationMask. Omitted when DeviationMaskingEnabled
+                // was false or both upstream sources contributed nothing (so the
+                // engine left context.DeviationMaskImage null).
+                DeviationMask: TryWriteDeviationMaskPng(subdir, context));
 
             WriteAttemptJson(subdir, context, files);
         }
@@ -178,6 +183,25 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
             return WritePng(dir, "06-aligned-screenshot.png", src);
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "06-aligned-screenshot write failed"); return null; }
+    }
+
+    // mithril#1116: write the OR-combined boundary + fog mask the engine fed into
+    // DetectionRequest.DeviationMask. Same Gray8 PNG shape as 03-screenshot-gray;
+    // null when the engine left context.DeviationMaskImage null (masking disabled
+    // or both upstream sources empty).
+    private string? TryWriteDeviationMaskPng(string dir, CalibrationAttemptContext ctx)
+    {
+        try
+        {
+            if (ctx.DeviationMaskImage is null) return null;
+            var img = ctx.DeviationMaskImage;
+            var src = BitmapSource.Create(
+                img.Width, img.Height, 96, 96,
+                PixelFormats.Gray8, null,
+                img.Pixels, img.Width);
+            return WritePng(dir, "07a-deviation-mask.png", src);
+        }
+        catch (Exception ex) { _logger?.LogWarning(ex, "07a-deviation-mask write failed"); return null; }
     }
 
     private string? TryWriteDeviation(string dir, CalibrationAttemptContext ctx)
