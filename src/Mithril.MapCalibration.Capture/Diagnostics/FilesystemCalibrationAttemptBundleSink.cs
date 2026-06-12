@@ -499,7 +499,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         {
             var finalized = DateTimeOffset.UtcNow;
             var dto = new AttemptJson(
-                SchemaVersion: 3,
+                SchemaVersion: 4,
                 Area: ctx.Area,
                 AttemptStartedUtc: ctx.StartedUtc.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),
                 AttemptFinalizedUtc: finalized.UtcDateTime.ToString("o", CultureInfo.InvariantCulture),

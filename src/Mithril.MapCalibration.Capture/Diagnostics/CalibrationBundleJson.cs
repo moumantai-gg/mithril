@@ -3,6 +3,26 @@ using System.Text.Json.Serialization;
 
 namespace Mithril.MapCalibration.Capture.Diagnostics;
 
+/// <summary>
+/// Top-level shape of <c>01-attempt.json</c> — the bundle header that ties
+/// every per-attempt artifact path together with the locator/synthesis
+/// diagnostics that produced the engine's outcome.
+///
+/// <para><b>Schema v2 (mithril#1061):</b> <see cref="LocatorBest"/> gained
+/// <c>Algorithm</c> / <c>FallbackNcc</c> / <c>PadPx</c> fields. The
+/// <see cref="SchemaVersion"/> bump tracks the nested change because
+/// downstream tooling keys triage off the top-level number.</para>
+///
+/// <para><b>Schema v3 (mithril#1117):</b> adds optional <see cref="Synthesis"/>.
+/// Readers should treat absence as "synthesis did not run / mode == Off"
+/// rather than "missing data".</para>
+///
+/// <para><b>Schema v4 (mithril#1116):</b> adds optional
+/// <see cref="AttemptFilesJson.DeviationMask"/> carrying the
+/// <c>07a-deviation-mask.png</c> artifact path. Additive: v3 readers ignore
+/// the new key, and v4 readers treat absence as "the engine did not write
+/// a deviation mask for this attempt" (no fog/boundary mask was emitted).</para>
+/// </summary>
 public sealed record AttemptJson(
     int SchemaVersion,
     string Area,
@@ -95,7 +115,16 @@ public sealed record AttemptFilesJson(
     string? Morphed = null,                // 07d-morphed.png
     string? MorphedR180 = null,            // 07d-r180-morphed.png
     string? BlobClassification = null,     // 07e-blob-classification.png
-    string? BlobClassificationR180 = null  // 07e-r180-blob-classification.png
+    string? BlobClassificationR180 = null, // 07e-r180-blob-classification.png
+    // mithril#1116 (AttemptJson v4): per-attempt deviation mask PNG —
+    // OR-combination of the floor-boundary alpha-edge mask + the per-frame
+    // fog-of-war edge mask, sampled at deviation-grid coordinates. White
+    // pixels mark deviation-grid cells the blob detector excluded from
+    // candidate generation (so spurious wall/fog-induced blobs do not feed
+    // into NCC / synthesis). Null on pre-#1116 engine versions or when the
+    // detector ran with the mask disabled (e.g. no base-texture alpha
+    // available + no fog detected).
+    string? DeviationMask = null           // 07a-deviation-mask.png
 );
 
 public sealed record MapRectJson(
