@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Mithril.MapCalibration.Detection.Internal;
 
 /// <summary>
@@ -20,6 +22,15 @@ namespace Mithril.MapCalibration.Detection.Internal;
 /// <c>epsilon</c> px (Euclidean) of this one's anchor; output the survivors
 /// in their <b>original insertion order</b>. O(N²) — fine for N ≤ ~100 in
 /// practice.</para>
+///
+/// <para><b>Instrumentation (PR #1157 follow-up):</b> static-utility decision
+/// owners must be instrumentable from day one (CLAUDE.md — mithril#1093/#1121/
+/// #1123 background). The helper takes an optional <see cref="ILogger"/> and
+/// emits one <see cref="LogLevel.Trace"/> entry per call with input count,
+/// survivor count, drop count, and epsilon — so a future "why was this blob's
+/// anchor missing from the result?" investigation has something to read.
+/// Logging is opt-in (null logger = zero producer cost); message template is
+/// stable (asserted by integration tests).</para>
 /// </summary>
 internal static class DetectionSpatialDedup
 {
@@ -30,11 +41,18 @@ internal static class DetectionSpatialDedup
     /// </summary>
     public static IReadOnlyList<TypedDetection> Dedupe(
         IReadOnlyList<TypedDetection> detections,
-        double epsilon)
+        double epsilon,
+        ILogger? logger = null)
     {
         int n = detections.Count;
         if (n == 0) return [];
-        if (n == 1) return [detections[0]];
+        if (n == 1)
+        {
+            logger?.LogTrace(
+                "Spatial-dedup: {Input} → {Survivors} typed detections (dropped {Dropped}, ε={Epsilon:F2}px).",
+                n, 1, 0, epsilon);
+            return [detections[0]];
+        }
         if (epsilon <= 0)
         {
             // Defensive copy so callers can't mutate the source list through
@@ -42,6 +60,9 @@ internal static class DetectionSpatialDedup
             // — an IReadOnlyList<T> over a freshly-constructed array).
             var copy = new TypedDetection[n];
             for (int i = 0; i < n; i++) copy[i] = detections[i];
+            logger?.LogTrace(
+                "Spatial-dedup: {Input} → {Survivors} typed detections (dropped {Dropped}, ε={Epsilon:F2}px).",
+                n, n, 0, epsilon);
             return copy;
         }
 
@@ -84,6 +105,12 @@ internal static class DetectionSpatialDedup
         var result = new List<TypedDetection>(survivorIndices.Count);
         for (int i = 0; i < n; i++)
             if (survives[i]) result.Add(detections[i]);
+
+        // One LogTrace per call. Message template is stable — integration tests
+        // assert the "Spatial-dedup:" prefix and the formatted ε.
+        logger?.LogTrace(
+            "Spatial-dedup: {Input} → {Survivors} typed detections (dropped {Dropped}, ε={Epsilon:F2}px).",
+            n, survivorIndices.Count, n - survivorIndices.Count, epsilon);
         return result;
     }
 }

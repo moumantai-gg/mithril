@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
 using Xunit;
 
@@ -137,49 +138,48 @@ public sealed class TypeAwareRansacSolverTests
 
     // mithril#1156: defense-in-depth. The detector should not emit byte-identical
     // anchors (mithril#1154 fixes that at source), but the solver still dedupes
-    // its input at a conservative ε=1 px so reported inlier counts stay honest
-    // under hostile or buggy input. Without the defense, an upstream that emits
-    // 6 detections with one byte-identical duplicate of another would let the
-    // RANSAC pool see 6 entries and the inlier set count 6 — overstating
-    // geometric support and making the "need >=4 inliers" gate trivially fooled.
+    // its input at a conservative ε=1 px. The dedup SEMANTICS are covered by
+    // DetectionSpatialDedupTests; here we only prove the WIRING — the solver
+    // actually invokes the helper before pool construction. We assert that via
+    // a LogTrace mirror the helper emits ("Spatial-dedup: …") with ε=1.0.
+    //
+    // Why not assert an inlier-count delta? Because RansacAssignAll has a
+    // downstream `bestPerRef` dictionary keyed on (Ref.World.X, Ref.World.Z)
+    // that ALREADY de-duplicates inliers per ref — so an inlier-count assertion
+    // against a hostile duplicate is tautological: it would pass without the
+    // solver-side dedup too. The wiring-via-LogTrace test is the load-bearing
+    // proof that the helper is actually called.
     [Fact]
-    public void Solver_dedups_byte_identical_anchors_under_hostile_input()
+    public void Solver_calls_spatial_dedup_with_one_pixel_epsilon()
     {
-        // Baseline: 6 unique detections recover truth with N inliers.
-        var clean = BuildDetections();
-        var (_, cleanInliers) = TypeAwareRansacSolver.Solve(clean, BuildRefs(), Rect);
-        cleanInliers.Should().NotBeEmpty();
-        int cleanCount = cleanInliers.Count;
+        var logger = new CapturingLogger();
+        var detections = BuildDetections();
+        var refs = BuildRefs();
 
-        // Hostile input: append a byte-identical duplicate of one Npc detection.
-        // Same anchor, same score, same icon name — the only thing distinguishing
-        // them is the list slot they occupy.
-        var hostile = BuildDetections();
-        var npcList = hostile["Npc"];
-        npcList.Add(new TypedDetection(
-            LandmarkType: npcList[0].LandmarkType,
-            IconName: npcList[0].IconName,
-            Anchor: npcList[0].Anchor,
-            Score: npcList[0].Score));
+        TypeAwareRansacSolver.Solve(detections, refs, Rect, logger: logger);
 
-        var (_, hostileInliers) = TypeAwareRansacSolver.Solve(hostile, BuildRefs(), Rect);
+        var dedupLines = logger.Entries.Where(e => e.StartsWith("Spatial-dedup:", StringComparison.Ordinal)).ToList();
+        dedupLines.Should().NotBeEmpty(
+            "TypeAwareRansacSolver must invoke DetectionSpatialDedup.Dedupe before pool construction "
+            + "(mithril#1156 defense-in-depth) — the helper emits one LogTrace per call");
+        dedupLines.Should().AllSatisfy(line => line.Should().Contain("ε=1.00px",
+            "solver dedup epsilon is the conservative 1.0 px constant"));
+    }
 
-        // The duplicate must not survive as a second inlier. The simplest
-        // contract: inlier count under hostile input is ≤ the clean count
-        // (the duplicate is collapsed BEFORE pool construction).
-        hostileInliers.Count.Should().BeLessThanOrEqualTo(cleanCount,
-            "solver-side dedup (mithril#1156) must collapse byte-identical anchors "
-            + "so the inlier count stays honest — duplicate must not appear twice");
-
-        // Spot-check: no two inliers in the result share (PixelX, PixelY, WorldX,
-        // WorldZ). The "per ref" de-dup in RansacAssignAll already handles the
-        // ref side; the input dedup handles the detection side.
-        var duplicateAnchors = hostileInliers
-            .GroupBy(a => (a.PixelX, a.PixelY, a.WorldX, a.WorldZ))
-            .Where(g => g.Count() > 1)
-            .ToList();
-        duplicateAnchors.Should().BeEmpty(
-            "no inlier should appear twice with identical pixel+world coords");
+    /// <summary>
+    /// Minimal in-test logger that captures formatted log messages so a test can
+    /// assert on the helper's LogTrace ("Spatial-dedup: …"). xunit-friendly,
+    /// allocation-light, intentionally inline (matches the repo's "fake-in-test"
+    /// style — no shared utility file).
+    /// </summary>
+    private sealed class CapturingLogger : ILogger
+    {
+        public readonly List<string> Entries = new();
+        IDisposable? ILogger.BeginScope<TState>(TState state) => null;
+        bool ILogger.IsEnabled(LogLevel logLevel) => true;
+        void ILogger.Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add(formatter(state, exception));
     }
 
     private static double NormaliseAngle(double radians)

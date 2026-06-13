@@ -109,7 +109,7 @@ public sealed class MapCalibrationSolveEngine
 
             var detections = _detector.Detect(req);
             LogDetectSummary(rotate180, detections, references);
-            var topKList = TypeAwareRansacSolver.SolveTopK(ToMutable(detections), references, request.MapRect, topK);
+            var topKList = TypeAwareRansacSolver.SolveTopK(ToMutable(detections), references, request.MapRect, topK, _logger);
             var flatDetections = FlattenDetections(detections);
 
             // === Legacy track: pick the lowest-residual gate-accepted top-K[0] (preserves shadow-source-of-truth) ===
