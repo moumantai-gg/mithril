@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Mithril.MapCalibration.Detection.Internal;
 
 namespace Mithril.MapCalibration.Detection;
 
@@ -106,6 +107,18 @@ public static class TypeAwareRansacSolver
         IReadOnlyList<LandmarkReference> allRefs,
         MapRect mapRect)
     {
+        // mithril#1156: defense-in-depth — dedup byte-identical anchors before
+        // pool construction. The detector should not emit duplicates
+        // (mithril#1154), but the solver guarantees honest inlier counts under
+        // hostile input regardless. Epsilon kept conservative (1.0 px) — only
+        // collapses byte-identical / sub-pixel duplicates; the detector's
+        // larger ε (RenderSizePx) is the primary defense.
+        const double SolverDedupEpsilonPx = 1.0;
+        var deduped = new Dictionary<string, List<TypedDetection>>(detectionsByType.Count, StringComparer.Ordinal);
+        foreach (var kv in detectionsByType)
+            deduped[kv.Key] = DetectionSpatialDedup.Dedupe(kv.Value, SolverDedupEpsilonPx).ToList();
+        detectionsByType = deduped;
+
         // Build pool: (texture-pixel detection, candidate refs of same type).
         // Work in texture-pixel space so the inlier predicate is in a stable
         // coord system independent of the screenshot's pan/zoom.

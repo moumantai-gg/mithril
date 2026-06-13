@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Detection.Internal;
 
 namespace Mithril.MapCalibration.Detection;
 
@@ -155,8 +156,17 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
             list.Add(new TypedDetection(bestIcon.LandmarkType, bestIcon.Name, new CroppedFramePixel(anchorX, anchorY), bestDet.Score));
         }
 
+        // mithril#1154: overlapping template-match crops between adjacent blobs
+        // can pivot-correct distinct blobs to byte-identical anchors; collapse
+        // anchors within RenderSizePx (the on-screen icon size, default 16) of
+        // each other to one survivor per cluster (highest-score wins). Without
+        // this, the solver double-counts the duplicate as two inliers and the
+        // "only N inliers (need >=4)" reject reason becomes deceptive. Per-type
+        // — anchors of different landmark types are already in separate lists.
+        double epsilon = request.RenderSizePx ?? 16;
         var result = new Dictionary<string, IReadOnlyList<TypedDetection>>(byType.Count, StringComparer.Ordinal);
-        foreach (var kv in byType) result[kv.Key] = kv.Value;
+        foreach (var kv in byType)
+            result[kv.Key] = DetectionSpatialDedup.Dedupe(kv.Value, epsilon);
         return result;
     }
 

@@ -415,6 +415,50 @@ public sealed class DeviationBlobCalibrationDetectorTests
             + "BlobClassification record with BlobClass == Icon");
     }
 
+    // mithril#1154: overlapping template-match crops between adjacent same-type
+    // blobs can pivot-correct distinct blobs to byte-identical anchors. The
+    // detector now collapses per-type detections within RenderSizePx of each
+    // other to one survivor (highest-score wins) — without this, the solver
+    // double-counts the duplicate as two inliers and its "only N inliers
+    // (need >=4)" reject reasons become deceptive. The contract guarantee:
+    // ANY adjacent same-type placements (within ε=RenderSizePx) collapse to
+    // a single detection in the returned per-type list.
+    [Fact]
+    public void Detector_collapses_duplicate_anchors_within_render_size()
+    {
+        // Place two MeditationPillar instances within RenderSizePx (default 16)
+        // of each other — close enough that their padded template-match crops
+        // overlap and either both blobs surface the same template anchor OR
+        // one blob's classification falls inside the other's cluster.
+        var texPixels = SyntheticMap.MakeTexture(TexW, TexH, seed: 4242);
+        var shotPixels = (byte[])texPixels.Clone();
+        // Sole well-spread Portal so the per-type byType bucket for Portal stays
+        // single-entry and acts as a control — the test asserts MeditationPillar
+        // collapses, not that EVERY type collapses.
+        SyntheticMap.BlitTeardrop(shotPixels, TexW, TexH, 70, 70, 24, 32, 60);
+        // Two MeditationPillar placements 4 px apart on each axis (Euclidean
+        // ~5.66 px ≪ ε=16). With or without the dedup the synthetic fixture's
+        // template-NCC may emit one or two distinct anchors — the dedup
+        // guarantee is that AFTER the helper runs, the count is ≤ 1.
+        SyntheticMap.BlitTeardrop(shotPixels, TexW, TexH, 90, 180, 18, 40, 110);
+        SyntheticMap.BlitTeardrop(shotPixels, TexW, TexH, 94, 184, 18, 40, 110);
+
+        var shot = new GrayImage(TexW, TexH, shotPixels);
+        var tex = new GrayImage(TexW, TexH, texPixels);
+
+        var byType = new DeviationBlobCalibrationDetector().Detect(Request(shot, tex));
+
+        // The contract: any adjacent placements (within ε=16 px) collapse to
+        // one detection per type. We don't assert COUNT==1 absolutely (no
+        // detection at all is fine — the test cares about the upper bound).
+        if (byType.TryGetValue("MeditationPillar", out var dets))
+        {
+            dets.Count.Should().BeLessThanOrEqualTo(1,
+                "two MeditationPillar placements 4 px apart must collapse to one survivor (mithril#1154); "
+                + $"got {dets.Count} detections at anchors {string.Join(", ", dets.Select(d => $"({d.Anchor.X:0.0},{d.Anchor.Y:0.0})"))}");
+        }
+    }
+
     [Fact]
     public void Diagnostic_sink_records_skip_path_when_template_exceeds_padded_crop()
     {

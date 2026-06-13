@@ -135,6 +135,53 @@ public sealed class TypeAwareRansacSolverTests
         topK[0].Inliers.Should().HaveCount(legacyInliers.Count);
     }
 
+    // mithril#1156: defense-in-depth. The detector should not emit byte-identical
+    // anchors (mithril#1154 fixes that at source), but the solver still dedupes
+    // its input at a conservative ε=1 px so reported inlier counts stay honest
+    // under hostile or buggy input. Without the defense, an upstream that emits
+    // 6 detections with one byte-identical duplicate of another would let the
+    // RANSAC pool see 6 entries and the inlier set count 6 — overstating
+    // geometric support and making the "need >=4 inliers" gate trivially fooled.
+    [Fact]
+    public void Solver_dedups_byte_identical_anchors_under_hostile_input()
+    {
+        // Baseline: 6 unique detections recover truth with N inliers.
+        var clean = BuildDetections();
+        var (_, cleanInliers) = TypeAwareRansacSolver.Solve(clean, BuildRefs(), Rect);
+        cleanInliers.Should().NotBeEmpty();
+        int cleanCount = cleanInliers.Count;
+
+        // Hostile input: append a byte-identical duplicate of one Npc detection.
+        // Same anchor, same score, same icon name — the only thing distinguishing
+        // them is the list slot they occupy.
+        var hostile = BuildDetections();
+        var npcList = hostile["Npc"];
+        npcList.Add(new TypedDetection(
+            LandmarkType: npcList[0].LandmarkType,
+            IconName: npcList[0].IconName,
+            Anchor: npcList[0].Anchor,
+            Score: npcList[0].Score));
+
+        var (_, hostileInliers) = TypeAwareRansacSolver.Solve(hostile, BuildRefs(), Rect);
+
+        // The duplicate must not survive as a second inlier. The simplest
+        // contract: inlier count under hostile input is ≤ the clean count
+        // (the duplicate is collapsed BEFORE pool construction).
+        hostileInliers.Count.Should().BeLessThanOrEqualTo(cleanCount,
+            "solver-side dedup (mithril#1156) must collapse byte-identical anchors "
+            + "so the inlier count stays honest — duplicate must not appear twice");
+
+        // Spot-check: no two inliers in the result share (PixelX, PixelY, WorldX,
+        // WorldZ). The "per ref" de-dup in RansacAssignAll already handles the
+        // ref side; the input dedup handles the detection side.
+        var duplicateAnchors = hostileInliers
+            .GroupBy(a => (a.PixelX, a.PixelY, a.WorldX, a.WorldZ))
+            .Where(g => g.Count() > 1)
+            .ToList();
+        duplicateAnchors.Should().BeEmpty(
+            "no inlier should appear twice with identical pixel+world coords");
+    }
+
     private static double NormaliseAngle(double radians)
     {
         var twoPi = 2 * Math.PI;
