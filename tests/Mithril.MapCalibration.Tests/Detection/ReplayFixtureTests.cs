@@ -125,16 +125,13 @@ public sealed class ReplayFixtureTests
         var shot = WicImageLoader.LoadGray(screenshotPath);
         var fullTex = WicImageLoader.LoadGray(texturePath);
 
-        // Mirror the production AutoCalibrationEngine alignment step
-        // (src/Mithril.MapCalibration.Capture/AutoCalibrationEngine.cs:680):
-        // the screenshot is already cropped to the visible map region (a dev
-        // cropped it manually for the fixture); resample the full base texture
-        // down to the same dims so the engine's per-pixel subtraction
-        // (synthesis-J L_t builder + detector deviation map) gets aligned
-        // buffers. MapRect keeps the texture's NATIVE dims in TextureWidth/
-        // TextureHeight so the geometric solve back-projects into world space.
-        // mithril#999 made synthesis-J Shadow the default re-rank mode, which
-        // turned this previously-implicit assumption into a hard throw.
+        // The screenshot is pre-cropped to the visible map region (a dev
+        // cropped it for the fixture); resample the base texture down to the
+        // same dims so the engine's per-pixel subtraction (synthesis-J L_t
+        // builder + detector deviation map) sees aligned buffers. MapRect
+        // keeps the texture's NATIVE dims in TextureWidth/TextureHeight so
+        // the geometric solve back-projects into world space. Production
+        // AutoCalibrationEngine performs the same alignment before solve.
         var alignedTexture = ImageOps.Resize(fullTex, shot.Width, shot.Height);
         var rect = new MapRect(0, 0, shot.Width, shot.Height, fullTex.Width, fullTex.Height);
         // #931: icon templates are no longer embedded — they're loaded from the
