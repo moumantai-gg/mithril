@@ -123,12 +123,17 @@ public sealed class ReplayFixtureTests
         var expected = baseline[assetKey];
 
         var shot = WicImageLoader.LoadGray(screenshotPath);
-        var tex = WicImageLoader.LoadGray(texturePath);
+        var fullTex = WicImageLoader.LoadGray(texturePath);
 
-        // The screenshot here is assumed already cropped to the map rect (1:1
-        // texture extent) for the replay; real captures crop via the production
-        // IMapRegionRefiner (FeatureMatchingRefiner) in Phase 2.
-        var rect = new MapRect(0, 0, shot.Width, shot.Height, tex.Width, tex.Height);
+        // The screenshot is pre-cropped to the visible map region (a dev
+        // cropped it for the fixture); resample the base texture down to the
+        // same dims so the engine's per-pixel subtraction (synthesis-J L_t
+        // builder + detector deviation map) sees aligned buffers. MapRect
+        // keeps the texture's NATIVE dims in TextureWidth/TextureHeight so
+        // the geometric solve back-projects into world space. Production
+        // AutoCalibrationEngine performs the same alignment before solve.
+        var alignedTexture = ImageOps.Resize(fullTex, shot.Width, shot.Height);
+        var rect = new MapRect(0, 0, shot.Width, shot.Height, fullTex.Width, fullTex.Height);
         // #931: icon templates are no longer embedded — they're loaded from the
         // asset-extractor cache dir. For this fixture-gated replay the cache (a dev
         // populated it via the sidecar) lives under study/templates. Absent → Empty
@@ -144,7 +149,7 @@ public sealed class ReplayFixtureTests
         // false positives and RANSAC converges on a degenerate few-inlier fit at
         // the wrong orientation; the auto render-size sweep collapses to the
         // smallest/blurriest size that correlates with everything (mithril#916).
-        var request = new DetectionRequest(shot, tex, rect, templates, RimMaskMode.DeviationFlood,
+        var request = new DetectionRequest(shot, alignedTexture, rect, templates, RimMaskMode.DeviationFlood,
             LowNcc: 0.5, TypeFloor: 0.80,
             BlobOptions: new BlobOptions(MinArea: 12, MaxIconArea: 900, MinSolidity: 0.35, MaxAspect: 2.5, MinPeak: 0.7))
         {
