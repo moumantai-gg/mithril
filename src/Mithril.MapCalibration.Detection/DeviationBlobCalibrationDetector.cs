@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Detection.Internal;
 
 namespace Mithril.MapCalibration.Detection;
 
@@ -155,8 +156,23 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
             list.Add(new TypedDetection(bestIcon.LandmarkType, bestIcon.Name, new CroppedFramePixel(anchorX, anchorY), bestDet.Score));
         }
 
+        // mithril#1154: overlapping template-match crops between adjacent blobs
+        // can pivot-correct distinct blobs to byte-identical anchors; collapse
+        // anchors within RenderSizePx (the on-screen icon size, default 16) of
+        // each other to one survivor per cluster (highest-score wins). Without
+        // this, the solver double-counts the duplicate as two inliers and the
+        // "only N inliers (need >=4)" reject reason becomes deceptive. Per-type
+        // — anchors of different landmark types are already in separate lists.
+        //
+        // `?? 16` fallback covers the documented null path: callers that pass
+        // RenderSizePx=null opt into IconRenderScaler's aggregate-NCC sweep (a
+        // less-reliable mode that can collapse to a tiny scale). The dedup
+        // still needs a numeric ε; 16 mirrors the property's default and is
+        // the empirically-validated PG icon render size (gate study).
+        double epsilon = request.RenderSizePx ?? 16;
         var result = new Dictionary<string, IReadOnlyList<TypedDetection>>(byType.Count, StringComparer.Ordinal);
-        foreach (var kv in byType) result[kv.Key] = kv.Value;
+        foreach (var kv in byType)
+            result[kv.Key] = DetectionSpatialDedup.Dedupe(kv.Value, epsilon, _logger);
         return result;
     }
 

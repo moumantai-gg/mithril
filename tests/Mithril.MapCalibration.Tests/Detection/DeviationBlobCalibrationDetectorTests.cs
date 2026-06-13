@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration.Tests.Fixtures;
 using Xunit;
@@ -413,6 +414,66 @@ public sealed class DeviationBlobCalibrationDetectorTests
         scoreOrdinals.Should().BeSubsetOf(iconOrdinals,
             "every BlobTemplateScore.BlobOrdinal must correspond to a "
             + "BlobClassification record with BlobClass == Icon");
+    }
+
+    // mithril#1154: the detector now collapses per-type detections within
+    // RenderSizePx of each other via DetectionSpatialDedup. Earlier versions of
+    // this test built a synthetic fixture with two close pillars and asserted
+    // count ≤ 1 on the output — but the deviation flood-fill merges adjacent
+    // same-type blobs into one connected blob upstream, so the test passed
+    // vacuously even without the dedup wiring. We instead assert the WIRING
+    // via the helper's LogTrace mirror ("Spatial-dedup: …"); semantics are
+    // covered by DetectionSpatialDedupTests. The two tests below confirm:
+    //   (a) the detector invokes the helper per landmark-type at all, and
+    //   (b) the epsilon flows from request.RenderSizePx (not a fixed const).
+    [Fact]
+    public void Detector_invokes_spatial_dedup_with_render_size_epsilon()
+    {
+        var (shot, tex) = BuildPair();
+        var logger = new CapturingLogger();
+        var detector = new DeviationBlobCalibrationDetector(logger);
+
+        detector.Detect(Request(shot, tex));
+
+        var dedupLines = logger.Entries.Where(e => e.StartsWith("Spatial-dedup:", StringComparison.Ordinal)).ToList();
+        dedupLines.Should().NotBeEmpty(
+            "DeviationBlobCalibrationDetector must invoke DetectionSpatialDedup.Dedupe per landmark-type "
+            + "(mithril#1154) — the helper emits one LogTrace per call");
+        // Default RenderSizePx is 16; the LogTrace formats it as ε=16.00px.
+        dedupLines.Should().AllSatisfy(line => line.Should().Contain("ε=16.00px",
+            "detector dedup epsilon comes from request.RenderSizePx (default 16)"));
+    }
+
+    [Fact]
+    public void Detector_threads_custom_render_size_into_dedup_epsilon()
+    {
+        var (shot, tex) = BuildPair();
+        var logger = new CapturingLogger();
+        var detector = new DeviationBlobCalibrationDetector(logger);
+
+        detector.Detect(Request(shot, tex) with { RenderSizePx = 7 });
+
+        var dedupLines = logger.Entries.Where(e => e.StartsWith("Spatial-dedup:", StringComparison.Ordinal)).ToList();
+        dedupLines.Should().NotBeEmpty();
+        dedupLines.Should().AllSatisfy(line => line.Should().Contain("ε=7.00px",
+            "detector dedup epsilon must flow from request.RenderSizePx — a custom value "
+            + "must reach the helper, not a hardcoded default"));
+    }
+
+    /// <summary>
+    /// Minimal in-test logger that captures formatted log messages so a test can
+    /// assert on the helper's LogTrace ("Spatial-dedup: …"). xunit-friendly,
+    /// allocation-light, intentionally inline (matches the repo's "fake-in-test"
+    /// style — no shared utility file).
+    /// </summary>
+    private sealed class CapturingLogger : ILogger
+    {
+        public readonly List<string> Entries = new();
+        IDisposable? ILogger.BeginScope<TState>(TState state) => null;
+        bool ILogger.IsEnabled(LogLevel logLevel) => true;
+        void ILogger.Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add(formatter(state, exception));
     }
 
     [Fact]
