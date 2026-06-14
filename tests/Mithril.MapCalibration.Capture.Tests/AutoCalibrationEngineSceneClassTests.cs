@@ -100,6 +100,28 @@ public sealed class AutoCalibrationEngineSceneClassTests
             "BGRA crop dims must match the gray crop's dims × 4 bytes/pixel so blob pixel-indices land at the right offsets.");
     }
 
+    /// <summary>
+    /// mithril#1155 Phase 3 + review #1169-r2 finding #12 — Outdoor profile leaves
+    /// MinPeakLuma null, so the engine must SKIP the BGRA crop entirely. A ~W·H·4
+    /// allocation per attempt for a buffer the detector never reads is pure
+    /// waste on the hot drift-check cadence; this test pins the no-alloc
+    /// guarantee so a future refactor can't silently reintroduce it.
+    /// </summary>
+    [Fact]
+    public async System.Threading.Tasks.Task Outdoor_profile_skips_raw_BGRA_crop()
+    {
+        var harness = new EngineHarness { WireDeviationMaskDeps = true };
+        var engine = harness.Engine();
+        // Outdoor alpha → Outdoor profile (MinPeakLuma null).
+        harness.BaseTextureProvider.AlphaByKey[EngineHarness.DefaultMapAsset] = AlphaBuffer(64, 64, opaqueValue: true);
+
+        await engine.TryCalibrateCurrentAreaAsync(CancellationToken.None);
+
+        var request = harness.Solver.LastRequest!;
+        request.RawBgra.Should().BeNull(
+            "Outdoor profile has MinPeakLuma=null, so the engine must short-circuit the BGRA crop — allocating ~8 MB per attempt for a buffer the detector ignores is the kind of waste review #1169-r2 finding #12 calls out.");
+    }
+
     [Fact]
     public async System.Threading.Tasks.Task Boundary_cache_unwired_safe_degrades_to_Outdoor_BlobOptions()
     {

@@ -107,28 +107,21 @@ public sealed class IndoorRecallMergeTuningTests
                 yield return new object?[] { (int?)w, (int?)c };
     }
 
-    [Fact]
-    public void Canonical_bundle_presence_is_reported()
+    [Theory]
+    [MemberData(nameof(Combinations))]
+    public void Measure_blob_pipeline(int? win, int? closeRadius)
     {
-        var dir = CanonicalBundleDir();
-        if (dir is null)
+        // Review #1169-r2 finding #15: the previous `Canonical_bundle_presence_is_reported`
+        // [Fact] had no Assert / Should, always passed regardless of state, and
+        // showed up as a green test in CI metrics without providing verification.
+        // Removed; the SKIPPED message below carries the same operator-facing
+        // direction (where to populate the canonical bundle).
+        if (win is null || closeRadius is null)
         {
             _output.WriteLine(
                 $"SKIPPED — canonical bundle '{CanonicalBundleName}' not present under " +
                 "%LOCALAPPDATA%/Mithril/diagnostics/calibration/. Run a calibration attempt " +
                 "in-game against Hogan's Keep Basement to populate.");
-            return;
-        }
-        _output.WriteLine($"Canonical bundle present at: {dir}");
-    }
-
-    [Theory]
-    [MemberData(nameof(Combinations))]
-    public void Measure_blob_pipeline(int? win, int? closeRadius)
-    {
-        if (win is null || closeRadius is null)
-        {
-            _output.WriteLine("SKIPPED — canonical bundle absent (see Canonical_bundle_presence_is_reported).");
             return;
         }
 
@@ -366,10 +359,13 @@ public sealed class IndoorRecallMergeTuningTests
     /// luma pre-filter applied:
     ///
     /// <list type="number">
-    ///   <item>The total Icon-class blob count drops sharply (18 production →
-    ///   small post-filter), because 17 of the 18 production Icon-class blobs
-    ///   are floor-noise with PeakLuma ≤ 0.40 (per the spike) and get rejected
-    ///   by the 0.7 threshold.</item>
+    ///   <item>The total Icon-class blob count drops sharply (20 Indoor T1+T2
+    ///   admits → small post-filter, since 17 of the 18 base Outdoor admits +
+    ///   the 0-of-2 newly-admitted-by-T1+T2 floor-noise blobs sit at PeakLuma
+    ///   ≤ 0.55 per the broader corpus measurement and get rejected by the 0.7
+    ///   threshold). Review #1169-r2 finding #14: this docstring previously
+    ///   read "18 production" referring to the Outdoor production count; the
+    ///   assertion below pins the Indoor T1+T2 count of 20.</item>
     ///   <item>The 3 real-icon blobs admitted by T1+T2 (IconD + IconE + IconF —
     ///   per <see cref="Indoor_profile_admits_3_of_6_real_icons_on_canonical_bundle"/>)
     ///   all SURVIVE the peak-luma filter. The
@@ -444,12 +440,22 @@ public sealed class IndoorRecallMergeTuningTests
         // Baseline — Indoor profile with peak-luma DISABLED. This is what Phase
         // 2 alone produces: the Icon-class blobs that survive T1+T2's relaxed
         // shape gates.
-        var (preFilterIcons, preFilterIconClass) = Run(indoorWithoutLuma, withBgra: false);
-        _output.WriteLine($"Indoor (no peak-luma filter): {preFilterIconClass} Icon-class blobs, {preFilterIcons.Count} returned.");
+        //
+        // Review #1169-r2 finding #11: the second tuple element is the count of
+        // BlobClass.Icon entries seen by the OnBlobClassified hook, which fires
+        // BEFORE the peak-luma filter — it is structurally the PRE-FILTER count
+        // on BOTH branches (the hook runs the same regardless of whether the
+        // filter then drops blobs). Naming it `…IconClassClassified` makes the
+        // pre-filter semantics explicit so a future reader doesn't add a bogus
+        // `secondBranch < firstBranch` assertion expecting a post-filter delta.
+        var (preFilterIcons, preFilterIconClassClassified) = Run(indoorWithoutLuma, withBgra: false);
+        _output.WriteLine($"Indoor (no peak-luma filter): {preFilterIconClassClassified} Icon-class classified, {preFilterIcons.Count} returned (no filter).");
 
-        // With peak-luma — the post-#1155 Phase 3 path.
-        var (postFilterIcons, postFilterIconClass) = Run(indoorWithLuma, withBgra: true);
-        _output.WriteLine($"Indoor (peak-luma 0.7):       {postFilterIconClass} Icon-class blobs classified, {postFilterIcons.Count} returned after filter.");
+        // With peak-luma — the post-#1155 Phase 3 path. The "classified" count
+        // is unchanged by the filter (it's measured at the pre-filter hook); the
+        // "returned" count IS the post-filter survivor set.
+        var (postFilterIcons, postFilterIconClassClassified) = Run(indoorWithLuma, withBgra: true);
+        _output.WriteLine($"Indoor (peak-luma 0.7):       {postFilterIconClassClassified} Icon-class classified (pre-filter), {postFilterIcons.Count} returned after filter.");
 
         // Real-icon admission counts on both branches — the headline.
         int CountRealIconsAdmitted(IReadOnlyList<BlobFeat> icons)
@@ -491,9 +497,9 @@ public sealed class IndoorRecallMergeTuningTests
         // bundle-specific, so we hash-gate.
         if (BundleMatchesCanonicalHash(dir))
         {
-            preFilterIconClass.Should().Be(20,
+            preFilterIconClassClassified.Should().Be(20,
                 "Phase 2 (Indoor T1+T2 — MaxAspect 2.7, MinSolidity 0.30) admits 20 Icon-class blobs on the canonical 06-13 bundle pre-filter (18 Outdoor-admitted + 2 lifted by T1+T2).");
-            postFilterIcons.Count.Should().BeLessThan(preFilterIconClass,
+            postFilterIcons.Count.Should().BeLessThan(preFilterIconClassClassified,
                 "Phase 3 peak-luma filter must reject SOME blobs on the canonical bundle — otherwise the §E spike was wrong.");
             postFilterIcons.Count.Should().BeLessThanOrEqualTo(5,
                 "Phase 3 leaves only the real-icon-luma blobs; the spike measured 1 in canonical (blob 176), and T1+T2 lifts 2 more icon-luma blobs to admission. ≤5 leaves headroom for the implementation's exact tally without pinning a fragile count.");
@@ -603,7 +609,19 @@ public sealed class IndoorRecallMergeTuningTests
                 _output.WriteLine($"  {bundleName} — SKIPPED (dim mismatch: shot {shot.Width}x{shot.Height} != tex {tex.Width}x{tex.Height}).");
                 continue;
             }
-            var (rawBgra, _, _) = WicImageLoader.LoadBgra(shotPath);
+            // Review #1169-r2 finding #8: validate that LoadBgra produces dims
+            // matching LoadGray for the same file. WIC's FormatConvertedBitmap
+            // could in principle return a different effective size (EXIF
+            // orientation, color-profile transforms); without this guard a
+            // mismatch silently corrupts the measurement (PeakLumaFilter would
+            // return 0.0 for every blob and the corpus table would report a
+            // false 100%-noise distribution).
+            var (rawBgra, bgraW, bgraH) = WicImageLoader.LoadBgra(shotPath);
+            if (bgraW != shot.Width || bgraH != shot.Height)
+            {
+                _output.WriteLine($"  {bundleName} — SKIPPED (BGRA dim mismatch: {bgraW}x{bgraH} != gray {shot.Width}x{shot.Height}).");
+                continue;
+            }
 
             bool[]? deviationMask = null;
             if (File.Exists(maskPath))

@@ -283,33 +283,72 @@ public static class DeviationBlobDetector
         // Either null short-circuits to byte-identical pre-#1155 behaviour for
         // the legacy paths. Filter runs AFTER classification so the diagnostic
         // hook above sees the pre-luma BlobClassification for ALL Icon-class
-        // blobs — the post-filter drop is then logged at Trace so the bundle
-        // record + the trace log together tell "classified Icon but rejected
-        // by peak-luma at value X."
-        if (opts.MinPeakLuma is { } minPeakLuma && rawBgra is not null && icons.Count > 0)
+        // blobs — the post-filter drop is logged at Trace per blob and surfaced
+        // as a Warning when 100% of Icon-class blobs drop (the silent-zero-icon
+        // case per CLAUDE.md's instrumentation contract) so the bundle record
+        // + the log line together tell "classified Icon but rejected by peak-
+        // luma at value X."
+        //
+        // Three observability guards (review #1169-r2):
+        //   1. NaN MinPeakLuma — `is { }` matches NaN, but `>= NaN` is always
+        //      false, so the loop would silently drop every blob. Guard with
+        //      IsFinite + Warning so a malformed config surfaces immediately.
+        //   2. MinPeakLuma set but rawBgra null — Indoor profile expected to
+        //      filter but the engine didn't thread the buffer. Warn loudly so
+        //      the "looks wired but isn't" failure (mithril#1107) is visible.
+        //   3. 100% drop with icons.Count > 0 — every Icon-class blob rejected;
+        //      Indoor calibration about to fail with "no detections." Promote
+        //      to Warning so a triager can correlate against the gate decision.
+        if (opts.MinPeakLuma is { } minPeakLuma)
         {
-            var survivors = new List<BlobFeat>(icons.Count);
-            int dropped = 0;
-            foreach (var blob in icons)
+            if (!double.IsFinite(minPeakLuma))
             {
-                double peakLuma = PeakLumaFilter.PeakLuma(blob, rawBgra, w, h, logger);
-                if (peakLuma >= minPeakLuma)
+                logger?.LogWarning(
+                    "PeakLumaFilter: MinPeakLuma is {Value} (not finite) — skipping the filter to avoid silently dropping every blob. Fix the profile config.",
+                    minPeakLuma);
+                return icons;
+            }
+            if (rawBgra is null)
+            {
+                logger?.LogWarning(
+                    "PeakLumaFilter: MinPeakLuma is set to {Threshold:0.00} but rawBgra is null — filter no-ops. Indoor profile expected the engine to thread raw BGRA via DetectionRequest.RawBgra. Caller-side wiring bug.",
+                    minPeakLuma);
+                return icons;
+            }
+            if (icons.Count > 0)
+            {
+                var survivors = new List<BlobFeat>(icons.Count);
+                int dropped = 0;
+                foreach (var blob in icons)
                 {
-                    survivors.Add(blob);
+                    double peakLuma = PeakLumaFilter.PeakLuma(blob, rawBgra, w, h, logger);
+                    if (peakLuma >= minPeakLuma)
+                    {
+                        survivors.Add(blob);
+                    }
+                    else
+                    {
+                        dropped++;
+                        logger?.LogTrace(
+                            "Blob #{Ord} ({Mx},{My},{W},{H}) area={A}: dropped by peak-luma filter (peakLuma={PeakLuma:0.000} < threshold {Threshold:0.00}).",
+                            blob.Ordinal, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
+                            peakLuma, minPeakLuma);
+                    }
+                }
+                if (survivors.Count == 0 && icons.Count > 0)
+                {
+                    logger?.LogWarning(
+                        "PeakLumaFilter: rejected ALL {Total} Icon-class blobs (threshold {Threshold:0.00}). Indoor calibration will fail downstream with 'no detections'; check for upstream BGRA-dim drift, an unexpectedly dim capture, or a misaligned crop.",
+                        icons.Count, minPeakLuma);
                 }
                 else
                 {
-                    dropped++;
                     logger?.LogTrace(
-                        "Blob #{Ord} ({Mx},{My},{W},{H}) area={A}: dropped by peak-luma filter (peakLuma={PeakLuma:0.000} < threshold {Threshold:0.00}).",
-                        blob.Ordinal, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
-                        peakLuma, minPeakLuma);
+                        "PeakLumaFilter: kept {Kept}/{Total} Icon-class blobs (threshold {Threshold:0.00}, dropped {Dropped}).",
+                        survivors.Count, icons.Count, minPeakLuma, dropped);
                 }
+                return survivors;
             }
-            logger?.LogTrace(
-                "PeakLumaFilter: kept {Kept}/{Total} Icon-class blobs (threshold {Threshold:0.00}, dropped {Dropped}).",
-                survivors.Count, icons.Count, minPeakLuma, dropped);
-            return survivors;
         }
 
         return icons;

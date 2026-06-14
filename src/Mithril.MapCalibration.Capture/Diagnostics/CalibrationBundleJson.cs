@@ -342,7 +342,17 @@ public sealed record SceneCalibrationProfileJson(
     int MaxIconArea,
     double MinSolidity,
     double MaxAspect,
-    double MinPeak);
+    double MinPeak)
+{
+    /// <summary>
+    /// mithril#1155 Phase 3 (review #1169-r2): raw-BGRA peak-luma gate.
+    /// <see langword="null"/> in Outdoor / pre-#1155 attempts (peak-luma filter
+    /// inactive); 0.7 in Indoor v1. Init-only so existing positional
+    /// constructions stay source-compatible; the JSON projection emits null when
+    /// the field is null per the DefaultIgnoreCondition / camelCase pipeline.
+    /// </summary>
+    public double? MinPeakLuma { get; init; }
+}
 
 // mithril#1121: AllowNamedFloatingPointLiterals lets BlobTemplateScore.Score
 // round-trip its NaN sentinel (the skip-path marker) as the JSON token "NaN".

@@ -316,12 +316,16 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         span?.SetTag("scene.class", driftSceneClass.ToString());
         // mithril#1155 Phase 3 — same BGRA crop as the main calibration path
         // below; drift checks re-run the detector against an Indoor scene need
-        // the peak-luma pre-filter for the same reason auto-cal does.
-        var driftRawBgraCrop = TryCropBgra(
-            captureResult.Color?.Bgra,
-            captureResult.Color?.Width ?? 0,
-            captureResult.Color?.Height ?? 0,
-            clamped);
+        // the peak-luma pre-filter for the same reason auto-cal does. Gated on
+        // the drift profile's MinPeakLuma so an Outdoor drift skips the alloc
+        // (review #1169-r2 finding #12).
+        var driftRawBgraCrop = driftProfile.BlobOptions.MinPeakLuma is null
+            ? null
+            : TryCropBgra(
+                captureResult.Color?.Bgra,
+                captureResult.Color?.Width ?? 0,
+                captureResult.Color?.Height ?? 0,
+                clamped);
 
         var detectionRequest = new DetectionRequest(
             Screenshot: crop,
@@ -829,16 +833,27 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // mithril#1155 Phase 3 — crop the raw BGRA to the same MapRect the gray
         // crop covers so the peak-luma pre-filter inside DeviationBlobDetector
         // can scan blob bbox luma at the matching coordinates. Skipped (null) when
-        // the capture's Color buffer is unavailable, the BGRA length doesn't
-        // match the captured dims, or the clamped rect falls outside the frame —
-        // any of which short-circuits to a Phase 3-disabled DetectionRequest and
-        // is byte-identical to the pre-#1155 detector path. captureResult.Color
-        // is non-null at this point (the gray-null gate above already returned).
-        var rawBgraCrop = TryCropBgra(
-            captureResult.Color?.Bgra,
-            captureResult.Color?.Width ?? 0,
-            captureResult.Color?.Height ?? 0,
-            clamped);
+        // (a) the resolved profile has MinPeakLuma null (Outdoor — filter is a
+        // no-op so the ~W*H*4 alloc + per-row BlockCopy is pure waste, review
+        // #1169-r2 finding #12), (b) the capture's Color buffer is unavailable,
+        // (c) the BGRA length doesn't match the captured dims, or (d) the
+        // clamped rect falls outside the frame. Any of those short-circuit to a
+        // Phase 3-disabled DetectionRequest and is byte-identical to the pre-
+        // #1155 detector path.
+        //
+        // Note on the Color null path: in production today, CaptureService
+        // returns Color and Gray as a coupled pair (both non-null or both null),
+        // so the gray-null gate above implies Color is non-null. That's a
+        // CaptureService contract, NOT a type-system guarantee — the ?. on
+        // captureResult.Color below remains as a defensive fail-soft path so a
+        // future ICaptureService impl that decouples them can't NPE here.
+        var rawBgraCrop = profile.BlobOptions.MinPeakLuma is null
+            ? null
+            : TryCropBgra(
+                captureResult.Color?.Bgra,
+                captureResult.Color?.Width ?? 0,
+                captureResult.Color?.Height ?? 0,
+                clamped);
 
         var request = new DetectionRequest(
             Screenshot: crop,

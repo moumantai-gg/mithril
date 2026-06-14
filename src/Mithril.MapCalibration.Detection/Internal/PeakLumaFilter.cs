@@ -49,20 +49,29 @@ internal static class PeakLumaFilter
     ///
     /// <para>Returns <c>0.0</c> on a dimension mismatch (<paramref name="bgra"/>
     /// length doesn't match <paramref name="width"/>×<paramref name="height"/>×4)
-    /// and emits a single <c>LogWarning</c> — the same fail-soft convention as
-    /// the rest of the detector (a misaligned producer can't crash the pipeline).
-    /// Returns <c>0.0</c> for an empty blob; the caller treats that as a drop
-    /// when <see cref="BlobOptions.MinPeakLuma"/> &gt; 0.</para>
+    /// — the same fail-soft convention as the rest of the detector (a misaligned
+    /// producer can't crash the pipeline). When <paramref name="logger"/> is
+    /// non-null, also emits a single <c>LogWarning</c>; the production caller
+    /// (<c>DeviationBlobDetector.DetectIconBlobs</c>) always supplies one, so
+    /// the misalignment surfaces in the diagnostic stream. Test/measurement
+    /// callers may omit the logger for an arithmetic-only invocation.</para>
+    ///
+    /// <para>Returns <c>0.0</c> for an empty blob; the caller treats that as a
+    /// drop when <see cref="BlobOptions.MinPeakLuma"/> &gt; 0.</para>
     /// </summary>
     public static double PeakLuma(
         BlobFeat blob, byte[] bgra, int width, int height, ILogger? logger = null)
     {
-        int expectedLen = checked(width * height * 4);
-        if (bgra.Length != expectedLen)
+        // Width/height are validated against bgra.Length in long arithmetic so a
+        // pathological producer (negative dims, overflow at width*height*4) hits
+        // the documented fail-soft path (LogWarning + return 0.0) rather than
+        // an OverflowException — see review #1169-r2 finding #6.
+        long expectedLen = (long)width * (long)height * 4L;
+        if (width < 0 || height < 0 || bgra.LongLength != expectedLen)
         {
             logger?.LogWarning(
                 "PeakLumaFilter: bgra length {Len} != expected {Expected} ({W}x{H}x4) — returning 0.0.",
-                bgra.Length, expectedLen, width, height);
+                bgra.LongLength, expectedLen, width, height);
             return 0.0;
         }
 

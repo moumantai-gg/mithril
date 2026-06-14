@@ -536,6 +536,15 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                     MinSolidity: resolved.BlobOptions.MinSolidity,
                     MaxAspect: resolved.BlobOptions.MaxAspect,
                     MinPeak: resolved.BlobOptions.MinPeak)
+                {
+                    // mithril#1155 Phase 3 (review #1169-r2): MinPeakLuma surfaces
+                    // in 01-attempt.json so a triager can tell whether the peak-
+                    // luma filter was active for the attempt (null = Outdoor /
+                    // pre-Phase-3, 0.7 = Indoor). Null is the JSON default per
+                    // record-init semantics, so Outdoor bundles stay byte-identical
+                    // by construction.
+                    MinPeakLuma = resolved.BlobOptions.MinPeakLuma,
+                }
                 : null;
             var dto = new AttemptJson(
                 SchemaVersion: 4,

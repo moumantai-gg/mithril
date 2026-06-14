@@ -176,6 +176,126 @@ public sealed class PeakLumaFilterTests
     }
 
     [Fact]
+    public void DetectIconBlobs_warns_and_skips_when_MinPeakLuma_is_NaN()
+    {
+        // Review #1169-r2 finding #1: `is { } minPeakLuma` matches NaN, then
+        // `peakLuma >= NaN` is always false → every blob would be silently
+        // dropped. The guard short-circuits with a LogWarning when MinPeakLuma
+        // is non-finite so the malformed-config case is visible.
+        int w = 20, h = 20;
+        var dev = SyntheticDevWithOneBrightBlob(w, h);
+        var bgra = SyntheticBrightBgra(w, h);
+
+        var opts = new BlobOptions(MinArea: 4, MaxIconArea: 1000, MinSolidity: 0.0, MaxAspect: 100, MinPeak: 0.0)
+        {
+            MinPeakLuma = double.NaN,
+        };
+        var logger = new RecordingLogger();
+        var icons = DeviationBlobDetector.DetectIconBlobs(
+            dev, w, h, lowNcc: 0.5, rim: RimMaskMode.None, opts, closeRadius: 0,
+            logger: logger, rawBgra: bgra);
+
+        icons.Should().NotBeEmpty(
+            "NaN MinPeakLuma must short-circuit the filter — every blob would otherwise be silently dropped because `peakLuma >= NaN` is always false.");
+        logger.WarningCount.Should().BeGreaterThan(0,
+            "the NaN short-circuit must LogWarning so a malformed config surfaces immediately.");
+    }
+
+    [Fact]
+    public void DetectIconBlobs_warns_when_MinPeakLuma_is_set_but_rawBgra_is_null()
+    {
+        // Review #1169-r2 finding #2: the "looks wired but isn't" gap mithril#1107
+        // explicitly cited. When Indoor profile carries MinPeakLuma=0.7 but the
+        // engine fails to thread RawBgra, the filter silently no-ops. Warn so
+        // the wiring bug is visible from logs alone.
+        int w = 20, h = 20;
+        var dev = SyntheticDevWithOneBrightBlob(w, h);
+
+        var opts = new BlobOptions(MinArea: 4, MaxIconArea: 1000, MinSolidity: 0.0, MaxAspect: 100, MinPeak: 0.0)
+        {
+            MinPeakLuma = 0.7,
+        };
+        var logger = new RecordingLogger();
+        var icons = DeviationBlobDetector.DetectIconBlobs(
+            dev, w, h, lowNcc: 0.5, rim: RimMaskMode.None, opts, closeRadius: 0,
+            logger: logger, rawBgra: null);
+
+        icons.Should().NotBeEmpty(
+            "MinPeakLuma set + rawBgra null must short-circuit the filter so the caller's Outdoor-equivalent recall isn't masquerading as Indoor.");
+        logger.WarningCount.Should().BeGreaterThan(0,
+            "the silent-disable case is exactly the 'looks wired but isn't' gap CLAUDE.md's instrumentation contract forbids — must LogWarning.");
+    }
+
+    [Fact]
+    public void DetectIconBlobs_warns_when_100_percent_of_Icon_class_blobs_drop()
+    {
+        // Review #1169-r2 finding #4: when every Icon-class blob fails the
+        // peak-luma gate (dim capture, dark icons, misaligned crop, or BGRA-dim
+        // drift), Indoor calibration silently falls back to zero detections.
+        // Promote the "kept 0/N when N > 0" case to LogWarning per CLAUDE.md.
+        int w = 20, h = 20;
+        var dev = SyntheticDevWithOneBrightBlob(w, h);
+        // BGRA all-dark (luma ~0) → every blob fails MinPeakLuma=0.7.
+        var bgraDark = new byte[w * h * 4];
+
+        var opts = new BlobOptions(MinArea: 4, MaxIconArea: 1000, MinSolidity: 0.0, MaxAspect: 100, MinPeak: 0.0)
+        {
+            MinPeakLuma = 0.7,
+        };
+        var logger = new RecordingLogger();
+        var icons = DeviationBlobDetector.DetectIconBlobs(
+            dev, w, h, lowNcc: 0.5, rim: RimMaskMode.None, opts, closeRadius: 0,
+            logger: logger, rawBgra: bgraDark);
+
+        icons.Should().BeEmpty("every blob is below the 0.7 threshold against a dark BGRA buffer.");
+        logger.WarningCount.Should().BeGreaterThan(0,
+            "the 100%-drop case is a safe-degrade signal — must LogWarning so the silent-zero-icon failure mode is visible at production log levels.");
+    }
+
+    /// <summary>Synthesises a deviation map with one bright (high-dev) blob at (5..9, 5..9).</summary>
+    private static float[] SyntheticDevWithOneBrightBlob(int w, int h)
+    {
+        var dev = new float[w * h];
+        for (int y = 5; y < 10; y++)
+            for (int x = 5; x < 10; x++)
+                dev[y * w + x] = 0.95f;
+        return dev;
+    }
+
+    /// <summary>Synthesises a BGRA buffer where the (5..9, 5..9) region is bright white.</summary>
+    private static byte[] SyntheticBrightBgra(int w, int h)
+    {
+        var bgra = new byte[w * h * 4];
+        for (int y = 5; y < 10; y++)
+            for (int x = 5; x < 10; x++)
+            {
+                int o = (y * w + x) * 4;
+                bgra[o] = 255; bgra[o + 1] = 255; bgra[o + 2] = 255; bgra[o + 3] = 255;
+            }
+        return bgra;
+    }
+
+    /// <summary>Captures LogWarning count across the DetectIconBlobs path so the guards are testable.</summary>
+    private sealed class RecordingLogger : Microsoft.Extensions.Logging.ILogger
+    {
+        public int WarningCount { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel,
+            Microsoft.Extensions.Logging.EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning) WarningCount++;
+        }
+    }
+
+    [Fact]
     public void Bt_601_weights_match_the_canonical_constants()
     {
         // Sanity-pin the BT.601 weights so a future refactor that swaps to a
