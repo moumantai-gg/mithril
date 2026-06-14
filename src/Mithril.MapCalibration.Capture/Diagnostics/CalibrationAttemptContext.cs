@@ -107,17 +107,20 @@ public sealed class CalibrationAttemptContext
     // SceneCalibrationProfile the engine resolved for this attempt. Populated
     // by AutoCalibrationEngine after the deviation-mask block (the same
     // alpha-coverage scan that drives the boundary mask also classifies the
-    // scene). SceneClass defaults to Outdoor so attempts that skipped the
-    // mask block (DeviationMaskingEnabled=false / boundary cache null / pre-
-    // locate reject) safe-degrade to Outdoor — byte-identical to pre-#1163.
+    // scene). All three nullable so an attempt that skipped the mask block
+    // (pre-locate reject, DeviationMaskingEnabled=false, boundary cache
+    // unwired) emits absence in the bundle rather than the misleading
+    // "Outdoor + Outdoor BlobOptions" — a reader investigating "why did this
+    // Indoor scene reject?" can distinguish "we didn't resolve a class" from
+    // "we resolved Outdoor and ran with Outdoor gates" (mithril#1168 review).
     /// <summary>
     /// mithril#1163 Phase 1: scene class for this attempt, derived from the
     /// base texture's alpha-coverage fraction (Outdoor when fraction ≥
     /// <see cref="MapCalibrationDetectorOptions.SceneClassOpaqueFractionThreshold"/>).
-    /// Defaults to <see cref="Detection.SceneClass.Outdoor"/> so unclassified
-    /// attempts get the safe-degrade profile.
+    /// Null when the scene wasn't classified (mask block skipped) — the bundle
+    /// emits absence which readers treat as "Outdoor by safe-degrade".
     /// </summary>
-    public SceneClass SceneClass { get; set; } = SceneClass.Outdoor;
+    public SceneClass? SceneClass { get; set; }
 
     /// <summary>
     /// mithril#1163 Phase 1: measured opaque-pixel fraction (alpha ≥ 128 /
@@ -131,9 +134,11 @@ public sealed class CalibrationAttemptContext
     /// mithril#1163 Phase 1: the SceneCalibrationProfile the engine resolved
     /// for this attempt — Outdoor (today's universal constants) or Indoor
     /// (relaxed classifier shape gates per the
-    /// <c>indoor-recall-merge-fix-candidates.md</c> measurement).
+    /// <c>indoor-recall-merge-fix-candidates.md</c> measurement). Null when
+    /// the scene wasn't classified (mask block skipped); the bundle emits
+    /// absence which readers treat as "Outdoor profile by safe-degrade".
     /// </summary>
-    public SceneCalibrationProfile Profile { get; set; } = SceneCalibrationProfile.Outdoor;
+    public SceneCalibrationProfile? Profile { get; set; }
 
     // Outcome is set explicitly by the engine — either at each Fail() site, at
     // the end of the success path, or in the catch (exception → "error").

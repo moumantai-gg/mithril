@@ -523,15 +523,20 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         {
             var finalized = DateTimeOffset.UtcNow;
             // mithril#1163 Phase 1: emit the resolved scene-class fields
-            // when the engine populated them (mask block ran). Absence on
-            // older bundles / mask-disabled attempts means "Outdoor by
-            // safe-degrade" — readers treat null as that.
-            var profileJson = new SceneCalibrationProfileJson(
-                MinArea: ctx.Profile.BlobOptions.MinArea,
-                MaxIconArea: ctx.Profile.BlobOptions.MaxIconArea,
-                MinSolidity: ctx.Profile.BlobOptions.MinSolidity,
-                MaxAspect: ctx.Profile.BlobOptions.MaxAspect,
-                MinPeak: ctx.Profile.BlobOptions.MinPeak);
+            // ONLY when the engine populated them (mask block ran). Absence
+            // for pre-locate-reject / mask-disabled attempts means "Outdoor by
+            // safe-degrade" — readers treat null as that. Emitting concrete
+            // Outdoor numbers for an unresolved attempt would be the bundle
+            // actively misreporting positive evidence it never had
+            // (mithril#1168 review feedback).
+            var profileJson = ctx.Profile is { } resolved
+                ? new SceneCalibrationProfileJson(
+                    MinArea: resolved.BlobOptions.MinArea,
+                    MaxIconArea: resolved.BlobOptions.MaxIconArea,
+                    MinSolidity: resolved.BlobOptions.MinSolidity,
+                    MaxAspect: resolved.BlobOptions.MaxAspect,
+                    MinPeak: resolved.BlobOptions.MinPeak)
+                : null;
             var dto = new AttemptJson(
                 SchemaVersion: 4,
                 Area: ctx.Area,
@@ -543,7 +548,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 Files: files,
                 LocatorBest: ToLocatorBestJson(ctx),
                 Synthesis: ToSynthesisJson(ctx.Result?.Synthesis),
-                SceneClass: ctx.SceneClass.ToString(),
+                SceneClass: ctx.SceneClass?.ToString(),
                 SceneClassOpaqueFraction: ctx.SceneClassOpaqueFraction,
                 Profile: profileJson);
             WriteJson(dir, "01-attempt.json", dto, CalibrationBundleJsonContext.Default.AttemptJson);

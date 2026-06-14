@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security.Cryptography;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mithril.MapCalibration.Detection;
@@ -41,6 +42,16 @@ public sealed class IndoorRecallMergeTuningTests
     private const string CanonicalBundleName =
         "Map_HogansKeepBasement-20260613-230459-600-rejected-solve-insufficient-inliers";
 
+    /// <summary>
+    /// SHA-256 of the canonical bundle's <c>06-aligned-screenshot.png</c> at
+    /// the time the production-parity asserts below were measured. Asserts only
+    /// fire when this hash matches — protects other devs whose own bundles
+    /// happen to live at the same path but produce different blob counts.
+    /// mithril#1168 review feedback ("dev-local bundles are foot-guns").
+    /// </summary>
+    private const string CanonicalScreenshotSha256 =
+        "57B01CE5D4BB2DF60124B32DAB2102B2E05BE9C37ECE5BE2DBEAA87B09F9EA0B";
+
     /// <summary>Per-icon aligned-space centroids from the stage-attribution audit.</summary>
     private static readonly (string Label, int X, int Y)[] CanonicalIcons =
     [
@@ -58,6 +69,20 @@ public sealed class IndoorRecallMergeTuningTests
         if (string.IsNullOrEmpty(local)) return null;
         var dir = Path.Combine(local, "Mithril", "diagnostics", "calibration", CanonicalBundleName);
         return Directory.Exists(dir) ? dir : null;
+    }
+
+    /// <summary>
+    /// True when the on-disk <c>06-aligned-screenshot.png</c> matches the
+    /// canonical hash the production-parity asserts were measured against.
+    /// </summary>
+    private static bool BundleMatchesCanonicalHash(string bundleDir)
+    {
+        var shotPath = Path.Combine(bundleDir, "06-aligned-screenshot.png");
+        if (!File.Exists(shotPath)) return false;
+        using var stream = File.OpenRead(shotPath);
+        var bytes = SHA256.HashData(stream);
+        var hex = System.Convert.ToHexString(bytes);
+        return string.Equals(hex, CanonicalScreenshotSha256, System.StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -217,11 +242,12 @@ public sealed class IndoorRecallMergeTuningTests
         _output.WriteLine($"  Real icons reaching Icon class: {realIconAdmitted}/6");
 
         // Production-parity sanity guard at production parameters (win=11,
-        // closeRadius=1). These numbers come straight from the canonical bundle's
-        // 10c-blob-pipeline.json and 10-detections.json — any drift here means
-        // the test rig diverges from production, and the measurement table for
-        // OTHER parameter combos shouldn't be trusted.
-        if (win == 11 && closeRadius == 1)
+        // closeRadius=1). These numbers come straight from the canonical
+        // bundle's 10c-blob-pipeline.json and 10-detections.json. Hash-gated
+        // so a dev who populates the same bundle name from a different
+        // capture session doesn't get red on what should be measurement-only
+        // data (mithril#1168 review feedback).
+        if (win == 11 && closeRadius == 1 && BundleMatchesCanonicalHash(dir))
         {
             Assert.Equal(197, blobs.Count);
             Assert.Equal(18, blobs.Count(b => b.BlobClass == BlobClass.Icon));
@@ -230,6 +256,10 @@ public sealed class IndoorRecallMergeTuningTests
             Assert.Equal(BlobClass.Icon, iconF.BlobClass);
             Assert.Equal(152, iconF.Area);
             Assert.Equal(176, iconF.BlobOrdinal);
+        }
+        else if (win == 11 && closeRadius == 1)
+        {
+            _output.WriteLine("Production-parity asserts skipped — the on-disk bundle's SHA256 doesn't match the measured canonical (numbers above are still useful as a measurement record).");
         }
     }
 
@@ -312,7 +342,21 @@ public sealed class IndoorRecallMergeTuningTests
         _output.WriteLine($"Outdoor profile: {outdoorAdmitted}/6 real icons admitted (baseline = production parameters).");
         _output.WriteLine($"Indoor  profile: {indoorAdmitted}/6 real icons admitted (T1+T2 — MaxAspect 2.7, MinSolidity 0.30).");
 
-        outdoorAdmitted.Should().Be(1, "production parameters (Outdoor profile) admit only IconF — the baseline pre-#1163 recall on canonical 06-13.");
-        indoorAdmitted.Should().Be(3, "Indoor profile (T1+T2) should admit IconD + IconE + IconF — the +2 lift the Phase 2 measurement proved.");
+        // Hash-gate the load-bearing asserts so devs running their own
+        // bundles don't trip on what should be canonical-bundle-only numbers.
+        if (BundleMatchesCanonicalHash(dir))
+        {
+            outdoorAdmitted.Should().Be(1, "production parameters (Outdoor profile) admit only IconF — the baseline pre-#1163 recall on canonical 06-13.");
+            indoorAdmitted.Should().Be(3, "Indoor profile (T1+T2) should admit IconD + IconE + IconF — the +2 lift the Phase 2 measurement proved.");
+        }
+        else
+        {
+            // Soft assertion: Indoor must admit MORE than Outdoor on any
+            // Indoor bundle (the structural claim the +2 lift makes). This
+            // holds across all bundles where the audit's failure modes
+            // reproduce; the exact admit-count is canonical-bundle-specific.
+            indoorAdmitted.Should().BeGreaterThanOrEqualTo(outdoorAdmitted, "Indoor profile gates can only ADMIT — never reject — relative to Outdoor.");
+            _output.WriteLine("Skipped exact 1/3 assertion — bundle SHA mismatch with the canonical measurement (general Indoor ≥ Outdoor invariant still asserted).");
+        }
     }
 }

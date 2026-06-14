@@ -56,11 +56,16 @@ public sealed class SceneCalibrationProfileTests
     }
 
     [Fact]
-    public void For_unknown_enum_value_safe_degrades_to_Outdoor()
+    public void For_unknown_cast_value_falls_to_Outdoor_per_CS8524_arm()
     {
-        // A future-proofing assertion against a fourth enum value getting
-        // added without updating the switch — better to ship Outdoor (the
-        // safe-degrade default) than throw on a release-mode runtime path.
+        // The `_ => Outdoor` arm in SceneCalibrationProfile.For exists because
+        // warnings-as-errors makes CS8524 break the build without it (every
+        // 2-arm enum dispatch needs an arm for the cast-from-int case). This
+        // test pins the documented behaviour so a future refactor doesn't
+        // accidentally change it to a throw — which would propagate into the
+        // engine's catch and surface as an Error chip with no actionable text
+        // (worse than safe-degrade). See mithril#1168 review for the full
+        // argument.
         var profile = SceneCalibrationProfile.For((SceneClass)42);
         profile.Should().Be(SceneCalibrationProfile.Outdoor);
     }

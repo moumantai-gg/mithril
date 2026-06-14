@@ -92,9 +92,19 @@ public readonly record struct SceneCalibrationProfile(
     /// <summary>
     /// Returns the canonical profile for <paramref name="sceneClass"/>. The
     /// dispatch is intentionally a switch on a 2-arm enum (per the project
-    /// memory's "switch-as-registry smell" pattern, this stays a switch until a
-    /// third arm lands — at which point the registry refactor is the right
-    /// move). Outdoor is the safe-degrade default for unknown enum values.
+    /// memory's "switch-as-registry smell" pattern, this stays a switch until
+    /// a third arm lands — at which point the registry refactor is the right
+    /// move).
+    ///
+    /// <para>The <c>_ => Outdoor</c> arm exists because <c>warnings-as-errors</c>
+    /// (CS8524) requires the switch to handle any cast-from-int value, not
+    /// just the defined enum members. Adding a third enum value (e.g.
+    /// <c>Cave</c>) does NOT auto-extend the switch — the dispatcher author
+    /// has to explicitly add a case. Reviewers must check this method when
+    /// extending <see cref="SceneClass"/> so a new arm isn't silently routed
+    /// to Outdoor's tighter gates (the bug the mithril#1168 review flagged).
+    /// CS8524 doesn't fire here today; the manual review obligation is the
+    /// guard.</para>
     /// </summary>
     public static SceneCalibrationProfile For(SceneClass sceneClass) => sceneClass switch
     {

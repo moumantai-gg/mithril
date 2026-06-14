@@ -304,9 +304,16 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // mithril#1163 Phase 1: drift check picks the same scene-class profile
         // the main auto-cal path does, so the Indoor classifier gates apply
         // when re-checking an Indoor scene against its stored cal. Safe-degrade
-        // to Outdoor when the boundary cache isn't wired.
+        // to Outdoor when the boundary cache isn't wired. The two degenerate
+        // safe-degrade causes (cache unwired vs alpha unavailable) are
+        // distinguishable from the log: `cache_wired=false` vs the boundary
+        // cache emitting its own LogWarning at line 71-73 of FloorBoundaryMaskCache.
         var driftSceneClass = _boundaryMaskCache?.GetSceneClass(sceneRef.MapAssetKey) ?? SceneClass.Outdoor;
         var driftProfile = SceneCalibrationProfile.For(driftSceneClass);
+        _logger?.LogTrace(
+            "Drift check {MapAssetKey}: scene class {SceneClass} (cache_wired={CacheWired}); BlobOptions = {BlobOptions}.",
+            sceneRef.MapAssetKey, driftSceneClass, _boundaryMaskCache is not null, driftProfile.BlobOptions);
+        span?.SetTag("scene.class", driftSceneClass.ToString());
         var detectionRequest = new DetectionRequest(
             Screenshot: crop,
             BaseTexture: alignedTexture,
