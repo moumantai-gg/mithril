@@ -250,7 +250,17 @@ internal sealed class FakeBaseTextureProvider : IBaseTextureProvider
         return ResolveAs;
     }
 
-    public GrayImage? TryGetTextureAlpha(string mapAssetKey) => null;
+    /// <summary>
+    /// Per-key alpha buffer the provider returns for <see cref="TryGetTextureAlpha"/>.
+    /// Defaults to "no alpha available" so legacy tests keep their pre-#1163
+    /// safe-degrade-to-Outdoor behaviour. mithril#1163: tests that exercise the
+    /// scene-class classifier populate this dictionary to model "alpha-coverage
+    /// 100 %" (Outdoor) or "alpha-coverage 20 %" (Indoor).
+    /// </summary>
+    public Dictionary<string, GrayImage> AlphaByKey { get; } = new();
+
+    public GrayImage? TryGetTextureAlpha(string mapAssetKey) =>
+        AlphaByKey.TryGetValue(mapAssetKey, out var alpha) ? alpha : null;
 }
 
 /// <summary>
@@ -302,10 +312,18 @@ internal sealed class SpySolver : IMapCalibrationSolver
     /// <summary>Number of <see cref="Solve"/> calls. The mithril#1021 strict-gate
     /// test asserts this is zero when the engine refuses early.</summary>
     public int SolveCalls { get; private set; }
+    /// <summary>
+    /// The most recent <see cref="DetectionRequest"/> the engine handed to
+    /// <see cref="Solve"/>. mithril#1163: lets tests assert which
+    /// <see cref="SceneCalibrationProfile.BlobOptions"/> reached the solver
+    /// without needing the full diagnostic bundle. Null until the first call.
+    /// </summary>
+    public DetectionRequest? LastRequest { get; private set; }
     public CalibrationSolveResult Solve(DetectionRequest request, IReadOnlyList<LandmarkReference> references)
     {
         Called = true;
         SolveCalls++;
+        LastRequest = request;
         return _result;
     }
 

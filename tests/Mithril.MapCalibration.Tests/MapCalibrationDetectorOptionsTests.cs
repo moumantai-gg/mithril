@@ -16,6 +16,12 @@ public class MapCalibrationDetectorOptionsTests
         opts.FogVarianceThreshold.Should().Be(30.0);
         opts.FogColorMin.Should().Be((byte)110);
         opts.FogColorMax.Should().Be((byte)140);
+        // mithril#1163 Phase 1 — pinned alongside the spec §D defaults because
+        // SceneClassOpaqueFractionThreshold is load-bearing: it drives
+        // FloorBoundaryMaskCache.ClassifySceneClass and the JSON-persisted
+        // SceneCalibrationProfile dispatch. A drop to 0.90 here would silently
+        // re-classify some Outdoor scenes as Indoor.
+        opts.SceneClassOpaqueFractionThreshold.Should().Be(0.95);
     }
 
     [Fact]

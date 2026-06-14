@@ -301,6 +301,19 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         var crop = ImageOps.Crop(gray, clamped.OriginX, clamped.OriginY, clamped.Width, clamped.Height);
         var alignedTexture = ImageOps.Resize(baseTexture, clamped.Width, clamped.Height);
         var alignedRect = new MapRect(0, 0, clamped.Width, clamped.Height, clamped.TextureWidth, clamped.TextureHeight);
+        // mithril#1163 Phase 1: drift check picks the same scene-class profile
+        // the main auto-cal path does, so the Indoor classifier gates apply
+        // when re-checking an Indoor scene against its stored cal. Safe-degrade
+        // to Outdoor when the boundary cache isn't wired. The two degenerate
+        // safe-degrade causes (cache unwired vs alpha unavailable) are
+        // distinguishable from the log: `cache_wired=false` vs the boundary
+        // cache emitting its own LogWarning at line 71-73 of FloorBoundaryMaskCache.
+        var driftSceneClass = _boundaryMaskCache?.GetSceneClass(sceneRef.MapAssetKey) ?? SceneClass.Outdoor;
+        var driftProfile = SceneCalibrationProfile.For(driftSceneClass);
+        _logger?.LogTrace(
+            "Drift check {MapAssetKey}: scene class {SceneClass} (cache_wired={CacheWired}); BlobOptions = {BlobOptions}.",
+            sceneRef.MapAssetKey, driftSceneClass, _boundaryMaskCache is not null, driftProfile.BlobOptions);
+        span?.SetTag("scene.class", driftSceneClass.ToString());
         var detectionRequest = new DetectionRequest(
             Screenshot: crop,
             BaseTexture: alignedTexture,
@@ -309,7 +322,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             RimMask: RimMaskMode.DeviationFlood,
             LowNcc: LowNcc,
             TypeFloor: TypeFloor,
-            BlobOptions: BlobOpts)
+            BlobOptions: driftProfile.BlobOptions)
         {
             RenderSizePx = RenderSizePx,
         };
@@ -783,6 +796,26 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         maskSpan?.SetTag("mask.fog.available", fogAvailable);
         attempt.DeviationMaskImage = combinedMask;
 
+        // mithril#1163 Phase 1: resolve SceneClass from the same alpha buffer
+        // the boundary cache loaded above (zero extra IO) and pick the matching
+        // SceneCalibrationProfile. Skipped → safe-degrade Outdoor (byte-identical
+        // to pre-#1163). When the boundary cache is wired AND the mask block
+        // ran (DeviationMaskingEnabled=true and boundary cache available), the
+        // GetSceneClass call hits the cache populated by GetOrCompute above.
+        var sceneClass = _boundaryMaskCache?.GetSceneClass(assetKey) ?? SceneClass.Outdoor;
+        var profile = SceneCalibrationProfile.For(sceneClass);
+        attempt.SceneClass = sceneClass;
+        attempt.SceneClassOpaqueFraction = _boundaryMaskCache?.TryGetOpaqueFraction(assetKey);
+        attempt.Profile = profile;
+        maskSpan?.SetTag("scene.class", sceneClass.ToString());
+        if (attempt.SceneClassOpaqueFraction is { } frac)
+        {
+            maskSpan?.SetTag("scene.opaque_fraction", frac);
+        }
+        _logger?.LogTrace(
+            "Auto-calibration {Area}: scene class {SceneClass} (opaqueFraction={OpaqueFraction}); BlobOptions = {BlobOptions}.",
+            area, sceneClass, attempt.SceneClassOpaqueFraction, profile.BlobOptions);
+
         var request = new DetectionRequest(
             Screenshot: crop,
             BaseTexture: alignedTexture,
@@ -791,7 +824,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             RimMask: RimMaskMode.DeviationFlood,
             LowNcc: LowNcc,
             TypeFloor: TypeFloor,
-            BlobOptions: BlobOpts)
+            BlobOptions: profile.BlobOptions)
         {
             RenderSizePx = RenderSizePx,
             BlobScoreSink = blobScores.Add,

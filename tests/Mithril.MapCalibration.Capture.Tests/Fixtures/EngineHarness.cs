@@ -2,6 +2,7 @@ using Mithril.MapCalibration;
 using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Capture.Diagnostics;
 using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Detection.Internal;
 using Mithril.Shared.Game;
 
 namespace Mithril.MapCalibration.Capture.Tests.Fixtures;
@@ -85,6 +86,28 @@ internal sealed class EngineHarness
     public IMapRegionRefiner Refiner { get; init; }
         = new FakeRefiner(new MapRect(0, 0, 64, 64, 64, 64));
 
+    /// <summary>
+    /// mithril#1163 — optional deviation-mask wiring. All three default to
+    /// null; when null the engine skips the mask block and resolves
+    /// <see cref="SceneClass.Outdoor"/> by safe-degrade. Tests that exercise
+    /// the SceneClass dispatch wire all three:
+    /// <see cref="DetectorOptions"/> with <c>DeviationMaskingEnabled=true</c>,
+    /// the cache, and the fog detector. The cache is auto-constructed in
+    /// <see cref="Engine"/> from the same <see cref="BaseTextureProvider"/>
+    /// that the engine sees — set
+    /// <see cref="FakeBaseTextureProvider.AlphaByKey"/> to populate alpha.
+    /// </summary>
+    public bool WireDeviationMaskDeps { get; init; }
+
+    /// <summary>mithril#1163 — exposed so tests can flex
+    /// <see cref="SceneClassOpaqueFractionThreshold"/>.</summary>
+    public MapCalibrationDetectorOptions? DetectorOptions { get; private set; }
+
+    /// <summary>mithril#1163 — the cache the engine resolves SceneClass through.
+    /// Auto-constructed in <see cref="Engine"/> when
+    /// <see cref="WireDeviationMaskDeps"/> is true.</summary>
+    public FloorBoundaryMaskCache? BoundaryMaskCache { get; private set; }
+
     public AutoCalibrationEngine Engine()
     {
         Solver = new SpySolver(Solve);
@@ -102,6 +125,13 @@ internal sealed class EngineHarness
                 : new MapSceneRef(CurrentArea, CurrentSceneFriendlyName, CurrentMapAsset),
         };
         var sceneCache = new FakeSceneAssetCache();
+        FogOfWarDetector? fog = null;
+        if (WireDeviationMaskDeps)
+        {
+            DetectorOptions = new MapCalibrationDetectorOptions();   // defaults: masking + fog enabled
+            BoundaryMaskCache = new FloorBoundaryMaskCache(BaseTextureProvider, DetectorOptions);
+            fog = new FogOfWarDetector(DetectorOptions);
+        }
         return new AutoCalibrationEngine(
             mapState,
             sceneCache,
@@ -118,6 +148,9 @@ internal sealed class EngineHarness
             sinkSelector: SinkSelector,
             assetExtractor: Extractor,
             gameConfig: GameConfig,
-            assetCacheDir: AssetCacheDir);
+            assetCacheDir: AssetCacheDir,
+            detectorOptions: DetectorOptions,
+            boundaryMaskCache: BoundaryMaskCache,
+            fogOfWarDetector: fog);
     }
 }
