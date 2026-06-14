@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Detection.Internal;
 
 namespace Mithril.MapCalibration.Detection;
 
@@ -50,7 +51,8 @@ public static class DeviationBlobDetector
         DetectionDiagnosticHooks? hooks = null,
         double meanNcc = double.NaN,
         ILogger? logger = null,
-        bool[]? deviationMask = null)
+        bool[]? deviationMask = null,
+        byte[]? rawBgra = null)
     {
         if (rim == RimMaskMode.ColourFlood)
         {
@@ -273,6 +275,82 @@ public static class DeviationBlobDetector
 
             if (cls == BlobClass.Icon) icons.Add(f);
         }
+
+        // mithril#1155 Phase 3 — Indoor peak-luma pre-filter. Both gates must be
+        // open for the filter to fire: opts.MinPeakLuma carries the threshold
+        // (null in Outdoor profile / pre-#1155 callers) and rawBgra carries the
+        // raw screenshot bytes (null when the engine hasn't threaded them).
+        // Either null short-circuits to byte-identical pre-#1155 behaviour for
+        // the legacy paths. Filter runs AFTER classification so the diagnostic
+        // hook above sees the pre-luma BlobClassification for ALL Icon-class
+        // blobs — the post-filter drop is logged at Trace per blob and surfaced
+        // as a Warning when 100% of Icon-class blobs drop (the silent-zero-icon
+        // case per CLAUDE.md's instrumentation contract) so the bundle record
+        // + the log line together tell "classified Icon but rejected by peak-
+        // luma at value X."
+        //
+        // Three observability guards (review #1169-r2):
+        //   1. NaN MinPeakLuma — `is { }` matches NaN, but `>= NaN` is always
+        //      false, so the loop would silently drop every blob. Guard with
+        //      IsFinite + Warning so a malformed config surfaces immediately.
+        //   2. MinPeakLuma set but rawBgra null — Indoor profile expected to
+        //      filter but the engine didn't thread the buffer. Warn loudly so
+        //      the "looks wired but isn't" failure (mithril#1107) is visible.
+        //   3. 100% drop with icons.Count > 0 — every Icon-class blob rejected;
+        //      Indoor calibration about to fail with "no detections." Promote
+        //      to Warning so a triager can correlate against the gate decision.
+        if (opts.MinPeakLuma is { } minPeakLuma)
+        {
+            if (!double.IsFinite(minPeakLuma))
+            {
+                logger?.LogWarning(
+                    "PeakLumaFilter: MinPeakLuma is {Value} (not finite) — skipping the filter to avoid silently dropping every blob. Fix the profile config.",
+                    minPeakLuma);
+                return icons;
+            }
+            if (rawBgra is null)
+            {
+                logger?.LogWarning(
+                    "PeakLumaFilter: MinPeakLuma is set to {Threshold:0.00} but rawBgra is null — filter no-ops. Indoor profile expected the engine to thread raw BGRA via DetectionRequest.RawBgra. Caller-side wiring bug.",
+                    minPeakLuma);
+                return icons;
+            }
+            if (icons.Count > 0)
+            {
+                var survivors = new List<BlobFeat>(icons.Count);
+                int dropped = 0;
+                foreach (var blob in icons)
+                {
+                    double peakLuma = PeakLumaFilter.PeakLuma(blob, rawBgra, w, h, logger);
+                    if (peakLuma >= minPeakLuma)
+                    {
+                        survivors.Add(blob);
+                    }
+                    else
+                    {
+                        dropped++;
+                        logger?.LogTrace(
+                            "Blob #{Ord} ({Mx},{My},{W},{H}) area={A}: dropped by peak-luma filter (peakLuma={PeakLuma:0.000} < threshold {Threshold:0.00}).",
+                            blob.Ordinal, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
+                            peakLuma, minPeakLuma);
+                    }
+                }
+                if (survivors.Count == 0 && icons.Count > 0)
+                {
+                    logger?.LogWarning(
+                        "PeakLumaFilter: rejected ALL {Total} Icon-class blobs (threshold {Threshold:0.00}). Indoor calibration will fail downstream with 'no detections'; check for upstream BGRA-dim drift, an unexpectedly dim capture, or a misaligned crop.",
+                        icons.Count, minPeakLuma);
+                }
+                else
+                {
+                    logger?.LogTrace(
+                        "PeakLumaFilter: kept {Kept}/{Total} Icon-class blobs (threshold {Threshold:0.00}, dropped {Dropped}).",
+                        survivors.Count, icons.Count, minPeakLuma, dropped);
+                }
+                return survivors;
+            }
+        }
+
         return icons;
     }
 
@@ -331,8 +409,39 @@ public static class DeviationBlobDetector
 public enum BlobClass { Noise, Icon, Fog, Structure }
 
 /// <summary>Shape/size thresholds for <see cref="DeviationBlobDetector.DetectIconBlobs"/>.</summary>
+/// <remarks>
+/// <para>The positional fields gate blobs at the shape/size + deviation-peak layer:
+/// <c>MinPeak</c> is the maximum value the blob reaches in the NCC deviation map
+/// (a derived signal, not raw BGRA).</para>
+///
+/// <para>mithril#1155 Phase 3: <see cref="MinPeakLuma"/> is the post-classification
+/// raw-BGRA-luma gate added as an init-only property so the ~25 existing positional
+/// call sites compile unchanged. Per the
+/// <c>indoor-recall-stage-attribution.md</c> §E finding ("real-icon blobs all
+/// have PeakLuma &gt; 0.78 in their raw-BGRA bbox; floor-noise Icon-class blobs
+/// are at 0.22–0.40"), a single threshold cleanly separates real Indoor icons
+/// from the residual floor-noise blobs that survive T1+T2's relaxed classifier
+/// gates. <c>null</c> = pre-filter disabled (byte-identical pre-#1155 behaviour);
+/// Outdoor profile leaves it <c>null</c> so the filter is a no-op outdoors.</para>
+/// </remarks>
 public readonly record struct BlobOptions(
-    int MinArea, int MaxIconArea, double MinSolidity, double MaxAspect, double MinPeak);
+    int MinArea, int MaxIconArea, double MinSolidity, double MaxAspect, double MinPeak)
+{
+    /// <summary>
+    /// Indoor peak-luma pre-filter threshold (mithril#1155 Phase 3). When non-null,
+    /// blobs whose raw-BGRA bbox peak luma is below this value are dropped AFTER
+    /// classification but BEFORE the per-blob NCC typing step. Luma is BT.601:
+    /// <c>0.114·B + 0.587·G + 0.299·R</c>, normalized to <c>[0, 1]</c>; the peak
+    /// is the maximum luma over the blob's connected-component pixels in the
+    /// raw BGRA screenshot.
+    ///
+    /// <para>Disabled when null — the legacy pre-#1155 path. The filter is also
+    /// a no-op when the caller doesn't supply a raw BGRA buffer (engine-layer
+    /// gating: a missing buffer falls back to "filter skipped" rather than
+    /// throwing).</para>
+    /// </summary>
+    public double? MinPeakLuma { get; init; }
+}
 
 /// <summary>Per-blob geometry + deviation stats. Pixel list retained for downstream typing/rendering.</summary>
 public sealed class BlobFeat

@@ -82,12 +82,27 @@ public readonly record struct SceneCalibrationProfile(
     /// blob. Other knobs unchanged from Outdoor — the measurement showed
     /// <c>LowNcc</c> / kernel <c>win</c> / morph <c>closeRadius</c> divergence
     /// doesn't move v1 recall (T3 partially falsified).
+    ///
+    /// <para>Phase 3 (mithril#1155): <see cref="BlobOptions.MinPeakLuma"/> = 0.7
+    /// suppresses the residual floor-noise Icon-class blobs that survive the
+    /// relaxed T1+T2 shape gates above. The
+    /// <c>indoor-recall-stage-attribution.md</c> §E finding ("real-icon blobs
+    /// all have PeakLuma &gt; 0.78 in their raw-BGRA bbox; floor-noise
+    /// Icon-class blobs are at 0.22–0.40") gives a clean ~0.4-wide separation
+    /// band, and the Phase 3 corpus measurement
+    /// (<c>indoor-peak-luma-threshold.md</c>) confirms the threshold holds
+    /// across the broader bundle inventory. 0.7 sits in the middle of the
+    /// separation band — drops every measured noise blob while leaving the
+    /// real-icon blobs with &gt;0.08 headroom.</para>
     /// </summary>
     public static SceneCalibrationProfile Indoor { get; } = new(
         SceneClass: SceneClass.Indoor,
         BlobOptions: new BlobOptions(
             MinArea: 12, MaxIconArea: 900,
-            MinSolidity: 0.30, MaxAspect: 2.7, MinPeak: 0.7));
+            MinSolidity: 0.30, MaxAspect: 2.7, MinPeak: 0.7)
+        {
+            MinPeakLuma = 0.7,
+        });
 
     /// <summary>
     /// Returns the canonical profile for <paramref name="sceneClass"/>. The

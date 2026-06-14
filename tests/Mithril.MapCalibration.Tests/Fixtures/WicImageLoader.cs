@@ -38,4 +38,26 @@ public static class WicImageLoader
         }
         return new GrayImage(w, h, gray);
     }
+
+    /// <summary>
+    /// Test-only PNG → raw BGRA byte buffer + dims. Sibling to <see cref="LoadGray"/>;
+    /// used by mithril#1155 Phase 3 tests that need to exercise the peak-luma
+    /// pre-filter against canonical calibration-bundle screenshots. Matches the
+    /// <c>CapturedFrame.Bgra</c> layout: 4 bytes/pixel, B then G then R then A,
+    /// row-major top-to-bottom.
+    /// </summary>
+    public static (byte[] Bgra, int Width, int Height) LoadBgra(string path)
+    {
+        using var stream = File.OpenRead(path);
+        var decoder = new PngBitmapDecoder(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var frame = decoder.Frames[0];
+
+        var converted = new FormatConvertedBitmap(frame, PixelFormats.Bgra32, null, 0);
+        int w = converted.PixelWidth;
+        int h = converted.PixelHeight;
+        int stride = w * 4;
+        var bgra = new byte[stride * h];
+        converted.CopyPixels(bgra, stride, 0);
+        return (bgra, w, h);
+    }
 }

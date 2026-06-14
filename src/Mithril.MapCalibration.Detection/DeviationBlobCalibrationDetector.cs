@@ -73,7 +73,12 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
             // mithril#1116: combined boundary+fog mask threaded from the request.
             // Null when no mask was built (pre-#1116 paths / disabled by settings)
             // — DetectIconBlobs treats null as no-op so behavior is unchanged.
-            deviationMask: request.DeviationMask);
+            deviationMask: request.DeviationMask,
+            // mithril#1155 Phase 3: raw BGRA backing the Indoor peak-luma pre-
+            // filter. Null on Outdoor profile / pre-#1155 callers — DetectIconBlobs
+            // short-circuits the filter when either rawBgra is null or
+            // BlobOptions.MinPeakLuma is null, so legacy paths are byte-identical.
+            rawBgra: request.RawBgra);
 
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
 

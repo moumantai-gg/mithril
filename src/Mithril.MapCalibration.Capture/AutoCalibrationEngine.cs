@@ -314,6 +314,19 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             "Drift check {MapAssetKey}: scene class {SceneClass} (cache_wired={CacheWired}); BlobOptions = {BlobOptions}.",
             sceneRef.MapAssetKey, driftSceneClass, _boundaryMaskCache is not null, driftProfile.BlobOptions);
         span?.SetTag("scene.class", driftSceneClass.ToString());
+        // mithril#1155 Phase 3 — same BGRA crop as the main calibration path
+        // below; drift checks re-run the detector against an Indoor scene need
+        // the peak-luma pre-filter for the same reason auto-cal does. Gated on
+        // the drift profile's MinPeakLuma so an Outdoor drift skips the alloc
+        // (review #1169-r2 finding #12).
+        var driftRawBgraCrop = driftProfile.BlobOptions.MinPeakLuma is null
+            ? null
+            : TryCropBgra(
+                captureResult.Color?.Bgra,
+                captureResult.Color?.Width ?? 0,
+                captureResult.Color?.Height ?? 0,
+                clamped);
+
         var detectionRequest = new DetectionRequest(
             Screenshot: crop,
             BaseTexture: alignedTexture,
@@ -325,6 +338,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             BlobOptions: driftProfile.BlobOptions)
         {
             RenderSizePx = RenderSizePx,
+            RawBgra = driftRawBgraCrop,
         };
 
         // Step 6: run typed icon detector only (no geometric solve).
@@ -816,6 +830,31 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             "Auto-calibration {Area}: scene class {SceneClass} (opaqueFraction={OpaqueFraction}); BlobOptions = {BlobOptions}.",
             area, sceneClass, attempt.SceneClassOpaqueFraction, profile.BlobOptions);
 
+        // mithril#1155 Phase 3 — crop the raw BGRA to the same MapRect the gray
+        // crop covers so the peak-luma pre-filter inside DeviationBlobDetector
+        // can scan blob bbox luma at the matching coordinates. Skipped (null) when
+        // (a) the resolved profile has MinPeakLuma null (Outdoor — filter is a
+        // no-op so the ~W*H*4 alloc + per-row BlockCopy is pure waste, review
+        // #1169-r2 finding #12), (b) the capture's Color buffer is unavailable,
+        // (c) the BGRA length doesn't match the captured dims, or (d) the
+        // clamped rect falls outside the frame. Any of those short-circuit to a
+        // Phase 3-disabled DetectionRequest and is byte-identical to the pre-
+        // #1155 detector path.
+        //
+        // Note on the Color null path: in production today, CaptureService
+        // returns Color and Gray as a coupled pair (both non-null or both null),
+        // so the gray-null gate above implies Color is non-null. That's a
+        // CaptureService contract, NOT a type-system guarantee — the ?. on
+        // captureResult.Color below remains as a defensive fail-soft path so a
+        // future ICaptureService impl that decouples them can't NPE here.
+        var rawBgraCrop = profile.BlobOptions.MinPeakLuma is null
+            ? null
+            : TryCropBgra(
+                captureResult.Color?.Bgra,
+                captureResult.Color?.Width ?? 0,
+                captureResult.Color?.Height ?? 0,
+                clamped);
+
         var request = new DetectionRequest(
             Screenshot: crop,
             BaseTexture: alignedTexture,
@@ -830,6 +869,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             BlobScoreSink = blobScores.Add,
             Diagnostics = hooks,
             DeviationMask = deviationMask,
+            RawBgra = rawBgraCrop,
         };
 
         _logger?.LogInformation(
@@ -1045,6 +1085,37 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return rect; // already in-bounds — no allocation
         }
         return rect with { OriginX = x, OriginY = y, Width = w, Height = h };
+    }
+
+    /// <summary>
+    /// mithril#1155 Phase 3 — crop the raw BGRA buffer to <paramref name="rect"/>
+    /// so the peak-luma pre-filter sees pixels at the same coordinates the
+    /// detector sees in <see cref="DetectionRequest.Screenshot"/>. Mirrors the
+    /// <see cref="ImageOps.Crop(GrayImage, int, int, int, int)"/> idiom on
+    /// <see cref="GrayImage"/>: same bounds-check, same row-major copy, scaled
+    /// by 4 bytes/pixel for BGRA.
+    ///
+    /// <para>Returns null when <paramref name="bgra"/> is null OR
+    /// <paramref name="rect"/> falls outside the source frame — the engine
+    /// short-circuits to a Phase 3-disabled <c>DetectionRequest.RawBgra = null</c>
+    /// in either case rather than throwing. The latter mirrors the surrounding
+    /// "fail-soft, never crash the calibration path" idiom (e.g.
+    /// <see cref="ClampToFrame"/>'s degenerate-rect return).</para>
+    /// </summary>
+    private static byte[]? TryCropBgra(byte[]? bgra, int sourceWidth, int sourceHeight, MapRect rect)
+    {
+        if (bgra is null) return null;
+        if (bgra.Length != sourceWidth * sourceHeight * 4) return null;
+        int x = rect.OriginX, y = rect.OriginY, w = rect.Width, h = rect.Height;
+        if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > sourceWidth || y + h > sourceHeight) return null;
+        var dst = new byte[w * h * 4];
+        int srcStride = sourceWidth * 4;
+        int dstStride = w * 4;
+        for (int row = 0; row < h; row++)
+        {
+            Buffer.BlockCopy(bgra, (y + row) * srcStride + x * 4, dst, row * dstStride, dstStride);
+        }
+        return dst;
     }
 
     private AutoCalibrationOutcome Fail(string area, string reason, string outcomeCategory)

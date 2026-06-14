@@ -107,28 +107,21 @@ public sealed class IndoorRecallMergeTuningTests
                 yield return new object?[] { (int?)w, (int?)c };
     }
 
-    [Fact]
-    public void Canonical_bundle_presence_is_reported()
+    [Theory]
+    [MemberData(nameof(Combinations))]
+    public void Measure_blob_pipeline(int? win, int? closeRadius)
     {
-        var dir = CanonicalBundleDir();
-        if (dir is null)
+        // Review #1169-r2 finding #15: the previous `Canonical_bundle_presence_is_reported`
+        // [Fact] had no Assert / Should, always passed regardless of state, and
+        // showed up as a green test in CI metrics without providing verification.
+        // Removed; the SKIPPED message below carries the same operator-facing
+        // direction (where to populate the canonical bundle).
+        if (win is null || closeRadius is null)
         {
             _output.WriteLine(
                 $"SKIPPED — canonical bundle '{CanonicalBundleName}' not present under " +
                 "%LOCALAPPDATA%/Mithril/diagnostics/calibration/. Run a calibration attempt " +
                 "in-game against Hogan's Keep Basement to populate.");
-            return;
-        }
-        _output.WriteLine($"Canonical bundle present at: {dir}");
-    }
-
-    [Theory]
-    [MemberData(nameof(Combinations))]
-    public void Measure_blob_pipeline(int? win, int? closeRadius)
-    {
-        if (win is null || closeRadius is null)
-        {
-            _output.WriteLine("SKIPPED — canonical bundle absent (see Canonical_bundle_presence_is_reported).");
             return;
         }
 
@@ -358,5 +351,346 @@ public sealed class IndoorRecallMergeTuningTests
             indoorAdmitted.Should().BeGreaterThanOrEqualTo(outdoorAdmitted, "Indoor profile gates can only ADMIT — never reject — relative to Outdoor.");
             _output.WriteLine("Skipped exact 1/3 assertion — bundle SHA mismatch with the canonical measurement (general Indoor ≥ Outdoor invariant still asserted).");
         }
+    }
+
+    /// <summary>
+    /// mithril#1155 Phase 3 acceptance test — the canonical 06-13 bundle run
+    /// with <see cref="SceneCalibrationProfile.Indoor"/> + the raw-BGRA peak-
+    /// luma pre-filter applied:
+    ///
+    /// <list type="number">
+    ///   <item>The total Icon-class blob count drops sharply (20 Indoor T1+T2
+    ///   admits → small post-filter, since 17 of the 18 base Outdoor admits +
+    ///   the 0-of-2 newly-admitted-by-T1+T2 floor-noise blobs sit at PeakLuma
+    ///   ≤ 0.55 per the broader corpus measurement and get rejected by the 0.7
+    ///   threshold). Review #1169-r2 finding #14: this docstring previously
+    ///   read "18 production" referring to the Outdoor production count; the
+    ///   assertion below pins the Indoor T1+T2 count of 20.</item>
+    ///   <item>The 3 real-icon blobs admitted by T1+T2 (IconD + IconE + IconF —
+    ///   per <see cref="Indoor_profile_admits_3_of_6_real_icons_on_canonical_bundle"/>)
+    ///   all SURVIVE the peak-luma filter. The
+    ///   <c>indoor-recall-stage-attribution.md</c> §E finding established that
+    ///   real-icon blobs sit at PeakLuma &gt; 0.78, so 0.7 leaves &gt; 0.08
+    ///   headroom.</item>
+    /// </list>
+    ///
+    /// <para>Together: Phase 2's recall lift is preserved AND Phase 3 suppresses
+    /// the surviving noise — composing the two Indoor improvements without
+    /// regression. This is the load-bearing acceptance gate for Phase 3.</para>
+    /// </summary>
+    [Fact]
+    public void Indoor_profile_with_peak_luma_filter_drops_noise_blobs_and_keeps_real_icons()
+    {
+        if (CanonicalBundleDir() is null)
+        {
+            _output.WriteLine("SKIPPED — canonical bundle absent.");
+            return;
+        }
+        var dir = CanonicalBundleDir()!;
+        var shotPath = Path.Combine(dir, "06-aligned-screenshot.png");
+        var texPath = Path.Combine(dir, "05-base-texture-resampled.png");
+
+        var shot = WicImageLoader.LoadGray(shotPath);
+        var tex = WicImageLoader.LoadGray(texPath);
+        var (rawBgra, bgraW, bgraH) = WicImageLoader.LoadBgra(shotPath);
+        Assert.True(bgraW == shot.Width && bgraH == shot.Height,
+            $"BGRA dims {bgraW}x{bgraH} != gray dims {shot.Width}x{shot.Height} — the WIC decode should match.");
+
+        bool[]? deviationMask = null;
+        var maskPath = Path.Combine(dir, "07a-deviation-mask.png");
+        if (File.Exists(maskPath))
+        {
+            var maskImg = WicImageLoader.LoadGray(maskPath);
+            deviationMask = new bool[maskImg.Pixels.Length];
+            for (int i = 0; i < maskImg.Pixels.Length; i++) deviationMask[i] = maskImg.Pixels[i] >= 128;
+        }
+
+        var shotF = LocalNccDeviation.ToGrayFloat(shot);
+        var texF = LocalNccDeviation.ToGrayFloat(tex);
+        var dev = LocalNccDeviation.DeviationMap(shotF, texF, shot.Width, shot.Height, win: 11, out var meanNcc, addedOnly: true);
+
+        // Run the Indoor profile twice: once with the peak-luma pre-filter
+        // active (Indoor as shipped, including MinPeakLuma=0.7), once with it
+        // disabled (Indoor minus the MinPeakLuma field) so we can attribute the
+        // change to the new filter rather than to Phase 2's classifier gates.
+        var indoorWithLuma = SceneCalibrationProfile.Indoor;
+        var indoorWithoutLuma = SceneCalibrationProfile.Indoor with
+        {
+            BlobOptions = SceneCalibrationProfile.Indoor.BlobOptions with { MinPeakLuma = null },
+        };
+
+        (IReadOnlyList<BlobFeat> Icons, int Total) Run(SceneCalibrationProfile profile, bool withBgra)
+        {
+            var blobs = new List<BlobClassification>();
+            var hooks = new DetectionDiagnosticHooks(
+                OnDeviation: null, OnRimMask: null, OnMorph: null,
+                OnBlobClassified: blobs.Add);
+            var icons = DeviationBlobDetector.DetectIconBlobs(
+                dev, shot.Width, shot.Height,
+                lowNcc: 0.5, rim: RimMaskMode.DeviationFlood, profile.BlobOptions,
+                closeRadius: 1,
+                hooks: hooks,
+                meanNcc: meanNcc,
+                logger: NullLogger.Instance,
+                deviationMask: deviationMask,
+                rawBgra: withBgra ? rawBgra : null);
+            return (icons, blobs.Count(b => b.BlobClass == BlobClass.Icon));
+        }
+
+        // Baseline — Indoor profile with peak-luma DISABLED. This is what Phase
+        // 2 alone produces: the Icon-class blobs that survive T1+T2's relaxed
+        // shape gates.
+        //
+        // Review #1169-r2 finding #11: the second tuple element is the count of
+        // BlobClass.Icon entries seen by the OnBlobClassified hook, which fires
+        // BEFORE the peak-luma filter — it is structurally the PRE-FILTER count
+        // on BOTH branches (the hook runs the same regardless of whether the
+        // filter then drops blobs). Naming it `…IconClassClassified` makes the
+        // pre-filter semantics explicit so a future reader doesn't add a bogus
+        // `secondBranch < firstBranch` assertion expecting a post-filter delta.
+        var (preFilterIcons, preFilterIconClassClassified) = Run(indoorWithoutLuma, withBgra: false);
+        _output.WriteLine($"Indoor (no peak-luma filter): {preFilterIconClassClassified} Icon-class classified, {preFilterIcons.Count} returned (no filter).");
+
+        // With peak-luma — the post-#1155 Phase 3 path. The "classified" count
+        // is unchanged by the filter (it's measured at the pre-filter hook); the
+        // "returned" count IS the post-filter survivor set.
+        var (postFilterIcons, postFilterIconClassClassified) = Run(indoorWithLuma, withBgra: true);
+        _output.WriteLine($"Indoor (peak-luma 0.7):       {postFilterIconClassClassified} Icon-class classified (pre-filter), {postFilterIcons.Count} returned after filter.");
+
+        // Real-icon admission counts on both branches — the headline.
+        int CountRealIconsAdmitted(IReadOnlyList<BlobFeat> icons)
+        {
+            int admitted = 0;
+            foreach (var (_, x, y) in CanonicalIcons)
+            {
+                bool contained = false;
+                foreach (var blob in icons)
+                {
+                    if (x >= blob.MinX && x < blob.MinX + blob.W && y >= blob.MinY && y < blob.MinY + blob.H)
+                    {
+                        contained = true;
+                        break;
+                    }
+                }
+                if (contained) admitted++;
+            }
+            return admitted;
+        }
+
+        int preFilterReal = CountRealIconsAdmitted(preFilterIcons);
+        int postFilterReal = CountRealIconsAdmitted(postFilterIcons);
+        _output.WriteLine($"Real icons admitted: pre-filter {preFilterReal}/6, post-filter {postFilterReal}/6.");
+
+        // The structural claim Phase 3 makes: the filter NEVER drops a real-icon
+        // blob. Holds across all Indoor bundles where the §E spike finding
+        // ("real-icon PeakLuma > 0.78, floor-noise PeakLuma ≤ 0.40")
+        // generalises. This is the load-bearing invariant — assert it
+        // unconditionally (no hash gate), so any Indoor bundle that violates it
+        // surfaces as a Phase 3 regression.
+        postFilterReal.Should().Be(preFilterReal,
+            "Phase 3 peak-luma filter must never drop a real-icon blob — the §E separation (real-icon > 0.78 vs floor-noise < 0.40) leaves > 0.08 headroom above the 0.7 threshold across the audited Indoor corpus.");
+
+        // Hash-gated specifics: the canonical 06-13 bundle drops from 18 → small
+        // Icon-class count (specifically `postFilterIcons.Count` ≤ a handful)
+        // AND the 3 real icons (IconD+E+F) survive. The exact post-filter count
+        // depends on the residual scoring of low-luma blobs and is canonical-
+        // bundle-specific, so we hash-gate.
+        if (BundleMatchesCanonicalHash(dir))
+        {
+            preFilterIconClassClassified.Should().Be(20,
+                "Phase 2 (Indoor T1+T2 — MaxAspect 2.7, MinSolidity 0.30) admits 20 Icon-class blobs on the canonical 06-13 bundle pre-filter (18 Outdoor-admitted + 2 lifted by T1+T2).");
+            postFilterIcons.Count.Should().BeLessThan(preFilterIconClassClassified,
+                "Phase 3 peak-luma filter must reject SOME blobs on the canonical bundle — otherwise the §E spike was wrong.");
+            postFilterIcons.Count.Should().BeLessThanOrEqualTo(5,
+                "Phase 3 leaves only the real-icon-luma blobs; the spike measured 1 in canonical (blob 176), and T1+T2 lifts 2 more icon-luma blobs to admission. ≤5 leaves headroom for the implementation's exact tally without pinning a fragile count.");
+            postFilterReal.Should().Be(3,
+                "IconD + IconE + IconF (the 3 Phase 2 admits) must ALL survive the peak-luma filter — the audit §E established they sit at PeakLuma > 0.78.");
+        }
+        else
+        {
+            _output.WriteLine("Skipped exact canonical-only asserts — bundle SHA mismatch (structural never-drops-a-real-icon invariant above still applies).");
+        }
+    }
+
+    /// <summary>
+    /// mithril#1155 Phase 3 broader-corpus PeakLuma measurement. Iterates every
+    /// Indoor bundle present under <c>%LOCALAPPDATA%/Mithril/diagnostics/calibration/</c>
+    /// (Hogan's + GoblinDungeon), runs the Indoor profile WITHOUT the peak-luma
+    /// filter so all Icon-class blobs are reported, and prints the per-blob
+    /// PeakLuma in BGRA-loaded <c>06-aligned-screenshot.png</c>. Emits a summary
+    /// per bundle: count below 0.40, between 0.40–0.78, and above 0.78. The
+    /// Phase 3 spec hypothesis is that the &gt; 0.78 group is exhaustively
+    /// real-icon blobs and the &lt; 0.40 group is exhaustively floor noise; this
+    /// test makes that distribution visible across the corpus so
+    /// <c>indoor-peak-luma-threshold.md</c> can cite real numbers.
+    ///
+    /// <para>Skippable per the dev-local-bundles convention. Output via
+    /// <see cref="ITestOutputHelper"/> is the durable measurement record.</para>
+    ///
+    /// <para><b>BGRA caveat.</b> <c>06-aligned-screenshot.png</c> is saved as
+    /// Gray8 (see <c>FilesystemCalibrationAttemptBundleSink</c>), so the
+    /// BGRA load produces R=G=B=gray. BT.601 weights sum to 1.0, so the peak
+    /// over a gray-saved PNG is just the gray value normalised. This is a
+    /// PROXY for the production raw BGRA from <c>captureResult.Color.Bgra</c>
+    /// (true multi-channel), but for PG's Indoor icons (grayscale glyphs on
+    /// grayscale floor per the §6.c spike), the proxy is equivalent — the
+    /// chroma-zero finding rules out the multi-channel case adding signal.</para>
+    /// </summary>
+    [Fact]
+    public void Measure_peak_luma_distribution_across_indoor_corpus()
+    {
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrEmpty(local))
+        {
+            _output.WriteLine("SKIPPED — no LocalApplicationData path.");
+            return;
+        }
+        var calRoot = Path.Combine(local, "Mithril", "diagnostics", "calibration");
+        if (!Directory.Exists(calRoot))
+        {
+            _output.WriteLine($"SKIPPED — {calRoot} does not exist.");
+            return;
+        }
+
+        // Indoor bundles only — Hogan's + GoblinDungeon prefixes. Outdoor
+        // bundles (Serbule, Eltibule, Kur) skip because peak-luma never fires
+        // on the Outdoor profile (MinPeakLuma=null).
+        var bundles = Directory.GetDirectories(calRoot)
+            .Where(d =>
+            {
+                var name = Path.GetFileName(d);
+                return name.StartsWith("Map_HogansKeepBasement", StringComparison.OrdinalIgnoreCase)
+                    || name.StartsWith("Map_GoblinDungeon", StringComparison.OrdinalIgnoreCase);
+            })
+            .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (bundles.Length == 0)
+        {
+            _output.WriteLine($"SKIPPED — no Indoor bundles under {calRoot}.");
+            return;
+        }
+
+        _output.WriteLine($"Measuring peak-luma distribution across {bundles.Length} Indoor bundle(s).");
+        _output.WriteLine($"Indoor profile: MaxAspect={SceneCalibrationProfile.Indoor.BlobOptions.MaxAspect}, MinSolidity={SceneCalibrationProfile.Indoor.BlobOptions.MinSolidity}, MinPeak={SceneCalibrationProfile.Indoor.BlobOptions.MinPeak} (peak-luma filter disabled for measurement).");
+        _output.WriteLine("");
+
+        int corpusTotalBlobs = 0;
+        int corpusBelow040 = 0;
+        int corpusBetween040And078 = 0;
+        int corpusAbove078 = 0;
+        int corpusAbove070 = 0;
+        int bundlesWithData = 0;
+
+        // Run Indoor profile with peak-luma DISABLED so we see the raw
+        // distribution of all Icon-class blob luma values.
+        var measurementProfile = SceneCalibrationProfile.Indoor with
+        {
+            BlobOptions = SceneCalibrationProfile.Indoor.BlobOptions with { MinPeakLuma = null },
+        };
+
+        foreach (var bundle in bundles)
+        {
+            var bundleName = Path.GetFileName(bundle);
+            var shotPath = Path.Combine(bundle, "06-aligned-screenshot.png");
+            var texPath = Path.Combine(bundle, "05-base-texture-resampled.png");
+            var maskPath = Path.Combine(bundle, "07a-deviation-mask.png");
+
+            if (!File.Exists(shotPath) || !File.Exists(texPath))
+            {
+                _output.WriteLine($"  {bundleName} — SKIPPED (missing 06/05 PNG).");
+                continue;
+            }
+
+            var shot = WicImageLoader.LoadGray(shotPath);
+            var tex = WicImageLoader.LoadGray(texPath);
+            if (shot.Width != tex.Width || shot.Height != tex.Height)
+            {
+                _output.WriteLine($"  {bundleName} — SKIPPED (dim mismatch: shot {shot.Width}x{shot.Height} != tex {tex.Width}x{tex.Height}).");
+                continue;
+            }
+            // Review #1169-r2 finding #8: validate that LoadBgra produces dims
+            // matching LoadGray for the same file. WIC's FormatConvertedBitmap
+            // could in principle return a different effective size (EXIF
+            // orientation, color-profile transforms); without this guard a
+            // mismatch silently corrupts the measurement (PeakLumaFilter would
+            // return 0.0 for every blob and the corpus table would report a
+            // false 100%-noise distribution).
+            var (rawBgra, bgraW, bgraH) = WicImageLoader.LoadBgra(shotPath);
+            if (bgraW != shot.Width || bgraH != shot.Height)
+            {
+                _output.WriteLine($"  {bundleName} — SKIPPED (BGRA dim mismatch: {bgraW}x{bgraH} != gray {shot.Width}x{shot.Height}).");
+                continue;
+            }
+
+            bool[]? deviationMask = null;
+            if (File.Exists(maskPath))
+            {
+                var maskImg = WicImageLoader.LoadGray(maskPath);
+                if (maskImg.Width == shot.Width && maskImg.Height == shot.Height)
+                {
+                    deviationMask = new bool[maskImg.Pixels.Length];
+                    for (int i = 0; i < maskImg.Pixels.Length; i++) deviationMask[i] = maskImg.Pixels[i] >= 128;
+                }
+            }
+
+            var shotF = LocalNccDeviation.ToGrayFloat(shot);
+            var texF = LocalNccDeviation.ToGrayFloat(tex);
+            var dev = LocalNccDeviation.DeviationMap(shotF, texF, shot.Width, shot.Height, win: 11, out var meanNcc, addedOnly: true);
+
+            var icons = DeviationBlobDetector.DetectIconBlobs(
+                dev, shot.Width, shot.Height,
+                lowNcc: 0.5, rim: RimMaskMode.DeviationFlood, measurementProfile.BlobOptions,
+                closeRadius: 1,
+                hooks: null,
+                meanNcc: meanNcc,
+                logger: NullLogger.Instance,
+                deviationMask: deviationMask,
+                rawBgra: null);  // filter inactive — just classify so we see all luma values.
+
+            if (icons.Count == 0)
+            {
+                _output.WriteLine($"  {bundleName} — 0 Icon-class blobs.");
+                continue;
+            }
+
+            bundlesWithData++;
+            int below040 = 0, between = 0, above078 = 0, above070 = 0;
+            var lumaValues = new List<double>(icons.Count);
+            foreach (var blob in icons)
+            {
+                double pl = Mithril.MapCalibration.Detection.Internal.PeakLumaFilter
+                    .PeakLuma(blob, rawBgra, shot.Width, shot.Height);
+                lumaValues.Add(pl);
+                if (pl < 0.40) below040++;
+                else if (pl < 0.78) between++;
+                else above078++;
+                if (pl >= 0.70) above070++;
+            }
+            lumaValues.Sort();
+            double median = lumaValues[lumaValues.Count / 2];
+            double min = lumaValues[0];
+            double max = lumaValues[^1];
+
+            _output.WriteLine(
+                $"  {bundleName,-78}  total={icons.Count,3}  <0.40:{below040,3}  [0.40,0.78):{between,3}  ≥0.78:{above078,3}  ≥0.70 (filter threshold):{above070,3}  range[{min:F2},{max:F2}]  median={median:F2}");
+
+            corpusTotalBlobs += icons.Count;
+            corpusBelow040 += below040;
+            corpusBetween040And078 += between;
+            corpusAbove078 += above078;
+            corpusAbove070 += above070;
+        }
+
+        _output.WriteLine("");
+        _output.WriteLine($"Corpus aggregate over {bundlesWithData} bundle(s):");
+        _output.WriteLine($"  Total Icon-class blobs:        {corpusTotalBlobs}");
+        _output.WriteLine($"  PeakLuma < 0.40 (floor noise): {corpusBelow040}");
+        _output.WriteLine($"  PeakLuma in [0.40, 0.78):      {corpusBetween040And078}  (the spec's 'no-mans land' — should be near zero if §E generalises)");
+        _output.WriteLine($"  PeakLuma >= 0.78 (real icons): {corpusAbove078}");
+        _output.WriteLine($"  PeakLuma >= 0.70 (filter passes): {corpusAbove070}");
+        _output.WriteLine("");
+        _output.WriteLine("Hypothesis check (§E): blobs sit either at ≥0.78 (real icon) or ≤0.40 (floor noise);");
+        _output.WriteLine("the [0.40, 0.78) gap should be small. The 0.7 filter threshold sits in the gap.");
     }
 }

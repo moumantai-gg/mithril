@@ -27,6 +27,12 @@ public sealed class SceneCalibrationProfileTests
         SceneCalibrationProfile.Outdoor.BlobOptions.MinSolidity.Should().Be(0.35);
         SceneCalibrationProfile.Outdoor.BlobOptions.MaxAspect.Should().Be(2.5);
         SceneCalibrationProfile.Outdoor.BlobOptions.MinPeak.Should().Be(0.7);
+        // mithril#1155 Phase 3 (review #1169-r2 finding #7): Outdoor leaves
+        // MinPeakLuma null — the byte-identical Outdoor invariant depends on
+        // this, and a future accidental flip would silently change Outdoor's
+        // detection surface. Pin here so the profile regression catches it
+        // before the engine-layer wiring test does.
+        SceneCalibrationProfile.Outdoor.BlobOptions.MinPeakLuma.Should().BeNull();
     }
 
     [Fact]
@@ -44,6 +50,12 @@ public sealed class SceneCalibrationProfileTests
         SceneCalibrationProfile.Indoor.BlobOptions.MinSolidity.Should().Be(0.30);
         SceneCalibrationProfile.Indoor.BlobOptions.MaxAspect.Should().Be(2.7);
         SceneCalibrationProfile.Indoor.BlobOptions.MinPeak.Should().Be(0.7);
+        // mithril#1155 Phase 3 (review #1169-r2 finding #7): Indoor's raw-BGRA
+        // peak-luma threshold per the broader-corpus measurement. A future
+        // refactor that zeroes / nulls this field would silently disable Phase 3
+        // on Indoor while every other profile field still pinned — pin it here
+        // so the profile regression catches it before the engine wiring does.
+        SceneCalibrationProfile.Indoor.BlobOptions.MinPeakLuma.Should().Be(0.7);
     }
 
     [Theory]
