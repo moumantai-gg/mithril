@@ -11,6 +11,12 @@ Phase 0 of the [implementation plan](../plan.md). Validates spec §6 verificatio
 | [untyped-ransac-cost.md](untyped-ransac-cost.md) | §6.e — untyped RANSAC pool-size cost | **CONFIRMED** (small) | No |
 | [detection-recall-pivot.md](detection-recall-pivot.md) | NEW finding — real-icon recall | **MODE-B PIVOT** | **YES** — load-bearing |
 
+## Phase 2 audit (driven by [#1163](https://github.com/moumantai-gg/mithril/issues/1163))
+
+| File | Scope | Verdict |
+|---|---|---|
+| [indoor-recall-stage-attribution.md](indoor-recall-stage-attribution.md) | Per-icon, per-bundle attribution of where each visible-but-undetected real icon dies in the deviation → mask → rim → morph → classify pipeline (canonical 06-13 + 3 sibling bundles). | **CLASSIFIER + CONNECTIVITY** (100 % of missed icons die at the classifier; aspect / solidity gates + the merge problem). Also falsifies the spec's framing of 06-10 as a recall-improvement comparison bundle. |
+
 ## TL;DR
 
 - §6.a + §6.e — green, spec stands.
