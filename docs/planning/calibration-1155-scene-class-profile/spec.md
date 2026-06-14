@@ -2,8 +2,16 @@
 
 **Issue:** [mithril#1155](https://github.com/moumantai-gg/mithril/issues/1155) — TypeFloor gap (the Hogan's-basement symptom that surfaced this design)
 **Parent:** [mithril#1116](https://github.com/moumantai-gg/mithril/issues/1116) — indoor calibration close-out
+**Implementation root-cause issue (Phase 2):** [mithril#1163](https://github.com/moumantai-gg/mithril/issues/1163) — Indoor icon-blob recall
 **Status:** active, design (this spec); implementation per [`plan.md`](plan.md)
 **Engine version captured:** `3.0.0.91+304a3d97b3` (includes [#1148](https://github.com/moumantai-gg/mithril/pull/1148) deviation-mask + [#1157](https://github.com/moumantai-gg/mithril/pull/1157) spatial dedup + [#1158](https://github.com/moumantai-gg/mithril/pull/1158) ReplayFixture dim alignment).
+
+## Revision history
+
+| When | What | Why |
+|---|---|---|
+| 2026-06-14 (initial) | Spec written — chose candidate E (untyped detection + RANSAC type discrimination) as Mode-B v1 load-bearing direction. | Spec inferred from `10b-blob-template-scores.json` distribution analysis; assumed real-pip blobs ARE detected and only mis-typed. |
+| 2026-06-14 (this revision) | Re-sequenced after Phase 0 spike (PR [#1162](https://github.com/moumantai-gg/mithril/pull/1162), see [`measurements/`](measurements/)). | Spike falsified the antecedent. Of 18 Icon-class blobs in the canonical bundle, only 1 contains a real icon glyph; 4-5 of 5-6 visible real icons aren't detected as blobs at all. The detector has a detection-**recall** failure, not detection-**precision**. Untyped detection doesn't fix this — RANSAC has no correspondences to find regardless of typing strategy. The load-bearing fix lives upstream at deviation/mask/morph/classify, tracked as [#1163](https://github.com/moumantai-gg/mithril/issues/1163). Other spike-driven changes: chroma pre-filter replaced by peak-luma pre-filter (chroma doesn't separate in grayscale Indoor scenes; peak luma does, with 0.91 vs 0.22-0.40 separation); Indoor `RenderSizePx` revised 12→16 (matches Outdoor); Indoor synthesis-J downgraded from Enforced to Shadow (no ground-truth-good Indoor cals exist yet). |
 
 ## 1. Why this is bigger than the issue title
 
@@ -105,10 +113,12 @@ The engine acknowledges indoor vs outdoor at the masking and locator layers — 
 | **B. Discriminative TypeFloor (margin gate)** | `best ≥ 0.70 AND (best − 2nd_best) ≥ 0.12`. | **Rejected.** Empirically backwards on this bundle: floor-noise blob 96 has margin 0.27 (would pass); real-NPC blob 54 has margin 0.01 (would fail). Margin tracks template-vs-noise correlation, not signal confidence at indoor render scales. |
 | **C. Per-type tuned absolute floors** | `landmark_portal=0.72, landmark_medipillar=0.80`. | **Rejected.** "Tuning thesis becomes load-bearing" — per [project memory](https://github.com/moumantai-gg/mithril) the engine should not depend on per-type magic numbers. |
 | **D. Better / multi-scale templates** | Re-render templates at multiple scales; pick best fit. | **Defer (separate effort).** Strongest first-principles fix, addresses the root cause that 14×16 templates can't carry type info at <12 px render. Big engineering, needs richer fixture corpus. Sibling issue. |
-| **E. Untyped detection + RANSAC discriminates type** | Detector emits "icon-shape candidate" (no per-blob NCC typing). RANSAC pools each detection × all-type refs and types from the geometrically-consistent assignment. | **Accepted as indoor profile.** Real pips constrain to one consistent transform; noise blobs scatter across types with poor fits. RANSAC pool grows ~2-3× per detection (measurable, not catastrophic). |
-| **F. Upstream chroma / saturation pre-filter** | Require min-chroma on blob pixels before NCC fires. PG icons are saturated white/cyan/red; floor / off-texture noise is desaturated. | **Accepted as indoor profile** (companion to E). Eliminates the 0.83/0.86 noise hits regardless of template scores. |
-| **G. Synthesis-J as enforcement gate (indoor)** | Lower detector permissiveness, retain RANSAC, but require synthesis-J pass — geometric self-consistency replaces score thresholds as accept criterion. | **Accepted as indoor profile** (companion to E). Requires adaptive `jMin` scaling with `refsTotal` since static 8 is unreachable indoors. |
-| **★ Chosen: Scene-class profile** | `enum SceneClass { Outdoor, Indoor }`; per-class `SceneCalibrationProfile` carries detection/solver/gate parameters. Indoor profile = E + F + G; Outdoor profile = today's constants unchanged. | See [§5](#5-chosen-direction). |
+| **E. Untyped detection + RANSAC discriminates type** | Detector emits "icon-shape candidate" (no per-blob NCC typing). RANSAC pools each detection × all-type refs and types from the geometrically-consistent assignment. | **DEMOTED after spike** — was the original load-bearing pick. The spike showed real-pip blobs aren't being *detected* (not just mis-typed), so untyped detection isn't sufficient. Retained as a tier-2 quality improvement (Phase 4 in [`plan.md`](plan.md)) once Phase 2 lifts blob recall. |
+| **F. Upstream chroma / saturation pre-filter** | Require min-chroma on blob pixels before NCC fires. PG icons are saturated white/cyan/red; floor / off-texture noise is desaturated. | **REPLACED after spike** by F′ (peak-luma pre-filter). Chroma is essentially zero across the Indoor corpus (icons are grayscale glyphs on grayscale floor); the chroma assumption was wrong. See [`measurements/indoor-chroma-threshold.md`](measurements/indoor-chroma-threshold.md). |
+| **F′. Peak-luma pre-filter (spike-discovered alternative)** | Require `PeakLuma > 0.7` (or `BrightPx ≥ 3`) on the blob bbox in raw screenshot space. PG indoor icons are bright-white glyphs (PeakLuma 0.91); floor noise is mid-gray (PeakLuma 0.22-0.40). | **Accepted as indoor profile** (Phase 3 in [`plan.md`](plan.md)). Cleanly separates real-icon blobs from floor-noise blobs in the measured corpus. |
+| **G. Synthesis-J as enforcement gate (indoor)** | Lower detector permissiveness, retain RANSAC, but require synthesis-J pass — geometric self-consistency replaces score thresholds as accept criterion. | **DOWNGRADED after spike** from Enforced to Shadow for v1. Outdoor `j` (16-23) vs Indoor `j` (3-4) is clean, but zero ground-truth-good Indoor cals exist to derive a separating formula. Phase 5 ships Indoor in Shadow mode; revisit enforcement once Phase 2 produces known-good Indoor cals. See [`measurements/indoor-synthesis-j-threshold.md`](measurements/indoor-synthesis-j-threshold.md). |
+| **H. Indoor icon-blob recall** (spike-discovered, [#1163](https://github.com/moumantai-gg/mithril/issues/1163)) | Lift the upstream detection-recall ceiling so real-icon blobs actually survive into the typing step. Stage-attribution audit + per-profile tuning of `LowNcc`, morph-close radius, chroma-aware deviation, `BlobOpts` floor. | **Accepted as indoor profile load-bearing piece** (Phase 2 in [`plan.md`](plan.md)). Of 18 Icon-class blobs in the canonical bundle, only 1 contains a real icon glyph; 4-5 of 5-6 visible icons aren't detected at all. The actual root cause. See [`measurements/detection-recall-pivot.md`](measurements/detection-recall-pivot.md). |
+| **★ Chosen: Scene-class profile** | `enum SceneClass { Outdoor, Indoor }`; per-class `SceneCalibrationProfile` carries detection/solver/gate parameters. Indoor profile = **H + F′ + G(Shadow)** (post-spike); Outdoor profile = today's constants unchanged. | See [§5](#5-chosen-direction). |
 
 ## 5. Chosen direction — scene-class profile
 
@@ -127,20 +137,23 @@ Outdoor profile (today's constants, preserved)
   Synthesis-J nMin       = 8
   Gate                   = 12 px / 4 inliers
 
-Indoor profile (new)
-  RenderSizePx           = 12              (smaller pip render-size)            (verification owed §6.b)
-  TypeFloor              = (n/a — untyped detection skips per-blob NCC typing)
-  LowNcc                 = 0.5             (unchanged for v1; revisit if §6.c shows poor recall)
-  BlobOpts.MinChroma     = 0.30            (saturation pre-filter)               (verification owed §6.c)
-  Detector path          = untyped (new UntypedDeviationBlobDetector)
+Indoor profile (post-spike v1)
+  RenderSizePx           = 16              (same as Outdoor — spike §6.b)
+  TypeFloor              = 0.80             (unchanged from Outdoor for v1 — untyped detection deferred to Phase 4)
+  LowNcc                 = TBD per #1163 stage-attribution (current 0.5 likely too tight indoor; v1 tunes per spike outcome)
+  BlobOpts.MinChroma     = (unset — spike showed chroma doesn't separate)
+  BlobOpts.MinPeakLuma   = ~0.7             (peak-luma pre-filter, replaces chroma; v1 threshold from Phase 3 corpus)
+  Detector path          = typed (current — untyped detection deferred to Phase 4)
   RansacInlierPx         = 15              (unchanged for v1)
-  Synthesis-J mode       = Enforced
-  Synthesis-J jMin       = max(1.5, 0.6 × refsTotal)                             (verification owed §6.d)
-  Synthesis-J nMin       = max(3, ⌈0.4 × refsTotal⌉)                             (verification owed §6.d)
-  Gate                   = inherited from synthesis-J; legacy gate informational
+  Synthesis-J mode       = Shadow           (downgraded from Enforced; no ground-truth-good Indoor cals exist)
+  Synthesis-J jMin       = max(1.5, 0.6 × refsTotal)   (computed + logged but not enforced for v1)
+  Synthesis-J nMin       = max(3, ⌈0.4 × refsTotal⌉)   (computed + logged but not enforced for v1)
+  Gate                   = legacy 12 px / 4 inliers (synthesis-J observability adds context; not source of truth for Indoor v1)
 ```
 
-Initial values for Indoor are starting points. Each diverged value is gated on its own [verification owed](#6-verification-owed) row before it lands in code.
+The Indoor profile's biggest divergence from Outdoor is the **upstream detection pipeline tuning** ([#1163](https://github.com/moumantai-gg/mithril/issues/1163) Phase 2) — `LowNcc`, morph-close radius, possibly `BlobOpts.MinArea` and a chroma-aware deviation kernel. The detection-time constants get expressed as profile fields; the actual values land via Phase 2 corpus measurement.
+
+The carrier shape is unchanged — `SceneCalibrationProfile` still bundles all detection/solver/gate parameters and the dispatcher reads from it. The post-spike pivot is *which* parameters diverge, not *whether* there's a profile axis.
 
 ### 5.2 Scene-class resolution
 
@@ -160,36 +173,42 @@ Alternative classification sources considered + rejected:
 
 Alpha-channel coverage is the only signal that is self-bootstrapping, dependency-free, and falls out of work already done.
 
-### 5.3 Indoor detection — untyped icon-shape candidates
+### 5.3 Indoor detection — upstream recall fix ([#1163](https://github.com/moumantai-gg/mithril/issues/1163))
 
-The indoor detection path replaces `DeviationBlobCalibrationDetector`'s per-blob template NCC typing with **untyped icon-shape emission**:
+The Indoor detection path keeps the typed `DeviationBlobCalibrationDetector` for v1 (untyped detection deferred to Phase 4). The Indoor profile's actual divergence is **upstream-of-typing**:
 
-1. Same deviation + rim + morph + classify pipeline produces icon-class blobs.
-2. **Chroma pre-filter** (Indoor only): reject blobs whose mean chroma in the original BGRA screenshot is below `BlobOpts.MinChroma`. Suppresses floor noise and off-texture (alpha-zero) hits upstream of NCC.
-3. **No per-template NCC scoring.** Emit each surviving blob as an untyped `IconShapeCandidate(anchor, score = blob.PeakDev)` — anchor at the blob centroid (no pivot correction at detection time; pivot is type-dependent so it's applied at RANSAC time).
-4. Diagnostic surface: `10-detections.json` schema bumps to v2 with optional `landmarkType: null` for Indoor candidates; `10b-blob-template-scores.json` is omitted entirely for Indoor (the per-template NCC step doesn't run).
+1. **Stage-attribution audit** — per Indoor bundle in the corpus, trace where each visible-but-undetected icon gets lost (deviation map → rim mask → deviation mask → morph-close → classify). Output: per-icon, per-bundle attribution table.
+2. **Per-profile tuning** of the parameters the audit identifies. Likely candidates:
+   - `LowNcc` lower for Indoor (currently 0.5; Indoor low-contrast icons may need 0.3-0.4)
+   - Per-profile morph-close radius (smaller for Indoor — current radius may merge icons into adjacent floor noise)
+   - Chroma-aware deviation kernel (compare colour channels separately even though icons are grayscale — luma profile may still differ in HSV space)
+   - Per-profile `BlobOptions.MinArea` floor (Indoor icons may form smaller blobs than the current 12 threshold)
+3. **Peak-luma pre-filter** — after blob classification, reject blobs whose `PeakLuma` in the raw BGRA screenshot bbox is below `BlobOpts.MinPeakLuma` (~0.7). The spike showed this cleanly separates real-icon blobs (0.91) from floor noise (0.22-0.40). This is Phase 3 in [`plan.md`](plan.md).
+4. **Typed per-blob NCC** then runs as today — for v1 we accept that some real-icon blobs will be mis-typed; RANSAC's same-type pool constraint catches what it catches and the legacy gate decides.
 
-### 5.4 Indoor solving — RANSAC discriminates type
+Diagnostic surface: `10-detections.json` schema bumps to v2 with optional `blobPeakLuma` per detection; `10c-blob-pipeline.json` carries the stage-attribution data needed for the corpus audit.
 
-`TypeAwareRansacSolver` extends to accept untyped detections:
+### 5.4 Indoor solving — typed RANSAC (unchanged for v1)
 
-1. Pool construction: each untyped detection pairs with **all** refs (irrespective of type).
-2. Per-pair pivot lookup: the pair carries the ref's type, so `template.PivotX/PivotY` is resolved from the ref-type at pool-build time.
-3. RANSAC sample + inlier check unchanged — the 2-point seed solver doesn't care about type.
-4. Inlier de-dup (`bestPerRef`) unchanged.
-5. The chosen inlier assignment IS the type label. Inliers are tagged with the ref's type for downstream diagnostics.
+The Indoor RANSAC solver is **today's typed implementation** for v1. The post-spike re-sequence demotes untyped detection (the original §5.4) to Phase 4 because:
 
-Search-space growth: in this bundle, 10 detections × ~13 refs (8 Portal + 3 NPC + 2 MediPillar) = 130 candidate pairs vs 80 with the typed pool. ~1.6× larger; RANSAC iteration cost is dominated by the seed-solve + linear pool scan, both linear in pool size. Expected wall-clock ≤ 2× the typed path. **Verification owed §6.e.**
+- v1's load-bearing improvement is detection recall (Phase 2) — once 4+ real-icon blobs survive into RANSAC, the existing typed pool has correspondences to find.
+- Untyped detection's payoff is *when typing is wrong but blobs are right*. Today's bundles show blobs are *missing*, not mis-typed; fixing typing first solves the wrong problem.
+- Phase 4 (untyped detection) becomes useful once Phase 2 recovers detection recall AND we observe Phase 2's typed-pool RANSAC failing because of typing errors specifically.
 
-### 5.5 Indoor enforcement — synthesis-J adaptive thresholds
+Detail design for Phase 4 (untyped detection + RANSAC type discrimination) is preserved in the [original §5.4 content](#) — see git history pre-revision for the full description. The implementation surface (`TypeAwareRansacSolver.SolveTopK` extending to accept `IReadOnlyList<UntypedDetection>`, per-pair pivot lookup, type label from inlier assignment) is unchanged; only the timing changed.
 
-Synthesis-J already runs as Shadow in [#1117](https://github.com/moumantai-gg/mithril/issues/1117)/[#1118](https://github.com/moumantai-gg/mithril/pull/1118). Indoor profile flips it to Enforced **with adaptive thresholds**:
+### 5.5 Indoor enforcement — synthesis-J Shadow mode (v1)
 
-- `jMin = max(1.5, 0.6 × refsTotal)`. Hogan's `refsTotal=11` → `jMin=6.6`. Indoor accept bundles measured at j ≈ 3-4 will need a more permissive minimum — actual constant comes from §6.d.
-- `nMin = max(3, ⌈0.4 × refsTotal⌉)`. Hogan's → `nMin=5`. Floor at 3 keeps small-ref scenes solvable.
-- Outdoor stays Shadow + static `jMin=8 / nMin=8`. No behavior change.
+The original §5.5 chose synthesis-J enforcement with adaptive `jMin = max(1.5, 0.6 × refsTotal)`. The spike showed this is premature:
 
-The legacy 12 px / 4-inlier gate stays informative for Indoor (logged + emitted to bundle) but doesn't drive accept/reject — synthesis-J is source of truth. Rationale: legacy gate accepted Hogan's 06-10 which synthesis-J would have rejected (§2.2); we trust synthesis-J more for Indoor.
+- Outdoor `j` (16-23) vastly exceeds Indoor (3-4). The gap is structural.
+- The only Indoor "accept" sample (Hogan's 06-10) is the suspected-wrong cross-scene-leak cal. Zero ground-truth-good Indoor cals exist to derive a separating formula.
+- A formula like `0.6 × refsTotal` rejects ALL current Indoor samples (including the disputed accept); `0.25 × refsTotal` accepts all (including ones likely wrong). The data doesn't discriminate.
+
+**v1 ships Indoor synthesis-J in Shadow mode.** The `jMin / nMin` formulas land on the carrier and the values are computed + logged in the bundle, but they don't drive accept/reject. The legacy 12 px / 4-inlier gate stays as the Indoor v1 source of truth. Once Phase 2 recovers detection recall enough that we accumulate Indoor cals worth ground-truth verification (e.g. by manually inspecting landmark projection), Phase 5-v2 revisits enforcement with measured thresholds.
+
+Outdoor stays Shadow + static `jMin=8 / nMin=8`. No behavior change.
 
 ### 5.6 Bundle schema additions
 
@@ -199,15 +218,16 @@ The legacy 12 px / 4-inlier gate stays informative for Indoor (logged + emitted 
 {
   "sceneClass": "Indoor",                 // new field, "Outdoor" | "Indoor"
   "sceneClassSource": "alpha-coverage",   // new field — source provenance for the class label
-  "sceneClassOpaqueFraction": 0.78,       // new field — measured alpha coverage
+  "sceneClassOpaqueFraction": 0.17,       // new field — measured alpha coverage (Hogan's example)
   "profile": {                            // new section — exact profile values used this attempt
-    "renderSizePx": 12,
-    "typeFloor": null,                    // null in Indoor; numeric in Outdoor
-    "minChroma": 0.30,                    // null in Outdoor for v1
-    "detectorPath": "untyped",            // "typed" | "untyped"
+    "renderSizePx": 16,                   // post-spike: same as Outdoor
+    "typeFloor": 0.80,                    // post-spike: same as Outdoor for v1 (untyped detection deferred to Phase 4)
+    "lowNcc": 0.40,                       // tuned per #1163 stage attribution (placeholder; v1 lands actual value)
+    "minPeakLuma": 0.70,                  // peak-luma pre-filter (replaces minChroma); null in Outdoor
+    "detectorPath": "typed",              // "typed" | "untyped" (Phase 4 introduces untyped for Indoor)
     "ransacInlierPx": 15,
-    "synthesisJMode": "enforced",
-    "synthesisJMin": 6.6,                 // resolved adaptive value
+    "synthesisJMode": "shadow",           // post-spike: Shadow for both classes in v1
+    "synthesisJMin": 6.6,                 // computed adaptive value (logged, not enforced for Indoor v1)
     "synthesisNMin": 5
   }
 }
@@ -215,23 +235,25 @@ The legacy 12 px / 4-inlier gate stays informative for Indoor (logged + emitted 
 
 Existing fields unchanged. Outdoor attempts carry `sceneClass: "Outdoor"` + the profile values; everything else is unchanged.
 
-## 6. Verification owed
+## 6. Verification owed — resolved status (post-spike)
 
-Each item below MUST land a measured datapoint before the corresponding code change ships.
+Phase 0 spike (PR [#1162](https://github.com/moumantai-gg/mithril/pull/1162), see [`measurements/`](measurements/)) resolved most §6 items upfront. Status:
 
-a. **Scene-class threshold.** Compute `opaqueFraction` for Serbule, Eltibule, Kur Mountains (Outdoor corpus) and Hogan's, GoblinDungeon, GoblinDungeon_TopFloor, KhyruleksCrypt (Indoor corpus). Confirm `≥ 0.95` separates the two cleanly. If borderline, revise the threshold or the rule. Lands as a one-off measurement step in Phase 1 (see [`plan.md` §1](plan.md)).
+a. **Scene-class threshold.** ✅ **CONFIRMED.** Outdoor `OpaqueFraction = 1.00` (3 scenes); Indoor range `[0.07, 0.36]` (10 scenes); no overlap. Spec's `≥ 0.95` works with massive margin. See [`measurements/scene-class-classification.md`](measurements/scene-class-classification.md).
 
-b. **Indoor `RenderSizePx` value.** v1 picks 12 from "icons render smaller indoors" intuition; needs an empirical pick. Run `IconRenderScaler.SelectRenderSize`'s aggregate-NCC sweep across the Indoor corpus per bundle and confirm the ladder peak. Could land at 10, 12, or 14.
+b. **Indoor `RenderSizePx` value.** ✅ **REVISED.** Should be `16` (same as Outdoor), not the original spec's `12`. PG renders icons at fixed screen-space size regardless of zoom; the "smaller indoor" intuition was wrong. See [`measurements/indoor-render-size.md`](measurements/indoor-render-size.md).
 
-c. **Chroma pre-filter threshold.** v1 picks `MinChroma=0.30` from "PG icons are saturated, floor noise is desaturated" intuition. Needs a measurement: for each Indoor bundle, compute per-blob mean chroma, plot against (is-real-pip ground truth from visual review). Pick the lowest value that keeps real pips and rejects noise. **If no separating value exists**, the chroma pre-filter doesn't land for v1 and indoor relies on E + G alone (still better than today).
+c. **Chroma pre-filter threshold.** ⚠️ **NEGATIVE → REPLACED.** Chroma doesn't separate (Indoor icons are grayscale glyphs on grayscale floor). Replaced by **peak-luma pre-filter** (`MinPeakLuma ≈ 0.7`) which cleanly separates real-icon blobs (PeakLuma 0.91) from floor-noise blobs (0.22-0.40). See [`measurements/indoor-chroma-threshold.md`](measurements/indoor-chroma-threshold.md). Threshold needs broader-corpus confirmation before Phase 3 ships.
 
-d. **Adaptive synthesis-J `jMin / nMin` formula.** v1 picks `max(1.5, 0.6 × refsTotal) / max(3, ⌈0.4 × refsTotal⌉)`. Needs ground truth: collect J values from the three+ Indoor bundles we have, manually mark which are "real cal" vs "wrong cal," derive the threshold that separates them. **If no separating formula exists**, synthesis-J doesn't flip to Enforced for v1 — Indoor falls back to legacy gate with tighter parameters or a manual cal-with-pin prompt.
+d. **Adaptive synthesis-J `jMin / nMin` formula.** ⚠️ **PARTIAL.** Outdoor `j` (16-23) vastly exceeds Indoor `j` (3-4); static `jMin = 8` works for Outdoor. Zero ground-truth-good Indoor cals exist to derive an Indoor formula. Phase 5 ships Indoor in Shadow mode for v1. See [`measurements/indoor-synthesis-j-threshold.md`](measurements/indoor-synthesis-j-threshold.md).
 
-e. **Untyped RANSAC wall-clock cost.** v1 expects ≤ 2× the typed path on indoor scenes (small pool) and ~1.5× on outdoor (larger pool). Needs a benchmark: replay-fixture battery before/after on Outdoor accept corpus; assert no scene goes above 5 s solve.
+e. **Untyped RANSAC wall-clock cost.** ✅ **CONFIRMED.** Pool growth ~3× indoor, ~10× outdoor; absolute wall-clock impact in millis. Within budget. See [`measurements/untyped-ransac-cost.md`](measurements/untyped-ransac-cost.md). Real benchmark waits on Phase 4 implementation.
 
-f. **Outdoor accept-rate regression.** Scene-class refactor MUST NOT change Outdoor behavior. Replay-fixture battery on Serbule, Eltibule, Kur asserts identical inlier count, identical residual (within float ε), identical accept decision. **Gates every Indoor-profile divergence PR.**
+f. **Outdoor accept-rate regression.** Still owed — gates every Indoor-profile divergence PR (unchanged by spike).
 
-g. **Alpha-zero hole gap (sibling).** `Map_HogansKeepBasement-20260613-...` blob 176 at (488, 668) sits at alpha=0 in the texture but inside the boundary mask. Confirm by reading `07a-deviation-mask.png` at that screenshot pixel; verify mask value. If confirmed, file as a #1148 follow-up — separate issue, not in this slug.
+g. **Alpha-zero hole gap (sibling).** Confirmed in spike: blob 176 sits inside the texture bbox at an alpha-zero region. Filed as a `#1148` follow-up sibling issue (TBD). Out of scope for this slug.
+
+h. **NEW: Indoor icon-blob recall ([#1163](https://github.com/moumantai-gg/mithril/issues/1163)).** Of 18 Icon-class blobs in the canonical bundle, only 1 contains a real icon glyph; 4-5 of 5-6 visible icons aren't detected as blobs at all. The detector has a **detection-recall failure**, not a detection-precision failure. This is the actual root cause and load-bearing fix; the original spec's chosen direction (E, untyped detection) doesn't address it. See [`measurements/detection-recall-pivot.md`](measurements/detection-recall-pivot.md). Phase 2 in [`plan.md`](plan.md) is now scoped to fix this.
 
 ## 7. Out of scope + sibling issues
 
@@ -241,9 +263,10 @@ In this spec:
 
 Out of scope (file separately, link from #1155 / #1116):
 
-- **#1155-sibling: Alpha-zero interior mask gap.** `BuildDeviationMask` extends to gate `alpha < ε` regardless of boundary proximity. Small fix; landing path independent of this work. (Verification owed §6.g.)
-- **#1155-sibling: Better / multi-scale templates** (candidate D). Root-cause fix for indoor type-discrimination failure; high engineering cost; needs a richer fixture corpus. Mode-B v1 sidesteps it via untyped detection; future Mode-B v2 could revisit.
-- **#1116 close-out remaining work:** cross-scene landmark leak via `AreaCave1` aggregator (#1116's H1 hypothesis) — synthesis-J as enforcement gate (this spec) addresses it geometrically without needing landmarks.json structural changes.
+- **[#1163](https://github.com/moumantai-gg/mithril/issues/1163) — Indoor icon-blob recall** (Phase 2 of this slug; tracked separately so spec/plan stay readable as the carrier doc).
+- **#1155-sibling: Alpha-zero interior mask gap.** `BuildDeviationMask` extends to gate `alpha < ε` regardless of boundary proximity. Small fix; landing path independent of this work. (Confirmed by Phase 0 spike — to be filed as #1148 follow-up.)
+- **#1155-sibling: Better / multi-scale templates** (candidate D). Root-cause fix for indoor type-discrimination failure; high engineering cost; needs a richer fixture corpus. Mode-B v1 sidesteps it via the Phase 2 recall fix + peak-luma pre-filter; future Mode-B v2 could revisit if the carrier still shows typing errors after Phase 4.
+- **#1116 close-out remaining work:** cross-scene landmark leak via `AreaCave1` aggregator (#1116's H1 hypothesis) — once Phase 5 ships Indoor synthesis-J in Enforcement mode (post-Phase 2 / 3), geometric self-consistency addresses it without needing landmarks.json structural changes.
 - **#1153 ScaleMax adaptive ladder** — separate trivial follow-up, not blocked by this.
 - **#1151 wiki close-out** — post-Mode-B.
 
