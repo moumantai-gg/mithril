@@ -18,6 +18,12 @@ Phase 0 of the [implementation plan](../plan.md). Validates spec §6 verificatio
 | [indoor-recall-stage-attribution.md](indoor-recall-stage-attribution.md) | Per-icon, per-bundle attribution of where each visible-but-undetected real icon dies in the deviation → mask → rim → morph → classify pipeline (canonical 06-13 + 3 sibling bundles). | **CLASSIFIER + CONNECTIVITY** (100 % of missed icons die at the classifier; aspect / solidity gates + the merge problem). Also falsifies the spec's framing of 06-10 as a recall-improvement comparison bundle. |
 | [indoor-recall-merge-fix-candidates.md](indoor-recall-merge-fix-candidates.md) | T3 candidate measurement — varies `LocalNccDeviation.win` ∈ {11, 9, 7, 5} and `DetectIconBlobs.closeRadius` ∈ {1, 0} on the canonical bundle via `IndoorRecallMergeTuningTests`. | **T3 HYPOTHESIS PARTIALLY FALSIFIED.** No `(win, closeRadius)` combo splits the B+C merge. Narrower `win` recovers IconE via aspect tightening, but T1 (`MaxAspect 2.7`) alone delivers the same recovery with smaller blast radius. Recommends Indoor v1 = T1 + T2 only; defer morph-open to Phase 2.5. |
 
+## Phase 3 broader-corpus measurement (peak-luma threshold)
+
+| File | Scope | Verdict |
+|---|---|---|
+| [indoor-peak-luma-threshold.md](indoor-peak-luma-threshold.md) | Broader-corpus expansion of the §6.c spike — runs the Indoor profile (peak-luma disabled) across all 11 Hogan's + GoblinDungeon bundles in `%LOCALAPPDATA%/Mithril/diagnostics/calibration/` and reports the per-blob PeakLuma distribution. | **CONFIRMED.** Across 130 Icon-class blobs, 0 sit in the [0.55, 0.78) safety band. The 5 ≥ 0.78 are all real-icon containers; the 125 ≤ 0.55 are all floor noise. `MinPeakLuma = 0.7` ships. |
+
 ## TL;DR
 
 - §6.a + §6.e — green, spec stands.

@@ -75,6 +75,19 @@ public sealed record DetectionRequest(
     /// <c>null</c> = no mask applied (byte-identical to pre-#1116 behaviour).
     /// </summary>
     public bool[]? DeviationMask { get; init; }
+
+    /// <summary>
+    /// Optional raw BGRA buffer (mithril#1155 Phase 3) backing the post-
+    /// classification peak-luma pre-filter inside
+    /// <see cref="DeviationBlobDetector.DetectIconBlobs"/>. Layout matches
+    /// <c>CapturedFrame.Bgra</c> — 4 bytes/pixel, B then G then R then A,
+    /// row-major; length MUST equal <c>Screenshot.Width*Screenshot.Height*4</c>.
+    /// A mismatch is a silent no-op + <c>LogWarning</c> inside the filter, never
+    /// a crash. The filter only fires when this buffer is non-null AND
+    /// <see cref="BlobOptions.MinPeakLuma"/> is non-null; either gate alone
+    /// short-circuits to byte-identical pre-#1155 behaviour.
+    /// </summary>
+    public byte[]? RawBgra { get; init; }
 }
 
 /// <summary>
