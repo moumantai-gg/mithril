@@ -103,6 +103,38 @@ public sealed class CalibrationAttemptContext
     /// </summary>
     public GrayImage? DeviationMaskImage { get; set; }
 
+    // mithril#1163 Phase 1: per-attempt scene-class classification + the
+    // SceneCalibrationProfile the engine resolved for this attempt. Populated
+    // by AutoCalibrationEngine after the deviation-mask block (the same
+    // alpha-coverage scan that drives the boundary mask also classifies the
+    // scene). SceneClass defaults to Outdoor so attempts that skipped the
+    // mask block (DeviationMaskingEnabled=false / boundary cache null / pre-
+    // locate reject) safe-degrade to Outdoor — byte-identical to pre-#1163.
+    /// <summary>
+    /// mithril#1163 Phase 1: scene class for this attempt, derived from the
+    /// base texture's alpha-coverage fraction (Outdoor when fraction ≥
+    /// <see cref="MapCalibrationDetectorOptions.SceneClassOpaqueFractionThreshold"/>).
+    /// Defaults to <see cref="Detection.SceneClass.Outdoor"/> so unclassified
+    /// attempts get the safe-degrade profile.
+    /// </summary>
+    public SceneClass SceneClass { get; set; } = SceneClass.Outdoor;
+
+    /// <summary>
+    /// mithril#1163 Phase 1: measured opaque-pixel fraction (alpha ≥ 128 /
+    /// total) for the base texture. Null when the scene wasn't classified
+    /// (mask block skipped). Diagnostic-only — drives the bundle JSON's
+    /// <c>sceneClassOpaqueFraction</c> field per spec §5.6.
+    /// </summary>
+    public double? SceneClassOpaqueFraction { get; set; }
+
+    /// <summary>
+    /// mithril#1163 Phase 1: the SceneCalibrationProfile the engine resolved
+    /// for this attempt — Outdoor (today's universal constants) or Indoor
+    /// (relaxed classifier shape gates per the
+    /// <c>indoor-recall-merge-fix-candidates.md</c> measurement).
+    /// </summary>
+    public SceneCalibrationProfile Profile { get; set; } = SceneCalibrationProfile.Outdoor;
+
     // Outcome is set explicitly by the engine — either at each Fail() site, at
     // the end of the success path, or in the catch (exception → "error").
     public string Outcome { get; set; } = "unknown";

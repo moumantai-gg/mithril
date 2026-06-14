@@ -22,6 +22,15 @@ namespace Mithril.MapCalibration.Capture.Diagnostics;
 /// <c>07a-deviation-mask.png</c> artifact path. Additive: v3 readers ignore
 /// the new key, and v4 readers treat absence as "the engine did not write
 /// a deviation mask for this attempt" (no fog/boundary mask was emitted).</para>
+///
+/// <para><b>Schema v4 additive (mithril#1163 Phase 1):</b> adds optional
+/// <see cref="SceneClass"/>, <see cref="SceneClassOpaqueFraction"/>,
+/// <see cref="Profile"/>. Additive — schema-version is NOT bumped to 5
+/// because every existing v4 reader ignores unknown keys and v5 readers
+/// would need a structural change before the bump pays off. Treat absence
+/// as "the engine ran without scene-class resolution" (mask block skipped /
+/// pre-#1163 engine), in which case the safe-degrade Outdoor profile was
+/// in effect.</para>
 /// </summary>
 public sealed record AttemptJson(
     int SchemaVersion,
@@ -40,7 +49,15 @@ public sealed record AttemptJson(
     LocatorBestJson? LocatorBest = null,
     // Per-attempt synthesis-J snapshot (#1117). Null when SynthesisRerankMode == Off
     // or when this bundle was written by a pre-#1117 engine version (schema v1/v2).
-    SynthesisJson? Synthesis = null);
+    SynthesisJson? Synthesis = null,
+    // mithril#1163 Phase 1: resolved scene class ("Outdoor" | "Indoor") + the
+    // measured opaque-pixel fraction + the BlobOptions the profile dispatched.
+    // Null when the engine ran without resolving the scene class (mask block
+    // skipped — DeviationMaskingEnabled=false, boundary cache unwired, or a
+    // pre-locate reject); readers treat absence as "Outdoor" by safe-degrade.
+    string? SceneClass = null,
+    double? SceneClassOpaqueFraction = null,
+    SceneCalibrationProfileJson? Profile = null);
 
 /// <summary>
 /// Carries the locator's raw fit rect (gate-pass-or-not), the per-algorithm
@@ -312,6 +329,21 @@ public sealed record BlobPipelineJson(
     IReadOnlyList<MorphSectionJson> Morph,
     IReadOnlyList<BlobJson> Blobs);
 
+/// <summary>
+/// mithril#1163 Phase 1: bundle wire-format for the resolved
+/// <see cref="Mithril.MapCalibration.Detection.SceneCalibrationProfile"/>.
+/// Carries the profile's BlobOptions verbatim so a triager can read the
+/// exact gates the detector ran with for this attempt (Outdoor and Indoor
+/// differ here in v1). Future phases (per spec §5.1) extend this DTO as
+/// additional fields diverge.
+/// </summary>
+public sealed record SceneCalibrationProfileJson(
+    int MinArea,
+    int MaxIconArea,
+    double MinSolidity,
+    double MaxAspect,
+    double MinPeak);
+
 // mithril#1121: AllowNamedFloatingPointLiterals lets BlobTemplateScore.Score
 // round-trip its NaN sentinel (the skip-path marker) as the JSON token "NaN".
 // Existing DTOs in this context don't carry NaN values, so this is additive.
@@ -327,5 +359,6 @@ public sealed record BlobPipelineJson(
 [JsonSerializable(typeof(RecoveredCalibrationJson))]
 [JsonSerializable(typeof(SynthesisJson))]
 [JsonSerializable(typeof(BlobTemplateScoresJson))]
-[JsonSerializable(typeof(BlobPipelineJson))]  // mithril#1123
+[JsonSerializable(typeof(BlobPipelineJson))]                        // mithril#1123
+[JsonSerializable(typeof(SceneCalibrationProfileJson))]             // mithril#1163
 public partial class CalibrationBundleJsonContext : JsonSerializerContext;

@@ -522,6 +522,16 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
         try
         {
             var finalized = DateTimeOffset.UtcNow;
+            // mithril#1163 Phase 1: emit the resolved scene-class fields
+            // when the engine populated them (mask block ran). Absence on
+            // older bundles / mask-disabled attempts means "Outdoor by
+            // safe-degrade" — readers treat null as that.
+            var profileJson = new SceneCalibrationProfileJson(
+                MinArea: ctx.Profile.BlobOptions.MinArea,
+                MaxIconArea: ctx.Profile.BlobOptions.MaxIconArea,
+                MinSolidity: ctx.Profile.BlobOptions.MinSolidity,
+                MaxAspect: ctx.Profile.BlobOptions.MaxAspect,
+                MinPeak: ctx.Profile.BlobOptions.MinPeak);
             var dto = new AttemptJson(
                 SchemaVersion: 4,
                 Area: ctx.Area,
@@ -532,7 +542,10 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                 EngineVersion: AssemblyVersion,
                 Files: files,
                 LocatorBest: ToLocatorBestJson(ctx),
-                Synthesis: ToSynthesisJson(ctx.Result?.Synthesis));
+                Synthesis: ToSynthesisJson(ctx.Result?.Synthesis),
+                SceneClass: ctx.SceneClass.ToString(),
+                SceneClassOpaqueFraction: ctx.SceneClassOpaqueFraction,
+                Profile: profileJson);
             WriteJson(dir, "01-attempt.json", dto, CalibrationBundleJsonContext.Default.AttemptJson);
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "01-attempt.json header write failed for {Outcome}", ctx.Outcome); }

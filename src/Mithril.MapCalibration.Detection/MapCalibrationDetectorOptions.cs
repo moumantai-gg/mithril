@@ -59,6 +59,7 @@ public sealed class MapCalibrationDetectorOptions : INotifyPropertyChanged, IVer
     private double _fogVarianceThreshold = 30.0;
     private byte _fogColorMin = 110;
     private byte _fogColorMax = 140;
+    private double _sceneClassOpaqueFractionThreshold = 0.95;
 
     /// <summary>
     /// Master switch for the mithril#1116 deviation-mask filter on the
@@ -136,6 +137,28 @@ public sealed class MapCalibrationDetectorOptions : INotifyPropertyChanged, IVer
     {
         get => _fogColorMax;
         set { if (_fogColorMax != value) { _fogColorMax = value; OnChanged(); } }
+    }
+
+    /// <summary>
+    /// Minimum opaque-pixel fraction (alpha ≥ 128 / total px) for a base
+    /// texture to be classified as <see cref="SceneClass.Outdoor"/>. Anything
+    /// below this is <see cref="SceneClass.Indoor"/>. Default <c>0.95</c> —
+    /// the
+    /// [`scene-class-classification.md`](../../../docs/planning/calibration-1155-scene-class-profile/measurements/scene-class-classification.md)
+    /// spike measured Outdoor opaque-fraction = 1.00 (3 scenes) versus Indoor
+    /// 0.07–0.36 (10 scenes), so the gap is wide and the threshold has
+    /// substantial margin on both sides.
+    ///
+    /// <para><b>mithril#1163 / spec §5.2.</b> Drives
+    /// <c>FloorBoundaryMaskCache.GetSceneClass</c>. Fail-soft: when alpha is
+    /// unavailable the classifier returns Outdoor (the Outdoor
+    /// <see cref="SceneCalibrationProfile"/> carries today's universal
+    /// constants, so safe-degrade is byte-identical to pre-#1163).</para>
+    /// </summary>
+    public double SceneClassOpaqueFractionThreshold
+    {
+        get => _sceneClassOpaqueFractionThreshold;
+        set { if (_sceneClassOpaqueFractionThreshold != value) { _sceneClassOpaqueFractionThreshold = value; OnChanged(); } }
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;

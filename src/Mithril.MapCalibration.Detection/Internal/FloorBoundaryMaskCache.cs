@@ -41,6 +41,14 @@ internal sealed class FloorBoundaryMaskCache
     private readonly object _gate = new();
     private readonly Dictionary<string, GrayImage?> _cache = new();
 
+    // mithril#1163 spec §5.2: cache the alpha-coverage-derived SceneClass
+    // alongside the boundary mask. Same cache key (mapAssetKey); separate dict
+    // so a future GetSceneClass-only call path doesn't pay the full mask
+    // construction cost. The alpha load is the only IO side; once the boundary
+    // mask is computed for a key the alpha is gone (we don't retain it), so
+    // we compute SceneClass at the same time as the mask and stash both.
+    private readonly Dictionary<string, SceneClass> _sceneClassCache = new();
+
     public FloorBoundaryMaskCache(
         IBaseTextureProvider provider,
         MapCalibrationDetectorOptions options,
@@ -55,6 +63,9 @@ internal sealed class FloorBoundaryMaskCache
     /// Returns the dilated floor-boundary mask for <paramref name="mapAssetKey"/>,
     /// or <c>null</c> when alpha is unavailable or degenerate. Cached per key —
     /// repeat calls for the same key hit the cache (including cached nulls).
+    /// Also computes + caches the <see cref="SceneClass"/> for the same key as
+    /// a side effect (the alpha buffer is in scope; doing both in one pass
+    /// halves the provider IO when both APIs are called).
     /// </summary>
     public GrayImage? GetOrCompute(string mapAssetKey)
     {
@@ -72,25 +83,102 @@ internal sealed class FloorBoundaryMaskCache
                     "Floor-boundary mask for {MapAsset} unavailable — provider returned no alpha (safe-degrade).",
                     mapAssetKey);
                 _cache[mapAssetKey] = null;
+                // mithril#1163: alpha unavailable → can't classify → Outdoor by
+                // fail-soft default. Cache the verdict so a future call returns
+                // the same answer without re-paying the provider call.
+                _sceneClassCache[mapAssetKey] = SceneClass.Outdoor;
                 return null;
             }
+
+            // mithril#1163 spec §5.2: classify SceneClass on the same alpha
+            // buffer the boundary mask uses (zero extra IO). Stamp into the
+            // cache BEFORE the degenerate-alpha early return — an
+            // all-transparent texture (degenerate Indoor candidate) still has a
+            // well-defined SceneClass label even if its boundary mask is null.
+            var (sceneClass, opaqueFraction) = ClassifySceneClass(alpha, _options.SceneClassOpaqueFractionThreshold);
+            _sceneClassCache[mapAssetKey] = sceneClass;
+            _opaqueFractionCache[mapAssetKey] = opaqueFraction;
 
             if (IsDegenerate(alpha))
             {
                 _logger?.LogWarning(
-                    "Floor-boundary mask for {MapAsset} skipped — alpha is degenerate (all-opaque or all-transparent) (safe-degrade).",
-                    mapAssetKey);
+                    "Floor-boundary mask for {MapAsset} skipped — alpha is degenerate (all-opaque or all-transparent) (safe-degrade); scene class {SceneClass}.",
+                    mapAssetKey, sceneClass);
                 _cache[mapAssetKey] = null;
                 return null;
             }
 
             var mask = ComputeBoundaryMask(alpha, _options.BoundaryDilationPx);
             _logger?.LogInformation(
-                "Computed floor-boundary mask for {MapAsset} ({W}x{H}, dilation {DilationPx}px).",
-                mapAssetKey, mask.Width, mask.Height, _options.BoundaryDilationPx);
+                "Computed floor-boundary mask for {MapAsset} ({W}x{H}, dilation {DilationPx}px); scene class {SceneClass}.",
+                mapAssetKey, mask.Width, mask.Height, _options.BoundaryDilationPx, sceneClass);
             _cache[mapAssetKey] = mask;
             return mask;
         }
+    }
+
+    /// <summary>
+    /// Returns the alpha-coverage-derived <see cref="SceneClass"/> for
+    /// <paramref name="mapAssetKey"/> (mithril#1163 spec §5.2). Cached per key
+    /// alongside the boundary mask; first call may pay the provider's alpha
+    /// load (and concurrently warms the boundary-mask cache), subsequent calls
+    /// hit the cache. Fail-soft: returns <see cref="SceneClass.Outdoor"/> when
+    /// alpha is unavailable (safe-degrade — Outdoor profile carries today's
+    /// universal constants).
+    /// </summary>
+    public SceneClass GetSceneClass(string mapAssetKey)
+    {
+        lock (_gate)
+        {
+            if (_sceneClassCache.TryGetValue(mapAssetKey, out var cached))
+            {
+                return cached;
+            }
+        }
+
+        // GetOrCompute populates _sceneClassCache as a side effect (the
+        // boundary mask + scene class share the same alpha buffer; doing both
+        // in one pass keeps the cache in sync). The boundary mask result is
+        // discarded — the caller of GetSceneClass doesn't need it.
+        _ = GetOrCompute(mapAssetKey);
+
+        lock (_gate)
+        {
+            // After GetOrCompute, _sceneClassCache MUST have the key (every
+            // code path through GetOrCompute writes it). Defensive default to
+            // Outdoor if a future refactor breaks that invariant.
+            return _sceneClassCache.TryGetValue(mapAssetKey, out var classified) ? classified : SceneClass.Outdoor;
+        }
+    }
+
+    /// <summary>
+    /// Returns the cached opaque-fraction (alpha ≥ 128 / total) for
+    /// <paramref name="mapAssetKey"/> if it has been classified, else <c>null</c>.
+    /// Diagnostic-only — the boundary mask + scene-class cache flow doesn't
+    /// retain the fraction, but the engine's bundle sink needs it for the
+    /// <c>sceneClassOpaqueFraction</c> JSON field per spec §5.6.
+    /// </summary>
+    public double? TryGetOpaqueFraction(string mapAssetKey)
+    {
+        lock (_gate)
+        {
+            return _opaqueFractionCache.TryGetValue(mapAssetKey, out var frac) ? frac : null;
+        }
+    }
+
+    private readonly Dictionary<string, double> _opaqueFractionCache = new();
+
+    private static (SceneClass SceneClass, double OpaqueFraction) ClassifySceneClass(GrayImage alpha, double opaqueThreshold)
+    {
+        var p = alpha.Pixels;
+        if (p.Length == 0) return (SceneClass.Outdoor, 1.0);
+        long opaqueCount = 0;
+        for (int i = 0; i < p.Length; i++)
+        {
+            if (p[i] >= 128) opaqueCount++;
+        }
+        double frac = opaqueCount / (double)p.Length;
+        return (frac >= opaqueThreshold ? SceneClass.Outdoor : SceneClass.Indoor, frac);
     }
 
     private static bool IsDegenerate(GrayImage alpha)

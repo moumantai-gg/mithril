@@ -1,4 +1,5 @@
 using System.IO;
+using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration.Tests.Fixtures;
@@ -230,5 +231,88 @@ public sealed class IndoorRecallMergeTuningTests
             Assert.Equal(152, iconF.Area);
             Assert.Equal(176, iconF.BlobOrdinal);
         }
+    }
+
+    /// <summary>
+    /// mithril#1163 Phase 2 acceptance test — the canonical 06-13 bundle run
+    /// with <see cref="SceneCalibrationProfile.Indoor"/> (T1 + T2: MaxAspect
+    /// 2.7, MinSolidity 0.30) MUST admit IconD + IconE + IconF as Icon-class
+    /// blobs (3 of 6 real icons reach Icon class). IconA isn't recovered (its
+    /// blob bbox doesn't contain its centroid in production geometry — see
+    /// indoor-recall-merge-fix-candidates.md "What 'RIC' counts"); IconB and
+    /// IconC sit in the same Structure blob (the merge problem the
+    /// measurement showed isn't reachable via classifier tuning). Phase 2 v1
+    /// acceptance is 3/6; the implementation PR's spec revision must reflect
+    /// this.
+    ///
+    /// <para>Compares against the production-parameter baseline (1/6 — only
+    /// IconF reaches Icon class with Outdoor profile gates) so a future
+    /// regression in either profile fails loudly.</para>
+    /// </summary>
+    [Fact]
+    public void Indoor_profile_admits_3_of_6_real_icons_on_canonical_bundle()
+    {
+        if (CanonicalBundleDir() is null)
+        {
+            _output.WriteLine("SKIPPED — canonical bundle absent.");
+            return;
+        }
+        var dir = CanonicalBundleDir()!;
+        var shot = WicImageLoader.LoadGray(Path.Combine(dir, "06-aligned-screenshot.png"));
+        var tex = WicImageLoader.LoadGray(Path.Combine(dir, "05-base-texture-resampled.png"));
+
+        // Load production deviation mask (same as the Measure_blob_pipeline
+        // theory does — see that test for the rationale).
+        bool[]? deviationMask = null;
+        var maskPath = Path.Combine(dir, "07a-deviation-mask.png");
+        if (File.Exists(maskPath))
+        {
+            var maskImg = WicImageLoader.LoadGray(maskPath);
+            deviationMask = new bool[maskImg.Pixels.Length];
+            for (int i = 0; i < maskImg.Pixels.Length; i++) deviationMask[i] = maskImg.Pixels[i] >= 128;
+        }
+
+        var shotF = LocalNccDeviation.ToGrayFloat(shot);
+        var texF = LocalNccDeviation.ToGrayFloat(tex);
+        var dev = LocalNccDeviation.DeviationMap(shotF, texF, shot.Width, shot.Height, win: 11, out var meanNcc, addedOnly: true);
+
+        int RunWithProfile(SceneCalibrationProfile profile)
+        {
+            var blobs = new List<BlobClassification>();
+            var hooks = new DetectionDiagnosticHooks(
+                OnDeviation: null, OnRimMask: null, OnMorph: null,
+                OnBlobClassified: blobs.Add);
+            _ = DeviationBlobDetector.DetectIconBlobs(
+                dev, shot.Width, shot.Height,
+                lowNcc: 0.5, rim: RimMaskMode.DeviationFlood, profile.BlobOptions,
+                closeRadius: 1,
+                hooks: hooks,
+                meanNcc: meanNcc,
+                logger: NullLogger.Instance,
+                deviationMask: deviationMask);
+
+            int admitted = 0;
+            foreach (var (_, x, y) in CanonicalIcons)
+            {
+                BlobClassification? container = null;
+                foreach (var b in blobs)
+                {
+                    if (x >= b.MinX && x < b.MinX + b.W && y >= b.MinY && y < b.MinY + b.H)
+                    {
+                        if (container is null || b.Area > container.Area) container = b;
+                    }
+                }
+                if (container?.BlobClass == BlobClass.Icon) admitted++;
+            }
+            return admitted;
+        }
+
+        int outdoorAdmitted = RunWithProfile(SceneCalibrationProfile.Outdoor);
+        int indoorAdmitted = RunWithProfile(SceneCalibrationProfile.Indoor);
+        _output.WriteLine($"Outdoor profile: {outdoorAdmitted}/6 real icons admitted (baseline = production parameters).");
+        _output.WriteLine($"Indoor  profile: {indoorAdmitted}/6 real icons admitted (T1+T2 — MaxAspect 2.7, MinSolidity 0.30).");
+
+        outdoorAdmitted.Should().Be(1, "production parameters (Outdoor profile) admit only IconF — the baseline pre-#1163 recall on canonical 06-13.");
+        indoorAdmitted.Should().Be(3, "Indoor profile (T1+T2) should admit IconD + IconE + IconF — the +2 lift the Phase 2 measurement proved.");
     }
 }
