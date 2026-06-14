@@ -10,8 +10,9 @@ conventions (aligned XY = raw XY − origin per `04-maprect.json`).
 
 ## Headline
 
-**100 % of missed real icons in the Hogan's corpus survive deviation+mask+rim+morph and die at the
-classifier.** Across three Indoor Hogan's bundles, every visible-but-undetected real-icon glyph
+**For the two Indoor bundles where the locator succeeds AND the captured scene has enough icons
+(canonical 06-13 + Map_HogansKeepBasement-20260612-235416-091), 100 % of missed real icons survive
+deviation+mask+rim+morph and die at the classifier.** Every visible-but-undetected real-icon glyph
 either (a) sits inside a blob that fails one of the four classifier gates
 (`MinArea / MaxIconArea / MinSolidity / MaxAspect / MinPeak`), or (b) sits inside a much larger blob
 that classifies as `Structure` because the icon's deviation halo merged with adjacent floor noise into
@@ -19,6 +20,14 @@ a single ≥ 900-area component.
 
 No icon dies at deviation, deviation-mask, rim-mask, or morph-close. The recall ceiling is
 classifier shape gates + connected-component merging — not the upstream signal.
+
+The broader 12-bundle Indoor corpus splits four ways: 2 "Phase 2 target" bundles where the recall
+fix is the load-bearing improvement, 3 scene-degenerate bundles where the deviation field is one
+giant Structure blob, 5 locator-mismap bundles where the cropped region doesn't contain the visible
+icons at all, and 2 insufficient-icon-scene bundles (only 2–3 icons visible). See "Corpus extension"
+below — the recall fix helps the 2 Phase 2-target bundles directly and must avoid regressing the
+other 10. The plan's "three other Indoor bundles measured to the same criterion" verification
+target needs adjusting since 12-235416 is currently the only Phase 2-target sibling.
 
 The audit also falsifies the spec's premise that the Hogan's 06-10 "accepted" bundle is a
 better-recall comparison target: in 06-10, the **entire active map region** condenses into one
@@ -387,6 +396,72 @@ on a dev workstation. Bundle directories are dev-local (per the
 rule out contributor reproducibility), so the scripts can't run in CI. The durable output is this
 markdown doc and the per-bundle tables it contains.
 
+## Corpus extension — all 12 Indoor bundles classified
+
+The initial audit sampled 4 of 12 available Indoor bundles. Running the same `audit-bundle.ps1`
+across the remaining 8 reveals **two additional failure categories that aren't recall failures at
+all** — locator mismaps and scene-degeneracy outcomes that the Phase 2 fix cannot help.
+
+| Bundle | Outcome | Real icons visible | Locator-mapped crop covers icons? | Failure category |
+|---|---|---|---|---|
+| Map_HogansKeepBasement-20260613-230459-600 | rejected: 2 inliers (need 4) | 6 | yes | **Phase 2 target** ✓ |
+| Map_HogansKeepBasement-20260612-235416-091 | rejected: 2 inliers (need 4) | 6 | yes | **Phase 2 target** ✓ |
+| Map_HogansKeepBasement-20260610-091533-358 | accepted (suspected wrong, see §3) | 6 | yes (but degenerate) | Scene-degenerate |
+| Map_HogansKeepBasement-20260610-154134-968 | rejected: no geom-consistent fit | 5 | yes (but degenerate) | Scene-degenerate |
+| Map_HogansKeepBasement-20260610-154213-137 | rejected: no geom-consistent fit | 6 | yes (but degenerate) | Scene-degenerate |
+| Map_HogansKeepBasement-20260610-154311-065 | rejected: no geom-consistent fit | 6 | **NO** — all icons at aligned (-599,-46) etc. | Locator mismap |
+| Map_HogansKeepBasement-20260612-203727-499 | rejected: no geom-consistent fit | 6 | **NO** | Locator mismap |
+| Map_HogansKeepBasement-20260612-203828-451 | rejected: no geom-consistent fit | 27 | **NO** — locator chose a 281×281 crop at (376, 971) and the visible icons sit at raw x 935-1500, y 253-1115 — outside the crop | Locator mismap |
+| Map_HogansKeepBasement-20260612-233006-375 | rejected: no geom-consistent fit | 6 | **NO** | Locator mismap |
+| Map_HogansKeepBasement-20260612-235302-102 | rejected: no geom-consistent fit | 34 | **NO** | Locator mismap |
+| Map_GoblinDungeon_TopFloor-20260610-095806-692 | rejected: 3 inliers (need 4) | 3 | yes | Insufficient-icon scene |
+| Map_GoblinDungeon_TopFloor-20260610-095753-890 | rejected: no geom-consistent fit | 2 | yes | Insufficient-icon scene |
+
+**Phase 2 fix helps 2 of 12 audited bundles** (those classified "Phase 2 target"). The other 10 fail
+upstream of the detection-recall step:
+
+- **Scene-degenerate (3 bundles).** The locator succeeds but maps to a region where the deviation
+  field is one giant connected component (areas 26,545 / 102,098 / 119,655 pixels). All visible icons
+  sit inside one Structure-class blob. The recall fix can admit more Icon-class blobs in well-formed
+  deviation fields; it cannot recover the missed icons when the whole field is a single component.
+
+- **Locator mismap (5 bundles).** All "rejected-solve: no geometrically-consistent fit". The locator
+  picked a small (143 × 143 / 281 × 281) cropped region of the screenshot that DOES NOT CONTAIN the
+  real icons — all icons fall at negative or out-of-crop aligned coordinates. This is a locator
+  failure, tracked separately from Phase 2 scope.
+
+- **Insufficient-icon scene (2 bundles).** The locator mapped correctly but the captured scene has
+  ≤ 3 real icons total — below the RANSAC inlier floor of 4 regardless of detector tuning.
+
+### Recall-failure-modes hold across ALL Phase 2-target bundles
+
+For the 2 Phase 2-target bundles (06-13 + 12-235416), the failure-mode tally I built on the canonical
+bundle holds in 12-235416 too:
+- IconE's aspect = 2.56 reproduces (same 23×9 bbox, same `MaxAspect 2.5` failure).
+- IconA's `aspect > 2.5` reproduces (canonical 5.14, 12-235416 6.29 — bundle-dependent but always failing).
+- The B+C merge reproduces (canonical 1242-area Structure, 12-235416 2900-area Structure — the merge is
+  systematic at PG's indoor render scale, magnitude varies with player position).
+
+n=2 is a smaller "Phase 2 target" corpus than I'd like, but the failure modes are reproducible
+across both samples. T1 / T2 / T3 ranking holds.
+
+### Implication for Phase 2 sub-step 3 (validation criteria)
+
+The plan §Phase 2 verification calls for "Hogan's 06-13 bundle ≥ 4 Icon-class blobs containing real
+icons; three other Indoor bundles measured to the same criterion." The corpus extension says
+**three other Indoor "Phase 2 target" bundles don't currently exist** — 12-235416 is the only
+sibling, and the other 10 bundles fail upstream of Phase 2.
+
+Practical adjustment for the validation gate:
+- Canonical 06-13: ≥ 4 real-icon Icon-class blobs (the load-bearing assertion).
+- 12-235416: ≥ 4 real-icon Icon-class blobs (sibling confirmation).
+- Future Indoor captures (specifically, "insufficient-inliers" outcomes with the locator-mapped crop
+  containing real icons): same assertion, growing the corpus opportunistically as new captures land.
+- Scene-degenerate, locator-mismap, and insufficient-icon-scene bundles are out-of-scope success
+  targets but Phase 2 must not REGRESS them — verified by the Outdoor replay-fixture battery + a
+  no-regression check that the existing 18 Icon-class noise blobs in canonical 06-13 (post-Phase 2)
+  do not increase.
+
 ## What this audit deliberately doesn't do
 
 - **Doesn't propose a specific fix.** T1 / T2 are obvious from the data; T3 needs measurement.
@@ -395,6 +470,6 @@ markdown doc and the per-bundle tables it contains.
   audit's classifier-gate analysis is Indoor-only.
 - **Doesn't fix the 06-10 "accepted" wrongness.** That's a synthesis-J Shadow (Phase 5) +
   `refinements.json` durability concern, not a recall problem.
-- **Doesn't expand the corpus.** Four bundles (three Hogan's, one GoblinDungeon) is sufficient to
-  establish the failure modes; T1 ceiling sensitivity needs a wider corpus, but the audit data is
-  consistent enough across the four that the design micro-review can proceed without it.
+- **Doesn't analyse the locator-mismap bundles.** Five of 12 corpus bundles fail because the locator
+  picked the wrong region of the screenshot. That's a separate concern from Phase 2 (locator
+  precision, not detection recall) and likely a follow-up sub-issue under #1116.
