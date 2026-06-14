@@ -21,13 +21,15 @@ a single ≥ 900-area component.
 No icon dies at deviation, deviation-mask, rim-mask, or morph-close. The recall ceiling is
 classifier shape gates + connected-component merging — not the upstream signal.
 
-The broader 12-bundle Indoor corpus splits four ways: 2 "Phase 2 target" bundles where the recall
-fix is the load-bearing improvement, 3 scene-degenerate bundles where the deviation field is one
-giant Structure blob, 5 locator-mismap bundles where the cropped region doesn't contain the visible
-icons at all, and 2 insufficient-icon-scene bundles (only 2–3 icons visible). See "Corpus extension"
-below — the recall fix helps the 2 Phase 2-target bundles directly and must avoid regressing the
-other 10. The plan's "three other Indoor bundles measured to the same criterion" verification
-target needs adjusting since 12-235416 is currently the only Phase 2-target sibling.
+The broader Indoor corpus splits four ways across the 10 usable bundles: 2 "Phase 2 target" bundles
+where the recall fix is the load-bearing improvement, 3 scene-degenerate bundles where the deviation
+field is one giant Structure blob, 3 locator-mismap bundles where the cropped region doesn't contain
+the visible icons at all, and 2 insufficient-icon-scene bundles (only 2–3 icons visible). The other
+2 of 12 bundles are excluded due to scanner contamination (UI overlay bright pixels masquerading as
+icons — needs an in-game-viewport mask the audit doesn't have). See "Corpus extension" below — the
+recall fix helps the 2 Phase 2-target bundles directly and must avoid regressing the other 8. The
+plan's "three other Indoor bundles measured to the same criterion" verification target needs
+adjusting since 12-235416 is currently the only Phase 2-target sibling.
 
 The audit also falsifies the spec's premise that the Hogan's 06-10 "accepted" bundle is a
 better-recall comparison target: in 06-10, the **entire active map region** condenses into one
@@ -411,13 +413,20 @@ all** — locator mismaps and scene-degeneracy outcomes that the Phase 2 fix can
 | Map_HogansKeepBasement-20260610-154213-137 | rejected: no geom-consistent fit | 6 | yes (but degenerate) | Scene-degenerate |
 | Map_HogansKeepBasement-20260610-154311-065 | rejected: no geom-consistent fit | 6 | **NO** — all icons at aligned (-599,-46) etc. | Locator mismap |
 | Map_HogansKeepBasement-20260612-203727-499 | rejected: no geom-consistent fit | 6 | **NO** | Locator mismap |
-| Map_HogansKeepBasement-20260612-203828-451 | rejected: no geom-consistent fit | 27 | **NO** — locator chose a 281×281 crop at (376, 971) and the visible icons sit at raw x 935-1500, y 253-1115 — outside the crop | Locator mismap |
+| Map_HogansKeepBasement-20260612-203828-451 | rejected: no geom-consistent fit | (scanner returns 27, but mostly raw y > 1080 = UI/chat overlay) | n/a | **Excluded — scanner contamination** |
 | Map_HogansKeepBasement-20260612-233006-375 | rejected: no geom-consistent fit | 6 | **NO** | Locator mismap |
-| Map_HogansKeepBasement-20260612-235302-102 | rejected: no geom-consistent fit | 34 | **NO** | Locator mismap |
+| Map_HogansKeepBasement-20260612-235302-102 | rejected: no geom-consistent fit | (scanner returns 34, similarly UI-dominated) | n/a | **Excluded — scanner contamination** |
 | Map_GoblinDungeon_TopFloor-20260610-095806-692 | rejected: 3 inliers (need 4) | 3 | yes | Insufficient-icon scene |
 | Map_GoblinDungeon_TopFloor-20260610-095753-890 | rejected: no geom-consistent fit | 2 | yes | Insufficient-icon scene |
 
-**Phase 2 fix helps 2 of 12 audited bundles** (those classified "Phase 2 target"). The other 10 fail
+The **excluded** bundles have R+G+B > 600 bright-pixel clusters that the scanner can't distinguish
+from in-game icons — most cluster at raw y > 1080 in a 1510 × 1313 screenshot, which is screen-bottom
+UI/chat overlay territory, not in-game world icons. The scanner's bright-pixel test is sensitive to
+white text in any overlay. Without an in-game-viewport mask there's no way to filter these out
+mechanically, and the audit can't draw conclusions from contaminated input. Excluded from the corpus
+analysis below; the captures are still useful for future audit work that has a viewport mask.
+
+**Phase 2 fix helps 2 of 10 corpus bundles** (those classified "Phase 2 target"). The other 8 fail
 upstream of the detection-recall step:
 
 - **Scene-degenerate (3 bundles).** The locator succeeds but maps to a region where the deviation
@@ -425,7 +434,7 @@ upstream of the detection-recall step:
   sit inside one Structure-class blob. The recall fix can admit more Icon-class blobs in well-formed
   deviation fields; it cannot recover the missed icons when the whole field is a single component.
 
-- **Locator mismap (5 bundles).** All "rejected-solve: no geometrically-consistent fit". The locator
+- **Locator mismap (3 bundles).** All "rejected-solve: no geometrically-consistent fit". The locator
   picked a small (143 × 143 / 281 × 281) cropped region of the screenshot that DOES NOT CONTAIN the
   real icons — all icons fall at negative or out-of-crop aligned coordinates. This is a locator
   failure, tracked separately from Phase 2 scope.
