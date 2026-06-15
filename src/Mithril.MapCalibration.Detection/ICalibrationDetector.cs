@@ -125,6 +125,23 @@ public sealed record DetectionRequest(
     /// PG ships such an asset.)</para>
     /// </summary>
     public bool Rotate180 { get; init; }
+
+    /// <summary>
+    /// Morph-open kernel half-radius (mithril#1155 Phase 2.5) applied to the
+    /// foreground buffer BEFORE morph-close inside
+    /// <see cref="DeviationBlobDetector.DetectIconBlobs"/>. <c>0</c> = stage
+    /// disabled (byte-identical to pre-#1155 behaviour); any positive value
+    /// runs erode-then-dilate at that radius.
+    ///
+    /// <para>Sourced from <c>SceneCalibrationProfile.MorphOpenRadiusPx</c>
+    /// via <c>AutoCalibrationEngine</c>. Ships as <c>0</c> on both Outdoor
+    /// and Indoor profiles in v1 per the Phase 2.5 measurement's negative
+    /// result (no <c>(openRadius, closeRadius)</c> combination splits the
+    /// canonical IconB+C merge into Icon-class blobs). The carrier ships so
+    /// a future investigator can flip the Indoor value without re-plumbing
+    /// once a different audit angle lifts the underlying bridge structure.</para>
+    /// </summary>
+    public int MorphOpenRadiusPx { get; init; }
 }
 
 /// <summary>
@@ -310,8 +327,14 @@ public sealed record DeviationMaskSnapshot(
 
 /// <summary>
 /// One observation per orientation pass (mithril#1123). <see cref="CloseRadius"/>
-/// is the configured morph-close radius (1 in production today; 0 disables the
-/// stage and this snapshot is not emitted in that case).
+/// is the configured morph-close radius (1 in production today; 0 disables that
+/// stage). <see cref="OpenRadius"/> (mithril#1155 Phase 2.5) is the configured
+/// morph-open radius (0 in Outdoor + pre-#1155 callers; non-zero on Indoor when
+/// the profile enables it). The snapshot fires once when either stage runs;
+/// <see cref="FgInputCount"/> brackets the entire morph block (pre-open count),
+/// <see cref="FgOutputCount"/> is the post-close count (final foreground after
+/// both stages). <see cref="FgAfterMorphBuffer"/> renders to
+/// <c>07d-morphed.png</c> and reflects that final state.
 /// </summary>
 public sealed record MorphSnapshot(
     bool Rotate180,
@@ -325,6 +348,16 @@ public sealed record MorphSnapshot(
     /// <summary>mithril#1126: see <see cref="DeviationSnapshot.ForegroundBuffer"/>.</summary>
     public ReadOnlyMemory<bool> FgAfterMorphBuffer { get; init; } =
         AssertBufferLengthMatches(FgAfterMorphBuffer, Width, Height, nameof(FgAfterMorphBuffer));
+
+    /// <summary>
+    /// Morph-open kernel half-radius applied BEFORE morph-close (mithril#1155
+    /// Phase 2.5). <c>0</c> = open stage skipped (Outdoor + pre-#1155 callers);
+    /// any positive value runs erode-then-dilate at that radius to sever thin
+    /// foreground bridges between near-coincident blobs. Init-only so existing
+    /// positional <see cref="MorphSnapshot"/> constructions stay
+    /// source-compatible with a default-zero value.
+    /// </summary>
+    public int OpenRadius { get; init; }
 
     private static ReadOnlyMemory<bool> AssertBufferLengthMatches(
         ReadOnlyMemory<bool> buffer, int width, int height, string name)

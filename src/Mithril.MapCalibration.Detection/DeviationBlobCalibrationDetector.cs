@@ -83,7 +83,14 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
             // 100%-drop LogWarning demotes to LogTrace on the 180° pass
             // (non-mirrored Indoor scenes legitimately drop everything there;
             // the 0° pass is the signal-bearing branch).
-            rotate180: request.Rotate180);
+            rotate180: request.Rotate180,
+            // mithril#1155 Phase 2.5: morph-open BEFORE morph-close. Sourced
+            // from SceneCalibrationProfile.MorphOpenRadiusPx via the engine.
+            // 0 (the default on every profile in v1 per the negative-result
+            // Phase 2.5 measurement) preserves the byte-identical pre-#1155
+            // pipeline. Carrier ships so future Indoor / new-class profiles
+            // can flip the value without re-plumbing the detector contract.
+            openRadius: request.MorphOpenRadiusPx);
 
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
 

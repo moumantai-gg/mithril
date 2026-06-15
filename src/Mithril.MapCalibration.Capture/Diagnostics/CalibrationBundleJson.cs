@@ -352,6 +352,18 @@ public sealed record SceneCalibrationProfileJson(
     /// the field is null per the DefaultIgnoreCondition / camelCase pipeline.
     /// </summary>
     public double? MinPeakLuma { get; init; }
+
+    /// <summary>
+    /// mithril#1155 Phase 2.5: square-element morph-open kernel half-radius the
+    /// detector applied BEFORE morph-close for this attempt. <c>0</c> means the
+    /// stage was skipped (Outdoor + Indoor v1 both ship at 0 per the
+    /// Phase 2.5 negative-result measurement). Surfaces in
+    /// <c>01-attempt.json</c> so a triager reading a future bundle can tell
+    /// at a glance whether morph-open was active for that attempt without
+    /// chasing the engine commit. Init-only so pre-#1155 positional bundle
+    /// readers round-trip the JSON unchanged.
+    /// </summary>
+    public int MorphOpenRadiusPx { get; init; }
 }
 
 // mithril#1121: AllowNamedFloatingPointLiterals lets BlobTemplateScore.Score

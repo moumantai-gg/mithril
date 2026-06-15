@@ -544,6 +544,13 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                     // record-init semantics, so Outdoor bundles stay byte-identical
                     // by construction.
                     MinPeakLuma = resolved.BlobOptions.MinPeakLuma,
+                    // mithril#1155 Phase 2.5: surface the resolved morph-open
+                    // radius so a triager opening a future bundle knows whether
+                    // open ran for this attempt without diffing engine commits.
+                    // Both Outdoor and Indoor v1 emit 0; the field is always
+                    // present (no nullable) so jq filters / downstream tooling
+                    // can read it unconditionally.
+                    MorphOpenRadiusPx = resolved.MorphOpenRadiusPx,
                 }
                 : null;
             var dto = new AttemptJson(

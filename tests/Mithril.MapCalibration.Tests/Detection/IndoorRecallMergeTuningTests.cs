@@ -107,6 +107,30 @@ public sealed class IndoorRecallMergeTuningTests
                 yield return new object?[] { (int?)w, (int?)c };
     }
 
+    /// <summary>
+    /// mithril#1155 Phase 2.5 sweep — (openRadius, closeRadius) combinations
+    /// over the deviation kernel held at production <c>win=11</c>. Probes the
+    /// audit's other T3 candidate ("morph-open BEFORE morph-close") that the
+    /// <c>indoor-recall-merge-fix-candidates.md</c> measurement deferred to a
+    /// follow-up. The headline question: at what <c>openRadius</c> do IconB
+    /// (411, 185) and IconC (432, 202) end up in DIFFERENT connected
+    /// components, both classified as <see cref="BlobClass.Icon"/> with
+    /// <c>Area ≤ 900</c>?
+    /// </summary>
+    public static IEnumerable<object?[]> OpenCloseCombinations()
+    {
+        if (CanonicalBundleDir() is null)
+        {
+            yield return new object?[] { null, null };
+            yield break;
+        }
+        int[] opens = [0, 1, 2, 3];
+        int[] closes = [0, 1];
+        foreach (var o in opens)
+            foreach (var c in closes)
+                yield return new object?[] { (int?)o, (int?)c };
+    }
+
     [Theory]
     [MemberData(nameof(Combinations))]
     public void Measure_blob_pipeline(int? win, int? closeRadius)
@@ -253,6 +277,128 @@ public sealed class IndoorRecallMergeTuningTests
         else if (win == 11 && closeRadius == 1)
         {
             _output.WriteLine("Production-parity asserts skipped — the on-disk bundle's SHA256 doesn't match the measured canonical (numbers above are still useful as a measurement record).");
+        }
+    }
+
+    /// <summary>
+    /// mithril#1155 Phase 2.5 measurement — Sweeps <c>openRadius ∈ {0,1,2,3}</c>
+    /// × <c>closeRadius ∈ {0,1}</c> at production <c>win=11</c> on the
+    /// canonical bundle and reports per-icon containing-blob class + the B+C
+    /// merge status. Driven by the
+    /// <c>indoor-recall-merge-fix-candidates.md</c> Finding 1 ("merge survives
+    /// every (win, closeRadius) tested") + Open Follow-up ("morph-open before
+    /// close is the audit's other T3 candidate, file as Phase 2.5"). Result
+    /// table commits to <c>indoor-recall-phase-2.5-morph-open.md</c>.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(OpenCloseCombinations))]
+    public void Measure_morph_open_pipeline(int? openRadius, int? closeRadius)
+    {
+        if (openRadius is null || closeRadius is null)
+        {
+            _output.WriteLine(
+                $"SKIPPED — canonical bundle '{CanonicalBundleName}' not present under " +
+                "%LOCALAPPDATA%/Mithril/diagnostics/calibration/.");
+            return;
+        }
+
+        var dir = CanonicalBundleDir()!;
+        var shotPath = Path.Combine(dir, "06-aligned-screenshot.png");
+        var texPath = Path.Combine(dir, "05-base-texture-resampled.png");
+        var maskPath = Path.Combine(dir, "07a-deviation-mask.png");
+        Assert.True(File.Exists(shotPath), $"missing {shotPath}");
+        Assert.True(File.Exists(texPath), $"missing {texPath}");
+
+        var shot = WicImageLoader.LoadGray(shotPath);
+        var tex = WicImageLoader.LoadGray(texPath);
+
+        bool[]? deviationMask = null;
+        if (File.Exists(maskPath))
+        {
+            var mask = WicImageLoader.LoadGray(maskPath);
+            deviationMask = new bool[mask.Pixels.Length];
+            for (int i = 0; i < mask.Pixels.Length; i++) deviationMask[i] = mask.Pixels[i] >= 128;
+        }
+
+        var shotF = LocalNccDeviation.ToGrayFloat(shot);
+        var texF = LocalNccDeviation.ToGrayFloat(tex);
+        var dev = LocalNccDeviation.DeviationMap(shotF, texF, shot.Width, shot.Height, win: 11, out var meanNcc, addedOnly: true);
+
+        var blobs = new List<BlobClassification>();
+        var hooks = new DetectionDiagnosticHooks(
+            OnDeviation: null, OnRimMask: null, OnMorph: null,
+            OnBlobClassified: blobs.Add);
+
+        // Indoor profile gates (T1+T2 relaxed) — Phase 2.5 sweeps the upstream
+        // morph stages while keeping the classifier identical to the shipped
+        // Indoor profile. That isolates the open/close effect from the gate
+        // relaxation effect.
+        var opts = SceneCalibrationProfile.Indoor.BlobOptions with { MinPeakLuma = null };
+
+        _ = DeviationBlobDetector.DetectIconBlobs(
+            dev, shot.Width, shot.Height,
+            lowNcc: 0.5, rim: RimMaskMode.DeviationFlood, opts,
+            closeRadius: closeRadius.Value,
+            hooks: hooks,
+            meanNcc: meanNcc,
+            logger: NullLogger.Instance,
+            deviationMask: deviationMask,
+            openRadius: openRadius.Value);
+
+        _output.WriteLine($"=== openRadius={openRadius} closeRadius={closeRadius} (Indoor T1+T2 gates) ===");
+        _output.WriteLine($"meanNcc={meanNcc:F4}  total blobs={blobs.Count}  Icon-class blobs={blobs.Count(b => b.BlobClass == BlobClass.Icon)}");
+
+        BlobClassification? ContainingBlob(int x, int y)
+        {
+            BlobClassification? best = null;
+            foreach (var b in blobs)
+            {
+                if (x >= b.MinX && x < b.MinX + b.W && y >= b.MinY && y < b.MinY + b.H)
+                {
+                    if (best is null || b.Area > best.Area) best = b;
+                }
+            }
+            return best;
+        }
+
+        var iconBlobs = new (string Label, int X, int Y, BlobClassification? Blob)[CanonicalIcons.Length];
+        for (int i = 0; i < CanonicalIcons.Length; i++)
+        {
+            var (label, x, y) = CanonicalIcons[i];
+            iconBlobs[i] = (label, x, y, ContainingBlob(x, y));
+        }
+
+        foreach (var (label, x, y, b) in iconBlobs)
+        {
+            if (b is null)
+            {
+                _output.WriteLine($"  Icon{label,-25} at ({x,4},{y,4})  NO blob contains");
+            }
+            else
+            {
+                _output.WriteLine(
+                    $"  Icon{label,-25} at ({x,4},{y,4})  blob{b.BlobOrdinal,4} bbox({b.MinX},{b.MinY})+{b.W}x{b.H} " +
+                    $"A={b.Area,5} sol={b.Solidity:F2} asp={b.Aspect:F2} peak={b.PeakDev:F2} -> {b.BlobClass}");
+            }
+        }
+
+        var bBlob = iconBlobs.First(i => i.Label.StartsWith("B")).Blob;
+        var cBlob = iconBlobs.First(i => i.Label.StartsWith("C")).Blob;
+        bool bcMerged = bBlob is not null && cBlob is not null && bBlob.BlobOrdinal == cBlob.BlobOrdinal;
+        bool bIsIcon = bBlob?.BlobClass == BlobClass.Icon;
+        bool cIsIcon = cBlob?.BlobClass == BlobClass.Icon;
+        _output.WriteLine($"  B+C status: {(bcMerged ? "MERGED" : "SPLIT")} | B={(bIsIcon ? "Icon" : bBlob?.BlobClass.ToString() ?? "none")} | C={(cIsIcon ? "Icon" : cBlob?.BlobClass.ToString() ?? "none")}");
+
+        int realIconAdmitted = iconBlobs.Count(i => i.Blob?.BlobClass == BlobClass.Icon);
+        _output.WriteLine($"  Real icons reaching Icon class: {realIconAdmitted}/6");
+
+        // Sanity guard at openRadius=0, closeRadius=1 — Indoor T1+T2 gates on
+        // canonical 06-13 ⇒ 3/6 (IconD+E+F), same as
+        // Indoor_profile_admits_3_of_6_real_icons_on_canonical_bundle.
+        if (openRadius == 0 && closeRadius == 1 && BundleMatchesCanonicalHash(dir))
+        {
+            realIconAdmitted.Should().Be(3,
+                "Phase 2.5 baseline (openRadius=0, closeRadius=1 + Indoor T1+T2) must reproduce the 3/6 Phase 2 baseline.");
         }
     }
 

@@ -56,9 +56,32 @@ namespace Mithril.MapCalibration.Detection;
 /// gate-study sweet-spot; Indoor relaxes <c>MaxAspect</c> and
 /// <c>MinSolidity</c>.
 /// </param>
+/// <param name="MorphOpenRadiusPx">
+/// Square-element binary morphology OPEN kernel half-radius (mithril#1155
+/// Phase 2.5), applied to the foreground buffer BEFORE morph-close. Zero
+/// disables the stage entirely (byte-identical pre-#1155 behaviour). Positive
+/// values run erode-then-dilate at that radius to sever thin foreground
+/// bridges between near-coincident blobs — the IconB+C merge pattern the
+/// <c>indoor-recall-merge-fix-candidates.md</c> measurement showed isn't
+/// reachable via deviation-kernel <c>win</c> or morph-close-radius tuning.
+///
+/// <para><b>Both profiles ship with <c>MorphOpenRadiusPx = 0</c> in v1.</b>
+/// The Phase 2.5 measurement
+/// (<c>indoor-recall-phase-2.5-morph-open.md</c>) swept
+/// <c>openRadius ∈ {0,1,2,3} × closeRadius ∈ {0,1}</c> on the canonical
+/// Hogan's bundle and found NO combination splits IconB+IconC into two
+/// Icon-class components. The B+C connecting region in the deviation map is
+/// a substantial (not thin) foreground bridge — even <c>openRadius=3</c>
+/// preserves the merge while degrading IconE/F by over-eroding their narrow
+/// halos. The carrier ships disabled so a future investigator can re-enable
+/// it without re-plumbing once a different audit angle (chroma-aware
+/// deviation, alternative connectivity / watershed split, etc.) lifts the
+/// underlying bridge structure.</para>
+/// </param>
 public readonly record struct SceneCalibrationProfile(
     SceneClass SceneClass,
-    BlobOptions BlobOptions)
+    BlobOptions BlobOptions,
+    int MorphOpenRadiusPx = 0)
 {
     /// <summary>
     /// Outdoor profile — today's universal constants verbatim. The

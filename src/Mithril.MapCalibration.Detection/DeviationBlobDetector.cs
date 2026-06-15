@@ -53,7 +53,8 @@ public static class DeviationBlobDetector
         ILogger? logger = null,
         bool[]? deviationMask = null,
         byte[]? rawBgra = null,
-        bool rotate180 = false)
+        bool rotate180 = false,
+        int openRadius = 0)
     {
         if (rim == RimMaskMode.ColourFlood)
         {
@@ -224,31 +225,63 @@ public static class DeviationBlobDetector
             }
         }
 
+        // mithril#1155 Phase 2.5 — morph-open BEFORE morph-close.
+        // OPEN (erode-then-dilate) separates blobs joined by a thin foreground
+        // bridge — the IconB+C merge pattern the
+        // `indoor-recall-merge-fix-candidates.md` measurement showed isn't
+        // reachable via (win, closeRadius) tuning. Sequencing open BEFORE close
+        // is structurally important: open first severs the connecting bridge,
+        // then close re-stitches each separated icon's own halo. Reversing the
+        // order re-merges what open just split.
+        //
+        // Tallying fgInputCount once at this point covers both stages — the
+        // MorphSnapshot's FgInputCount records the pre-OPEN count regardless of
+        // which stages fire, so the snapshot's pre/post numbers bracket the
+        // ENTIRE morph block. Outdoor with openRadius=0 + closeRadius=1 stays
+        // byte-identical to pre-#1155 behaviour: zero allocations from the open
+        // branch, snapshot's OpenRadius=0.
+        bool morphActive = openRadius > 0 || closeRadius > 0;
+        int morphFgInputCount = 0;
+        if (morphActive && hooks?.OnMorph is not null)
+        {
+            for (int i = 0; i < n; i++) if (fg[i]) morphFgInputCount++;
+        }
+
+        if (openRadius > 0)
+        {
+            fg = Morphology.Open(fg, w, h, openRadius);
+            if (hooks?.OnMorph is not null)
+            {
+                int fgAfterOpenCount = 0;
+                for (int i = 0; i < n; i++) if (fg[i]) fgAfterOpenCount++;
+                logger?.LogTrace(
+                    "Morph-open (rotate180={Rotate180}): openRadius={R} fg pre={Pre} post={Post}.",
+                    rotate180, openRadius, morphFgInputCount, fgAfterOpenCount);
+            }
+        }
+
         if (closeRadius > 0)
         {
-            int fgInputCount = 0;
-            if (hooks?.OnMorph is not null)
-            {
-                for (int i = 0; i < n; i++) if (fg[i]) fgInputCount++;
-            }
-
             fg = Morphology.Close(fg, w, h, closeRadius);
+        }
 
-            if (hooks?.OnMorph is not null)
+        if (morphActive && hooks?.OnMorph is not null)
+        {
+            int fgOutputCount = 0;
+            for (int i = 0; i < n; i++) if (fg[i]) fgOutputCount++;
+            hooks.OnMorph(new MorphSnapshot(
+                Rotate180: false,
+                Width: w, Height: h,
+                CloseRadius: closeRadius,
+                FgInputCount: morphFgInputCount,
+                FgOutputCount: fgOutputCount,
+                FgAfterMorphBuffer: ((bool[])fg.Clone()).AsMemory())
             {
-                int fgOutputCount = 0;
-                for (int i = 0; i < n; i++) if (fg[i]) fgOutputCount++;
-                hooks.OnMorph(new MorphSnapshot(
-                    Rotate180: false,
-                    Width: w, Height: h,
-                    CloseRadius: closeRadius,
-                    FgInputCount: fgInputCount,
-                    FgOutputCount: fgOutputCount,
-                    FgAfterMorphBuffer: ((bool[])fg.Clone()).AsMemory()));
-                logger?.LogTrace(
-                    "Morph (rotate180={Rotate180}): closeRadius={R} fg pre={Pre} post={Post}.",
-                    rotate180, closeRadius, fgInputCount, fgOutputCount);
-            }
+                OpenRadius = openRadius,
+            });
+            logger?.LogTrace(
+                "Morph (rotate180={Rotate180}): openRadius={Open} closeRadius={Close} fg pre={Pre} post={Post}.",
+                rotate180, openRadius, closeRadius, morphFgInputCount, fgOutputCount);
         }
 
         var comps = ConnectedComponents.Label(fg, w, h, dev);
@@ -579,8 +612,18 @@ internal static class ConnectedComponents
 }
 
 /// <summary>
-/// Square-element morphological close (dilate then erode) to bridge fragmented
-/// icon pixels into a single component without growing the overall footprint.
+/// Square-element binary morphology helpers.
+///
+/// <para><see cref="Close"/> (dilate then erode) bridges fragmented icon
+/// pixels into a single component without growing the overall footprint.</para>
+///
+/// <para><see cref="Open"/> (erode then dilate; mithril#1155 Phase 2.5) is the
+/// dual — strips foreground pixels off the boundary of every component
+/// (severing thin connecting bridges between near-coincident blobs) and then
+/// regrows each survivor by the same radius. The Indoor IconB+C merge pattern
+/// (two distinct in-game icons whose deviation halos join via a ~1-px-thick
+/// floor-noise bridge) is exactly what Open is designed to split. Outdoor
+/// callers pass <c>openRadius=0</c> for byte-identical pre-#1155 behaviour.</para>
 /// </summary>
 internal static class Morphology
 {
@@ -588,6 +631,19 @@ internal static class Morphology
     {
         var dil = Dilate(src, w, h, r);
         return Erode(dil, w, h, r);
+    }
+
+    /// <summary>
+    /// Square-element morphological OPEN: erode by <paramref name="r"/> then
+    /// dilate by <paramref name="r"/>. Drops foreground "spikes" thinner than
+    /// 2r+1 along the connecting axis and disconnects components joined by a
+    /// thin bridge, while preserving the bulk of components whose minimum
+    /// thickness exceeds the kernel.
+    /// </summary>
+    public static bool[] Open(bool[] src, int w, int h, int r)
+    {
+        var er = Erode(src, w, h, r);
+        return Dilate(er, w, h, r);
     }
 
     private static bool[] Dilate(bool[] s, int w, int h, int r)
