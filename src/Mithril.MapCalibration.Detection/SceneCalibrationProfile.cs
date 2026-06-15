@@ -111,14 +111,26 @@ namespace Mithril.MapCalibration.Detection;
 /// path is preserved by the default-zero. The Outdoor regression battery
 /// gates the PR on that invariant.</para>
 ///
-/// <para><b>Indoor: <c>MinLumaForDeviation = 180</c>.</b> 180 lands in the
-/// leading edge of the bright-pip peak measured at luma 160–220 on both
-/// canonical bundles, capturing the icon core + outer halo while gating
-/// the [0, 144] dim shoulder. The threshold-sweep measurement
-/// (<c>indoor-pre-deviation-luma-threshold.md</c>) is the load-bearing
-/// pick: at the chosen threshold, BOTH bundles' merged NPC pair splits
-/// into TWO Icon-class blobs and the Phase 3 Real-Icon-Class baseline
-/// (IconD/E/F = 3/6) is preserved or improved.</para>
+/// <para><b>Indoor: <c>MinLumaForDeviation = 200</c>.</b> 200 is the
+/// load-bearing pick from the threshold sweep
+/// (<c>indoor-pre-deviation-luma-threshold.md</c>): at this value, with
+/// production <c>closeRadius = 1</c>, BOTH the 06-13 canonical bundle
+/// and the 06-15 live-verification bundle's merged NPC pair splits into
+/// TWO Icon-class blobs AND Real-Icon-Class recall LIFTS from the
+/// Phase 3 baseline of 3/6 to 5/6 (IconB and IconC reach Icon-class
+/// individually). 200 captures the icon CORE — gating the bright shoulder
+/// where it's narrow enough that morph-close at radius 1 doesn't
+/// reconnect it across the bridge. Lower thresholds (180, 160) split
+/// 06-15 but the 06-13 morph-close bridges the wider gated halos back
+/// together; higher thresholds (220+) over-gate the icon cores
+/// themselves.</para>
+///
+/// <para>The sweet spot 200 is unusually fortunate — it sits where the
+/// histogram's bright-peak tail starts to drop sharply, capturing the icon
+/// crown while excluding the dimmer halo. Real-icon recall stays high
+/// because the icon glyph's peak luma is &gt; 220 across the corpus per the
+/// Phase 3 <c>indoor-peak-luma-threshold.md</c> measurement; only the
+/// shoulder pixels get gated.</para>
 ///
 /// <para><b>Composition with <c>BuildDeviationMask</c>.</b> The pre-
 /// deviation luma threshold runs UPSTREAM of
@@ -178,7 +190,7 @@ public readonly record struct SceneCalibrationProfile(
         {
             MinPeakLuma = 0.7,
         },
-        MinLumaForDeviation: 180);
+        MinLumaForDeviation: 200);
 
     /// <summary>
     /// Returns the canonical profile for <paramref name="sceneClass"/>. The

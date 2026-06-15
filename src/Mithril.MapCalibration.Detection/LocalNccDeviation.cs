@@ -42,19 +42,35 @@ public static class LocalNccDeviation
     ///
     /// <para><b>mithril#1172 — <paramref name="minLumaForDeviation"/>.</b> When
     /// non-zero, screenshot pixels with raw luma BELOW the threshold are zeroed
-    /// on BOTH input buffers (<paramref name="a"/> AND <paramref name="b"/>)
-    /// BEFORE the integral images are built. This severs the overlapping
-    /// deviation halos of near-coincident bright icons whose connecting region
-    /// is dim (the canonical Hogan's NPC-pip merge — Phase 2.5 falsified
-    /// morph-open and the
-    /// <c>indoor-recall-phase-2.5-morph-open.md</c> Finding 5 identified the
-    /// "bridge" as overlapping deviation halos, not a thin filament). With
-    /// floor pixels zeroed on both sides, windows centred on the floor see
-    /// zero variance on both sides → <c>flatVar</c> branch → <c>ncc = 1</c> →
-    /// no false "added" evidence at the bridge. Default 0 disables the gate
-    /// (byte-identical pre-#1172 behaviour); the zero-threshold path skips the
-    /// pre-scan entirely so byte-identical includes "no extra pass over the
-    /// inputs". Mutates the input buffers in place — production callers
+    /// on the screenshot buffer (<paramref name="a"/>) BEFORE the integral
+    /// images are built. The texture buffer (<paramref name="b"/>) is left
+    /// untouched. This severs the overlapping deviation halos of
+    /// near-coincident bright icons whose connecting region is dim (the
+    /// canonical Hogan's NPC-pip merge — Phase 2.5 falsified morph-open and
+    /// the <c>indoor-recall-phase-2.5-morph-open.md</c> Finding 5 identified
+    /// the "bridge" as overlapping deviation halos, not a thin filament).
+    ///
+    /// <para><b>Why screenshot-only, not both buffers.</b> The issue body's
+    /// literal "AND-gate both" reading zeros floor pixels on BOTH sides,
+    /// which aligns the non-zero spatial pattern of <paramref name="a"/> and
+    /// <paramref name="b"/> at icon positions — covariance shoots up and the
+    /// icon's "added content" signal disappears (the
+    /// <c>indoor-pre-deviation-luma-threshold.md</c> measurement showed real-
+    /// icon recall collapsed to 0/6 at every non-zero threshold under that
+    /// implementation). The screenshot-only zeroing preserves the addedOnly
+    /// detection branch: at floor windows, <paramref name="a"/> goes flat
+    /// (<c>va &lt; flatVar</c>) while <paramref name="b"/> stays textured →
+    /// the OBSCURED branch fires (<c>ncc = 1</c> if addedOnly) → no false
+    /// bridge signal; at icon windows, the bright icon spike survives in
+    /// <paramref name="a"/> against undisturbed texture in <paramref name="b"/>
+    /// → high <c>va</c> with low covariance → high deviation → icon
+    /// detected. The texture-side is the COMPARISON BASELINE — touching it
+    /// destroys the asymmetry the algorithm depends on.</para>
+    ///
+    /// <para>Default 0 disables the gate (byte-identical pre-#1172
+    /// behaviour); the zero-threshold path skips the pre-scan entirely so
+    /// byte-identical includes "no extra pass over the inputs". Mutates the
+    /// input buffer <paramref name="a"/> in place — production callers
     /// (<see cref="DeviationBlobCalibrationDetector.Detect"/>) allocate fresh
     /// via <see cref="ToGrayFloat"/> per call so the mutation is invisible.</para>
     /// </summary>
@@ -68,7 +84,6 @@ public static class LocalNccDeviation
                 if (a[i] < thresh)
                 {
                     a[i] = 0f;
-                    b[i] = 0f;
                 }
             }
         }

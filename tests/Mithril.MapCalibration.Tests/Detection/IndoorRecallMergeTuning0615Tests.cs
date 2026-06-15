@@ -156,4 +156,124 @@ public sealed class IndoorRecallMergeTuning0615Tests
         int npcsReachingIcon = npcBlobs.Count(i => i.Blob?.BlobClass == BlobClass.Icon);
         _output.WriteLine($"  NPCs reaching Icon class: {npcsReachingIcon}/3");
     }
+
+    /// <summary>
+    /// mithril#1172 Phase 2.6 sweep on the 06-15 live-verification bundle.
+    /// Sweeps <c>minLumaForDeviation ∈ {0, 140, 160, 180, 200}</c> × <c>closeRadius
+    /// ∈ {0, 1}</c>. Cross-bundle confirmation that the threshold pick
+    /// generalises beyond the 06-13 canonical bundle's icon positions.
+    /// </summary>
+    public static IEnumerable<object?[]> LumaCloseCombinations()
+    {
+        if (BundleDir() is null)
+        {
+            yield return new object?[] { null, null };
+            yield break;
+        }
+        byte[] lumas = [0, 140, 160, 180, 200];
+        int[] closes = [0, 1];
+        foreach (var l in lumas)
+            foreach (var c in closes)
+                yield return new object?[] { (byte?)l, (int?)c };
+    }
+
+    [Theory]
+    [MemberData(nameof(LumaCloseCombinations))]
+    public void Measure_pre_deviation_luma_pipeline_on_0615_bundle(byte? minLumaForDeviation, int? closeRadius)
+    {
+        if (minLumaForDeviation is null || closeRadius is null)
+        {
+            _output.WriteLine($"SKIPPED — bundle '{BundleName}' not present.");
+            return;
+        }
+
+        var dir = BundleDir()!;
+        var shotPath = Path.Combine(dir, "06-aligned-screenshot.png");
+        var texPath = Path.Combine(dir, "05-base-texture-resampled.png");
+        var maskPath = Path.Combine(dir, "07a-deviation-mask.png");
+        Assert.True(File.Exists(shotPath), $"missing {shotPath}");
+        Assert.True(File.Exists(texPath), $"missing {texPath}");
+
+        var shot = WicImageLoader.LoadGray(shotPath);
+        var tex = WicImageLoader.LoadGray(texPath);
+
+        bool[]? deviationMask = null;
+        if (File.Exists(maskPath))
+        {
+            var mask = WicImageLoader.LoadGray(maskPath);
+            deviationMask = new bool[mask.Pixels.Length];
+            for (int i = 0; i < mask.Pixels.Length; i++) deviationMask[i] = mask.Pixels[i] >= 128;
+        }
+
+        var shotF = LocalNccDeviation.ToGrayFloat(shot);
+        var texF = LocalNccDeviation.ToGrayFloat(tex);
+        var dev = LocalNccDeviation.DeviationMap(
+            shotF, texF, shot.Width, shot.Height, win: 11, out var meanNcc,
+            addedOnly: true,
+            minLumaForDeviation: minLumaForDeviation.Value);
+
+        var blobs = new List<BlobClassification>();
+        var hooks = new DetectionDiagnosticHooks(
+            OnDeviation: null, OnRimMask: null, OnMorph: null,
+            OnBlobClassified: blobs.Add);
+
+        var opts = SceneCalibrationProfile.Indoor.BlobOptions with { MinPeakLuma = null };
+
+        _ = DeviationBlobDetector.DetectIconBlobs(
+            dev, shot.Width, shot.Height,
+            lowNcc: 0.5, rim: RimMaskMode.DeviationFlood, opts,
+            closeRadius: closeRadius.Value,
+            hooks: hooks,
+            meanNcc: meanNcc,
+            logger: NullLogger.Instance,
+            deviationMask: deviationMask);
+
+        _output.WriteLine($"=== 0615: minLumaForDeviation={minLumaForDeviation} closeRadius={closeRadius} (Indoor T1+T2 gates, openRadius=0) ===");
+        _output.WriteLine($"meanNcc={meanNcc:F4}  total blobs={blobs.Count}  Icon-class blobs={blobs.Count(b => b.BlobClass == BlobClass.Icon)}");
+
+        BlobClassification? ContainingBlob(int x, int y)
+        {
+            BlobClassification? best = null;
+            foreach (var b in blobs)
+            {
+                if (x >= b.MinX && x < b.MinX + b.W && y >= b.MinY && y < b.MinY + b.H)
+                {
+                    if (best is null || b.Area > best.Area) best = b;
+                }
+            }
+            return best;
+        }
+
+        var npcBlobs = new (string Label, int X, int Y, BlobClassification? Blob)[NpcCentroids.Length];
+        for (int i = 0; i < NpcCentroids.Length; i++)
+        {
+            var (label, x, y) = NpcCentroids[i];
+            npcBlobs[i] = (label, x, y, ContainingBlob(x, y));
+        }
+
+        foreach (var (label, x, y, b) in npcBlobs)
+        {
+            if (b is null)
+            {
+                _output.WriteLine($"  NPC{label,-20} at ({x,4},{y,4})  NO blob contains");
+            }
+            else
+            {
+                _output.WriteLine(
+                    $"  NPC{label,-20} at ({x,4},{y,4})  blob{b.BlobOrdinal,4} bbox({b.MinX},{b.MinY})+{b.W}x{b.H} " +
+                    $"A={b.Area,5} sol={b.Solidity:F2} asp={b.Aspect:F2} peak={b.PeakDev:F2} -> {b.BlobClass}");
+            }
+        }
+
+        var aBlob = npcBlobs[0].Blob;
+        var bBlob = npcBlobs[1].Blob;
+        var cBlob = npcBlobs[2].Blob;
+        bool abMerged = aBlob is not null && bBlob is not null && aBlob.BlobOrdinal == bBlob.BlobOrdinal;
+        bool aIsIcon = aBlob?.BlobClass == BlobClass.Icon;
+        bool bIsIcon = bBlob?.BlobClass == BlobClass.Icon;
+        _output.WriteLine($"  (a)+(b) status: {(abMerged ? "MERGED" : "SPLIT")} | (a)={(aIsIcon ? "Icon" : aBlob?.BlobClass.ToString() ?? "none")} | (b)={(bIsIcon ? "Icon" : bBlob?.BlobClass.ToString() ?? "none")} | (c)={cBlob?.BlobClass.ToString() ?? "none"}");
+
+        int npcsReachingIcon = npcBlobs.Count(i => i.Blob?.BlobClass == BlobClass.Icon);
+        _output.WriteLine($"  NPCs reaching Icon class: {npcsReachingIcon}/3");
+    }
 }
