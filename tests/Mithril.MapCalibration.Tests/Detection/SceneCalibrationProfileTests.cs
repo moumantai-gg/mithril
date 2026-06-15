@@ -37,6 +37,14 @@ public sealed class SceneCalibrationProfileTests
         // carrier for a future flip. Outdoor staying at 0 keeps the existing
         // replay-fixture battery byte-identical.
         SceneCalibrationProfile.Outdoor.MorphOpenRadiusPx.Should().Be(0);
+        // mithril#1172 Phase 2.6: pre-deviation luma gate DISABLED on Outdoor.
+        // The byte-identical pre-#1172 path depends on this (DeviationMap
+        // short-circuits the pre-scan when threshold=0). A future flip would
+        // silently change Outdoor's detector output — the Outdoor replay
+        // battery (Serbule/Eltibule/Kur) might not catch it because outdoor
+        // textures rarely sit below threshold-200 luma. Pin here so the
+        // profile regression fires before the engine-wiring test does.
+        SceneCalibrationProfile.Outdoor.MinLumaForDeviation.Should().Be(0);
     }
 
     [Fact]
@@ -68,6 +76,16 @@ public sealed class SceneCalibrationProfileTests
         // intentional change with a fresh measurement, not an accidental
         // enablement.
         SceneCalibrationProfile.Indoor.MorphOpenRadiusPx.Should().Be(0);
+        // mithril#1172 Phase 2.6: pre-deviation luma gate at 200 — the
+        // load-bearing threshold-sweep pick (indoor-pre-deviation-luma-
+        // threshold.md). 200 is the unique value that splits BOTH 06-13 and
+        // 06-15 merged NPC pairs into two Icon-class blobs at production
+        // closeRadius=1 AND lifts RIC from 3/6 to 5/6 on the canonical
+        // bundle. A future refactor that drops this to 0 silently reverts
+        // Indoor to pre-#1172 (Phase 2.6 disabled); a flip to 180 reverts
+        // to the proposed-but-rejected pre-sweep value. Pin so the profile
+        // regression fires before the dev-local Indoor acceptance test does.
+        SceneCalibrationProfile.Indoor.MinLumaForDeviation.Should().Be(200);
     }
 
     [Theory]

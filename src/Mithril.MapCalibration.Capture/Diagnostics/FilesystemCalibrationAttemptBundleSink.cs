@@ -553,7 +553,7 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                     MorphOpenRadiusPx = resolved.MorphOpenRadiusPx,
                     // mithril#1172 Phase 2.6: surface the resolved pre-
                     // deviation luma byte threshold. Outdoor emits 0,
-                    // Indoor emits 180 in v1. Always-emitted by JSON-shape
+                    // Indoor emits 200 in v1. Always-emitted by JSON-shape
                     // convention so a triager doesn't have to disambiguate
                     // "0 = absent" from "0 = explicit Outdoor".
                     MinLumaForDeviation = resolved.MinLumaForDeviation,

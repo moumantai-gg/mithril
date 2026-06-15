@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mithril.MapCalibration;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
@@ -151,27 +152,40 @@ public sealed class IndoorPreDeviationFullDetectorCorpusTests
                 return (icons.Count, typed);
             }
 
+            // F8: Read the threshold from the profile rather than hardcoding
+            // the 200 literal. If a follow-up sweep moves the production
+            // value (e.g. broader-corpus measurement picks 180 or 220), this
+            // test tracks production automatically instead of reporting
+            // measurement-vs-production drift.
+            byte indoorThreshold = profile.MinLumaForDeviation;
             var (icon0, typed0) = RunAt(0);
-            var (icon200, typed200) = RunAt(200);
-            int lift = typed200 - typed0;
+            var (iconThresh, typedThresh) = RunAt(indoorThreshold);
+            int lift = typedThresh - typed0;
             corpusTypedAt0 += typed0;
-            corpusTypedAt200 += typed200;
+            corpusTypedAt200 += typedThresh;
             corpusTypedLift += lift;
             bundlesWithData++;
 
             var label = bundleName.Length > 68 ? bundleName.Substring(0, 67) + "…" : bundleName;
-            _output.WriteLine($"{label,-70} {icon0,6} {typed0,8} {icon200,8} {typed200,9}  {(lift >= 0 ? "+" : "")}{lift}");
+            _output.WriteLine($"{label,-70} {icon0,6} {typed0,8} {iconThresh,8} {typedThresh,9}  {(lift >= 0 ? "+" : "")}{lift}");
         }
 
         _output.WriteLine("");
         _output.WriteLine($"Corpus over {bundlesWithData} bundles:");
         _output.WriteLine($"  Sum TypedDetections at threshold 0:   {corpusTypedAt0}");
-        _output.WriteLine($"  Sum TypedDetections at threshold 200: {corpusTypedAt200}");
+        _output.WriteLine($"  Sum TypedDetections at threshold {profile.MinLumaForDeviation}: {corpusTypedAt200}");
         _output.WriteLine($"  Net TypedDetection lift:              {(corpusTypedLift >= 0 ? "+" : "")}{corpusTypedLift}");
         _output.WriteLine("");
         _output.WriteLine("Interpretation:");
         _output.WriteLine("  typed > 0 = at least one Icon-class blob cleared TypeFloor=0.80 against some template.");
         _output.WriteLine("  typed >= 4 = RANSAC's 4-inlier minimum is REACHABLE (with luck on geometric consistency).");
         _output.WriteLine("  typed_lift POSITIVE = the gate surfaced MORE NCC-template-matching candidates.");
+
+        // Structural soft-invariant: at least one bundle must produce data,
+        // otherwise the test was a silent no-op. The 'no asserts' anti-
+        // pattern review #1169-r2 finding #15 flagged hits exactly here
+        // without this floor.
+        bundlesWithData.Should().BeGreaterThan(0,
+            "at least one Indoor bundle must produce data, otherwise the full-detector corpus test was a silent no-op (the test skipped at every bundle).");
     }
 }

@@ -545,6 +545,27 @@ public sealed class IndoorRecallMergeTuningTests
             realIconAdmitted.Should().Be(3,
                 "Phase 2.6 baseline (minLumaForDeviation=0, closeRadius=1 + Indoor T1+T2) must reproduce the 3/6 Phase 2 baseline byte-identically (the gate is a no-op at 0).");
         }
+
+        // Phase 2.6 load-bearing row pin at (minLumaForDeviation=200,
+        // closeRadius=1) — the production-shipping value picked by the
+        // sweep doc. Hash-gated to canonical 06-13 so dev-local captures
+        // don't trip on different NPC positions. Review feedback: the
+        // sweep table's headline ('200 | 1 (prod) | YES ✓ | 5') was
+        // documentary-only without this pin.
+        if (minLumaForDeviation == 200 && closeRadius == 1 && BundleMatchesCanonicalHash(dir))
+        {
+            realIconAdmitted.Should().Be(5,
+                "Phase 2.6 production row (minLumaForDeviation=200, closeRadius=1 + Indoor T1+T2) must lift RIC from 3/6 to 5/6 on canonical 06-13 — the load-bearing claim from indoor-pre-deviation-luma-threshold.md.");
+            // B and C MUST sit in different connected components (the merge
+            // split — the entire point of #1172). bBlob.Area + cBlob.Area
+            // values are pinned by the same measurement table.
+            bBlob.Should().NotBeNull();
+            cBlob.Should().NotBeNull();
+            bBlob!.BlobOrdinal.Should().NotBe(cBlob!.BlobOrdinal,
+                "IconB and IconC MUST be in different connected components at (200, 1) — splitting the merge is the load-bearing #1172 fix.");
+            bBlob.BlobClass.Should().Be(BlobClass.Icon);
+            cBlob.BlobClass.Should().Be(BlobClass.Icon);
+        }
     }
 
     /// <summary>
@@ -642,27 +663,38 @@ public sealed class IndoorRecallMergeTuningTests
         _output.WriteLine($"IconB blob: ord={bBlob?.BlobOrdinal} class={bBlob?.BlobClass} area={bBlob?.Area}");
         _output.WriteLine($"IconC blob: ord={cBlob?.BlobOrdinal} class={cBlob?.BlobClass} area={cBlob?.Area}");
 
-        // The load-bearing claim: B and C are in DIFFERENT connected components
-        // AND both reach Icon-class. The structural invariant that holds across
-        // any canonical-shaped Indoor bundle (not just the exact hash).
-        bBlob.Should().NotBeNull("Phase 2.6 merge fix means IconB now has a containing Icon-class blob.");
-        cBlob.Should().NotBeNull("Phase 2.6 merge fix means IconC now has a containing Icon-class blob.");
-        bBlob!.BlobOrdinal.Should().NotBe(cBlob!.BlobOrdinal,
-            "Phase 2.6 #1172: IconB and IconC MUST sit in different connected components.");
-        bBlob.BlobClass.Should().Be(BlobClass.Icon, "IconB's containing blob must reach Icon-class.");
-        cBlob.BlobClass.Should().Be(BlobClass.Icon, "IconC's containing blob must reach Icon-class.");
-
-        // Hash-gated specifics: exact RIC count.
+        // Hash-gated specifics: ALL Phase 2.6 claims (split into separate
+        // Icon-class blobs at the canonical centroids, RIC≥5) are bundle-
+        // specific to the canonical 06-13 capture. CanonicalIcons centroids
+        // (411,185) and (432,202) are aligned-frame coords that depend on
+        // the canonical in-game zoom + player position. Review feedback
+        // flagged that asserting these on a dev's own bundle (which lives
+        // at the same path but with different NPC positions) would fail
+        // misleadingly. Mirror the pattern from
+        // Indoor_profile_admits_3_of_6_real_icons_on_canonical_bundle.
         if (BundleMatchesCanonicalHash(dir))
         {
+            bBlob.Should().NotBeNull("Phase 2.6 merge fix means IconB now has a containing Icon-class blob on the canonical 06-13 bundle.");
+            cBlob.Should().NotBeNull("Phase 2.6 merge fix means IconC now has a containing Icon-class blob on the canonical 06-13 bundle.");
+            bBlob!.BlobOrdinal.Should().NotBe(cBlob!.BlobOrdinal,
+                "Phase 2.6 #1172: IconB and IconC MUST sit in different connected components on the canonical 06-13 bundle.");
+            bBlob.BlobClass.Should().Be(BlobClass.Icon, "IconB's containing blob must reach Icon-class.");
+            cBlob.BlobClass.Should().Be(BlobClass.Icon, "IconC's containing blob must reach Icon-class.");
             admitted.Should().BeGreaterThanOrEqualTo(5,
                 "Phase 2.6 #1172: Indoor profile with MinLumaForDeviation=200 lifts RIC from the Phase 3 baseline of 3/6 to 5/6 (IconB and IconC join IconD/E/F as Icon-class admits).");
         }
         else
         {
+            // Soft invariant that holds across any Indoor bundle whose
+            // capture predates the gate: the gate CAN admit (split a
+            // merged blob) but never silently destroys recall — Indoor RIC
+            // at the gate is ≥ Indoor RIC pre-gate. This is the structural
+            // claim the broader-corpus measurement
+            // (indoor-pre-deviation-luma-threshold.md + corpus tests)
+            // documented as cross-bundle generalisation.
             admitted.Should().BeGreaterThanOrEqualTo(3,
                 "On any Indoor bundle the Phase 2.6 gate cannot reduce admitted real icons below the Phase 3 baseline (3/6 minimum).");
-            _output.WriteLine("Skipped exact >=5/6 assertion — bundle SHA mismatch (structural split-and-Icon-class invariants still assert).");
+            _output.WriteLine("Skipped canonical-only structural asserts — bundle SHA mismatch (3/6 RIC floor invariant still applies).");
         }
     }
 

@@ -1,4 +1,5 @@
 using System.IO;
+using FluentAssertions;
 using Mithril.MapCalibration.Tests.Fixtures;
 using Xunit;
 using Xunit.Abstractions;
@@ -127,6 +128,19 @@ public sealed class IndoorPreDeviationLumaDistributionTests
         }
         _output.WriteLine($"Dim peak: bin {dimPeakBin} ([{dimPeakBin * binWidth}-{(dimPeakBin + 1) * binWidth - 1}], count {dimPeakCount})");
         _output.WriteLine($"Bright peak: bin {brightPeakBin} ([{brightPeakBin * binWidth}-{(brightPeakBin + 1) * binWidth - 1}], count {brightPeakCount})");
+
+        // Structural soft-invariant: the #1172 mechanism requires a bimodal
+        // luma distribution over the merged-blob bbox — a dim peak (floor)
+        // and a bright peak (icon pip) with the bright at higher luma than
+        // the dim. If the distribution is unimodal or the peaks invert, the
+        // pre-deviation luma gate has no separable threshold and the
+        // mechanism's premise is falsified. This is a corpus-level claim
+        // that holds across any Hogan's bundle of the relevant shape; it's
+        // not bundle-hash-specific.
+        dimPeakBin.Should().BeGreaterOrEqualTo(0, "merged-NPC bbox must contain dim (floor) pixels — falsifies if all bright.");
+        brightPeakBin.Should().BeGreaterOrEqualTo(0, "merged-NPC bbox must contain bright (icon) pixels — falsifies if all dim.");
+        brightPeakBin.Should().BeGreaterThan(dimPeakBin,
+            "bright peak MUST sit at higher luma than dim peak — the #1172 mechanism's premise is bimodal floor-vs-icon separation. A peak inversion (bright below dim) falsifies the gate's viability.");
 
         if (dimPeakBin < 0 || brightPeakBin < 0 || brightPeakBin <= dimPeakBin)
         {

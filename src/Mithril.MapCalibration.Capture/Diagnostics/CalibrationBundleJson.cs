@@ -370,9 +370,10 @@ public sealed record SceneCalibrationProfileJson(
     /// detector applied inside
     /// <see cref="Mithril.MapCalibration.Detection.LocalNccDeviation.DeviationMap"/>
     /// for this attempt. <c>0</c> means the gate was disabled (Outdoor + pre-
-    /// #1172 attempts); Indoor v1 ships <c>180</c> per the
-    /// <c>indoor-pre-deviation-luma-distribution.md</c> measurement. Always
-    /// emitted (no nullable) so jq filters / downstream tooling can read it
+    /// #1172 attempts); Indoor v1 ships <c>200</c> per the load-bearing pick
+    /// in
+    /// <c>docs/planning/calibration-1155-scene-class-profile/measurements/indoor-pre-deviation-luma-threshold.md</c>.
+    /// Always emitted (no nullable) so jq filters / downstream tooling can read it
     /// unconditionally — mirrors the
     /// <see cref="MorphOpenRadiusPx"/> JSON shape.
     /// </summary>

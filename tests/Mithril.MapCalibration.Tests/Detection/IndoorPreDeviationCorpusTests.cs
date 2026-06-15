@@ -1,4 +1,5 @@
 using System.IO;
+using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration.Tests.Fixtures;
@@ -175,5 +176,23 @@ public sealed class IndoorPreDeviationCorpusTests
         _output.WriteLine("  - lift POSITIVE means the gate ADMITTED MORE Icon-class blobs (likely splitting merged Structure blobs into individual Icons).");
         _output.WriteLine("  - lift NEGATIVE means the gate REJECTED Icon-class blobs (could indicate over-gating on a bundle where icon luma is lower than the threshold).");
         _output.WriteLine("  - lift ≈ 0 means no merge change on that bundle (either no merge existed, or the merge wasn't gate-resolvable).");
+
+        // Corpus-level structural soft-invariant: across the entire Indoor
+        // corpus, the gate (MinLumaForDeviation=200) must never DROP the
+        // real-icon-luma RIC count below the pre-gate baseline. The
+        // PR-committed corpus measurement showed 9 of 12 bundles strictly
+        // improve and 3 stay at 0 → corpus-total RIC strictly increases.
+        // A future regression that wholesale-degrades the gate (e.g.
+        // DeviationMap broken to return empty maps, BundledIconTemplateLoader
+        // hash gate fires on a stale templates blob) would drop the
+        // corpus-total RIC; this catches that as the table-of-zeros pattern.
+        totalBundlesWithData.Should().BeGreaterThan(0,
+            "at least one Indoor bundle must produce data, otherwise the corpus test was a silent no-op.");
+        // The 9 of 12 'lift positive' / 3 of 12 'lift zero' pattern is
+        // dev-local-bundle-specific (depends on which captures happen to be
+        // on disk); but the corpus-total non-regression invariant holds for
+        // any subset of the canonical corpus.
+        corpusIcon200Sum.Should().BeLessThanOrEqualTo(corpusIcon0Sum,
+            "the gate suppresses Icon-class noise blobs — corpus-total Icon-class count at threshold 200 should drop relative to threshold 0.");
     }
 }

@@ -42,9 +42,9 @@ public static class LocalNccDeviation
     ///
     /// <para><b>mithril#1172 — <paramref name="minLumaForDeviation"/>.</b> When
     /// non-zero, screenshot pixels with raw luma BELOW the threshold are zeroed
-    /// on the screenshot buffer (<paramref name="a"/>) BEFORE the integral
-    /// images are built. The texture buffer (<paramref name="b"/>) is left
-    /// untouched. This severs the overlapping deviation halos of
+    /// on a fresh copy of the screenshot buffer (<paramref name="a"/>) BEFORE
+    /// the integral images are built. The texture buffer (<paramref name="b"/>)
+    /// is left untouched. This severs the overlapping deviation halos of
     /// near-coincident bright icons whose connecting region is dim (the
     /// canonical Hogan's NPC-pip merge — Phase 2.5 falsified morph-open and
     /// the <c>indoor-recall-phase-2.5-morph-open.md</c> Finding 5 identified
@@ -62,30 +62,38 @@ public static class LocalNccDeviation
     /// (<c>va &lt; flatVar</c>) while <paramref name="b"/> stays textured →
     /// the OBSCURED branch fires (<c>ncc = 1</c> if addedOnly) → no false
     /// bridge signal; at icon windows, the bright icon spike survives in
-    /// <paramref name="a"/> against undisturbed texture in <paramref name="b"/>
+    /// the gated copy against undisturbed texture in <paramref name="b"/>
     /// → high <c>va</c> with low covariance → high deviation → icon
     /// detected. The texture-side is the COMPARISON BASELINE — touching it
     /// destroys the asymmetry the algorithm depends on.</para>
     ///
     /// <para>Default 0 disables the gate (byte-identical pre-#1172
-    /// behaviour); the zero-threshold path skips the pre-scan entirely so
-    /// byte-identical includes "no extra pass over the inputs". Mutates the
-    /// input buffer <paramref name="a"/> in place — production callers
-    /// (<see cref="DeviationBlobCalibrationDetector.Detect"/>) allocate fresh
-    /// via <see cref="ToGrayFloat"/> per call so the mutation is invisible.</para>
+    /// behaviour); the zero-threshold path uses <paramref name="a"/> verbatim
+    /// with no extra pass or allocation. The non-zero path allocates a fresh
+    /// scratch buffer (one <c>float[w*h]</c>; small relative to the five
+    /// <c>double[(w+1)*(h+1)]</c> integral images that follow) and writes
+    /// the gated result into it. Caller-owned input <paramref name="a"/> is
+    /// NEVER mutated regardless of threshold — important for callers that
+    /// cache or reuse float buffers (review feedback: a future per-attempt
+    /// cache would silently corrupt across calls if mutation were allowed).</para>
     /// </summary>
     public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc, bool addedOnly = false, byte minLumaForDeviation = 0)
     {
         if (minLumaForDeviation > 0)
         {
+            // mithril#1172 review feedback: write the gated result into a
+            // fresh scratch buffer rather than mutating the caller's a[].
+            // The allocation is one float[w*h] = ~960KB on a 600x400 crop
+            // and is small relative to the five double[(w+1)*(h+1)] integral
+            // images allocated immediately below. Preserves the pre-#1172
+            // contract that DeviationMap's inputs are read-only.
             float thresh = minLumaForDeviation;
+            var gated = new float[a.Length];
             for (int i = 0; i < a.Length; i++)
             {
-                if (a[i] < thresh)
-                {
-                    a[i] = 0f;
-                }
+                gated[i] = a[i] < thresh ? 0f : a[i];
             }
+            a = gated;
         }
 
         int r = win / 2;

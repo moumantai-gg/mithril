@@ -82,11 +82,20 @@ namespace Mithril.MapCalibration.Detection;
 /// Pre-deviation raw-luma threshold (mithril#1172, Phase 2.6). Applied
 /// INSIDE <see cref="LocalNccDeviation.DeviationMap"/> BEFORE the integral
 /// image is built — screenshot pixels with luma below this byte value are
-/// zeroed on BOTH the screenshot and base-texture float buffers, removing
-/// them from the local-NCC computation. Zero disables the gate
-/// (byte-identical pre-#1172 behaviour); positive values gate the floor
-/// pixels OUT of deviation evidence so the NCC window can't smear icon
-/// halos through them.
+/// zeroed on the SCREENSHOT float buffer only (the texture buffer stays
+/// untouched), removing them from the local-NCC computation. Zero disables
+/// the gate (byte-identical pre-#1172 behaviour); positive values gate
+/// the floor pixels OUT of deviation evidence so the NCC window can't
+/// smear icon halos through them.
+///
+/// <para><b>Screenshot-only, not both buffers.</b> See
+/// <see cref="LocalNccDeviation.DeviationMap"/> for the load-bearing
+/// asymmetry: zeroing both `a` and `b` aligns the non-zero spatial
+/// pattern at icon positions, collapses covariance to ~1, and destroys
+/// the addedOnly deviation signal — the threshold sweep showed RIC drops
+/// to 0/6 under that interpretation. Anyone editing the implementation
+/// to match a "symmetric" mental model regresses real-icon recall to
+/// zero.</para>
 ///
 /// <para><b>The load-bearing follow-up to Phase 2.5's negative result.</b>
 /// Phase 2.5's morph-open carrier proved (Finding 5 of
@@ -208,6 +217,18 @@ public readonly record struct SceneCalibrationProfile(
     /// to Outdoor's tighter gates (the bug the mithril#1168 review flagged).
     /// CS8524 doesn't fire here today; the manual review obligation is the
     /// guard.</para>
+    ///
+    /// <para><b>mithril#1172 widens the blast radius.</b> A new SceneClass
+    /// silently routed to Outdoor now ALSO inherits Outdoor's
+    /// MinLumaForDeviation=0 — the Phase 2.6 pre-deviation luma gate is
+    /// disabled for the new class. If that new class shares the Indoor
+    /// "near-coincident bright pips over featureless dim floor" geometry
+    /// (likely for Cave/Sewer/Dungeon-derivative classes), it will show
+    /// the same NPC-merge symptom #1172 fixed and the obvious-code
+    /// investigation path will be the gate implementation, not the
+    /// dispatcher. When extending <see cref="SceneClass"/>, audit BOTH
+    /// the classifier shape gates AND the pre-deviation luma gate
+    /// expected per class.</para>
     /// </summary>
     public static SceneCalibrationProfile For(SceneClass sceneClass) => sceneClass switch
     {
