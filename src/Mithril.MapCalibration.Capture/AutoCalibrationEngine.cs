@@ -311,8 +311,8 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         var driftSceneClass = _boundaryMaskCache?.GetSceneClass(sceneRef.MapAssetKey) ?? SceneClass.Outdoor;
         var driftProfile = SceneCalibrationProfile.For(driftSceneClass);
         _logger?.LogTrace(
-            "Drift check {MapAssetKey}: scene class {SceneClass} (cache_wired={CacheWired}); BlobOptions = {BlobOptions}.",
-            sceneRef.MapAssetKey, driftSceneClass, _boundaryMaskCache is not null, driftProfile.BlobOptions);
+            "Drift check {MapAssetKey}: scene class {SceneClass} (cache_wired={CacheWired}); BlobOptions = {BlobOptions}; MorphOpenRadiusPx = {MorphOpenRadiusPx}.",
+            sceneRef.MapAssetKey, driftSceneClass, _boundaryMaskCache is not null, driftProfile.BlobOptions, driftProfile.MorphOpenRadiusPx);
         span?.SetTag("scene.class", driftSceneClass.ToString());
         // mithril#1155 Phase 3 — same BGRA crop as the main calibration path
         // below; drift checks re-run the detector against an Indoor scene need
@@ -339,6 +339,12 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         {
             RenderSizePx = RenderSizePx,
             RawBgra = driftRawBgraCrop,
+            // mithril#1155 Phase 2.5: source morph-open radius from the
+            // resolved scene-class profile. Both profiles ship at 0 in v1;
+            // the carrier is wired symmetrically with the main calibration
+            // path so a future flip of either profile's value applies on
+            // drift checks too.
+            MorphOpenRadiusPx = driftProfile.MorphOpenRadiusPx,
         };
 
         // Step 6: run typed icon detector only (no geometric solve).
@@ -827,8 +833,8 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             maskSpan?.SetTag("scene.opaque_fraction", frac);
         }
         _logger?.LogTrace(
-            "Auto-calibration {Area}: scene class {SceneClass} (opaqueFraction={OpaqueFraction}); BlobOptions = {BlobOptions}.",
-            area, sceneClass, attempt.SceneClassOpaqueFraction, profile.BlobOptions);
+            "Auto-calibration {Area}: scene class {SceneClass} (opaqueFraction={OpaqueFraction}); BlobOptions = {BlobOptions}; MorphOpenRadiusPx = {MorphOpenRadiusPx}.",
+            area, sceneClass, attempt.SceneClassOpaqueFraction, profile.BlobOptions, profile.MorphOpenRadiusPx);
 
         // mithril#1155 Phase 3 — crop the raw BGRA to the same MapRect the gray
         // crop covers so the peak-luma pre-filter inside DeviationBlobDetector
@@ -870,6 +876,11 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             Diagnostics = hooks,
             DeviationMask = deviationMask,
             RawBgra = rawBgraCrop,
+            // mithril#1155 Phase 2.5: source morph-open radius from the
+            // resolved scene-class profile. Both Outdoor and Indoor v1
+            // profiles carry 0 — the carrier is wired so a future investigator
+            // can flip the Indoor value without re-plumbing.
+            MorphOpenRadiusPx = profile.MorphOpenRadiusPx,
         };
 
         _logger?.LogInformation(

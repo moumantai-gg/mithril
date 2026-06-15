@@ -30,6 +30,12 @@ Phase 0 of the [implementation plan](../plan.md). Validates spec §6 verificatio
 |---|---|---|
 | [phase-3-live-verification.md](phase-3-live-verification.md) | Fresh in-game calibration attempt against Hogan's Keep Basement on engine `3.0.0.93+98fdd54b` (post-#1169) + Eltibule drift-check (Outdoor sibling). Verifies bundle JSON carries `MinPeakLuma=0.7`, filter LogTrace fires, and the 3 final detections (Npc + 2 Portal) are semantically real vs the canonical 2-noise-Portal baseline. | **MECHANISM VERIFIED, CALIBRATION STILL REJECTED.** Phase 3 works end-to-end; detection quality lifted from 2 noise to 3 real detections. RANSAC inliers 3, gate ≥ 4 — 1 inlier short. Outdoor Eltibule byte-identical. Next load-bearing piece: Phase 2.5 morph-open to split the `IconB + IconC` merge per the audit recommendation. |
 
+## Phase 2.5 morph-open measurement
+
+| File | Scope | Verdict |
+|---|---|---|
+| [indoor-recall-phase-2.5-morph-open.md](indoor-recall-phase-2.5-morph-open.md) | Sweeps `openRadius ∈ {0,1,2,3} × closeRadius ∈ {0,1}` at production `win=11` on the canonical Hogan's 06-13 bundle via the new `Measure_morph_open_pipeline` theory in [`IndoorRecallMergeTuningTests`](../../../../tests/Mithril.MapCalibration.Tests/Detection/IndoorRecallMergeTuningTests.cs). Tests whether morph-OPEN (erode-then-dilate) before morph-close splits the IconB+IconC merge into two Icon-class blobs. | **NEGATIVE.** No combo splits B+C — the connecting bridge in the deviation map is substantial, not a thin filament erosion can sever. Every non-zero `openRadius` DEGRADES Real-Icon-Class recall (collapses IconE/F's narrow halos). Phase 2.5 ships the carrier infrastructure with both profiles at `MorphOpenRadiusPx = 0` (byte-identical to pre-#1155); future investigators can flip Indoor without re-plumbing once a different audit angle (pre-deviation luma threshold, watershed split, etc.) addresses the bridge structurally. |
+
 ## TL;DR
 
 - §6.a + §6.e — green, spec stands.

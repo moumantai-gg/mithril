@@ -33,6 +33,10 @@ public sealed class SceneCalibrationProfileTests
         // detection surface. Pin here so the profile regression catches it
         // before the engine-layer wiring test does.
         SceneCalibrationProfile.Outdoor.BlobOptions.MinPeakLuma.Should().BeNull();
+        // mithril#1155 Phase 2.5: morph-open ships disabled on Outdoor — pure
+        // carrier for a future flip. Outdoor staying at 0 keeps the existing
+        // replay-fixture battery byte-identical.
+        SceneCalibrationProfile.Outdoor.MorphOpenRadiusPx.Should().Be(0);
     }
 
     [Fact]
@@ -56,6 +60,14 @@ public sealed class SceneCalibrationProfileTests
         // on Indoor while every other profile field still pinned — pin it here
         // so the profile regression catches it before the engine wiring does.
         SceneCalibrationProfile.Indoor.BlobOptions.MinPeakLuma.Should().Be(0.7);
+        // mithril#1155 Phase 2.5: morph-open ships disabled on Indoor per the
+        // negative-result measurement (indoor-recall-phase-2.5-morph-open.md).
+        // The sweep across (openRadius ∈ {0,1,2,3}, closeRadius ∈ {0,1}) showed
+        // NO combination splits the IconB+C merge into Icon-class blobs, and
+        // every non-zero value DEGRADED RIC. Pin here so a future flip is an
+        // intentional change with a fresh measurement, not an accidental
+        // enablement.
+        SceneCalibrationProfile.Indoor.MorphOpenRadiusPx.Should().Be(0);
     }
 
     [Theory]
