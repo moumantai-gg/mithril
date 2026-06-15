@@ -78,10 +78,62 @@ namespace Mithril.MapCalibration.Detection;
 /// deviation, alternative connectivity / watershed split, etc.) lifts the
 /// underlying bridge structure.</para>
 /// </param>
+/// <param name="MinLumaForDeviation">
+/// Pre-deviation raw-luma threshold (mithril#1172, Phase 2.6). Applied
+/// INSIDE <see cref="LocalNccDeviation.DeviationMap"/> BEFORE the integral
+/// image is built — screenshot pixels with luma below this byte value are
+/// zeroed on BOTH the screenshot and base-texture float buffers, removing
+/// them from the local-NCC computation. Zero disables the gate
+/// (byte-identical pre-#1172 behaviour); positive values gate the floor
+/// pixels OUT of deviation evidence so the NCC window can't smear icon
+/// halos through them.
+///
+/// <para><b>The load-bearing follow-up to Phase 2.5's negative result.</b>
+/// Phase 2.5's morph-open carrier proved (Finding 5 of
+/// <c>indoor-recall-phase-2.5-morph-open.md</c>) that the IconB+C "bridge"
+/// is the overlapping deviation halos of the two pips themselves, not a
+/// thin filament — so no post-deviation morphology can sever it without
+/// destroying the halos. The mechanism this knob enables operates at a
+/// DIFFERENT layer: it changes what the NCC kernel SEES. PG indoor pip
+/// pixels are bright-white (raw luma ≥ 160, peak ~220); the connecting
+/// floor is mid-gray (luma 48–63). The
+/// <c>indoor-pre-deviation-luma-distribution.md</c> measurement confirms
+/// the bimodal separation with a clean valley over luma [80, 144] on both
+/// the 06-13 canonical bundle and the 06-15 live-verification bundle. Once
+/// the floor is gated to zero, the kernel sees flat-on-both → ncc = 1 → no
+/// false "added" signal between the pips.</para>
+///
+/// <para><b>Outdoor: <c>MinLumaForDeviation = 0</c>.</b> Outdoor scenes
+/// have alpha-1 textures where the texture itself carries detail across
+/// most of the frame; gating low-luma pixels would discard legitimate
+/// terrain. Phase 2.6's mechanism is structurally Indoor (high-contrast
+/// icons over dark featureless floor); Outdoor's pre-#1172 byte-identical
+/// path is preserved by the default-zero. The Outdoor regression battery
+/// gates the PR on that invariant.</para>
+///
+/// <para><b>Indoor: <c>MinLumaForDeviation = 180</c>.</b> 180 lands in the
+/// leading edge of the bright-pip peak measured at luma 160–220 on both
+/// canonical bundles, capturing the icon core + outer halo while gating
+/// the [0, 144] dim shoulder. The threshold-sweep measurement
+/// (<c>indoor-pre-deviation-luma-threshold.md</c>) is the load-bearing
+/// pick: at the chosen threshold, BOTH bundles' merged NPC pair splits
+/// into TWO Icon-class blobs and the Phase 3 Real-Icon-Class baseline
+/// (IconD/E/F = 3/6) is preserved or improved.</para>
+///
+/// <para><b>Composition with <c>BuildDeviationMask</c>.</b> The pre-
+/// deviation luma threshold runs UPSTREAM of
+/// <see cref="DeviationBlobDetector.DetectIconBlobs"/>'s alpha-boundary +
+/// fog mask: it operates inside <see cref="LocalNccDeviation.DeviationMap"/>
+/// (before the deviation map exists), while <c>BuildDeviationMask</c>
+/// gates the foreground buffer produced FROM the deviation map. They
+/// operate on different stages and don't need to compose at a single
+/// layer.</para>
+/// </param>
 public readonly record struct SceneCalibrationProfile(
     SceneClass SceneClass,
     BlobOptions BlobOptions,
-    int MorphOpenRadiusPx = 0)
+    int MorphOpenRadiusPx = 0,
+    byte MinLumaForDeviation = 0)
 {
     /// <summary>
     /// Outdoor profile — today's universal constants verbatim. The
@@ -125,7 +177,8 @@ public readonly record struct SceneCalibrationProfile(
             MinSolidity: 0.30, MaxAspect: 2.7, MinPeak: 0.7)
         {
             MinPeakLuma = 0.7,
-        });
+        },
+        MinLumaForDeviation: 180);
 
     /// <summary>
     /// Returns the canonical profile for <paramref name="sceneClass"/>. The

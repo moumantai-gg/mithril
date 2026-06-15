@@ -364,6 +364,19 @@ public sealed record SceneCalibrationProfileJson(
     /// readers round-trip the JSON unchanged.
     /// </summary>
     public int MorphOpenRadiusPx { get; init; }
+
+    /// <summary>
+    /// mithril#1172 Phase 2.6: pre-deviation raw-luma gate byte threshold the
+    /// detector applied inside
+    /// <see cref="Mithril.MapCalibration.Detection.LocalNccDeviation.DeviationMap"/>
+    /// for this attempt. <c>0</c> means the gate was disabled (Outdoor + pre-
+    /// #1172 attempts); Indoor v1 ships <c>180</c> per the
+    /// <c>indoor-pre-deviation-luma-distribution.md</c> measurement. Always
+    /// emitted (no nullable) so jq filters / downstream tooling can read it
+    /// unconditionally — mirrors the
+    /// <see cref="MorphOpenRadiusPx"/> JSON shape.
+    /// </summary>
+    public byte MinLumaForDeviation { get; init; }
 }
 
 // mithril#1121: AllowNamedFloatingPointLiterals lets BlobTemplateScore.Score

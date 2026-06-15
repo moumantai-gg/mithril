@@ -53,7 +53,13 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
         // Window 11 mirrors the gate-study probe default.
         // mithril#1123: capture meanNcc — DeviationSnapshot.MeanNcc surfaces it
         // alongside the per-pixel deviation stats.
-        var dev = LocalNccDeviation.DeviationMap(shotF, texF, w, h, win: 11, out var meanNcc, addedOnly: true);
+        // mithril#1172: source the pre-deviation luma gate from the request.
+        // Default 0 (Outdoor + pre-#1172 callers) preserves byte-identical
+        // pre-#1172 behaviour — DeviationMap short-circuits the pre-scan when
+        // the threshold is 0.
+        var dev = LocalNccDeviation.DeviationMap(
+            shotF, texF, w, h, win: 11, out var meanNcc, addedOnly: true,
+            minLumaForDeviation: request.MinLumaForDeviation);
 
         // The deviation-only overload can't run ColourFlood (needs the BGRA shot);
         // fall back to DeviationFlood if asked for ColourFlood here.

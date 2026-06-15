@@ -345,6 +345,14 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             // path so a future flip of either profile's value applies on
             // drift checks too.
             MorphOpenRadiusPx = driftProfile.MorphOpenRadiusPx,
+            // mithril#1172 Phase 2.6: source the pre-deviation luma gate
+            // from the resolved scene-class profile. Outdoor ships 0
+            // (byte-identical pre-#1172), Indoor ships 180. Wired
+            // symmetrically with the main calibration path below — drift
+            // checks against an Indoor scene must apply the same upstream
+            // gate so the dev[] the detector sees matches what the main
+            // calibration would have produced.
+            MinLumaForDeviation = driftProfile.MinLumaForDeviation,
         };
 
         // Step 6: run typed icon detector only (no geometric solve).
@@ -881,6 +889,16 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             // profiles carry 0 — the carrier is wired so a future investigator
             // can flip the Indoor value without re-plumbing.
             MorphOpenRadiusPx = profile.MorphOpenRadiusPx,
+            // mithril#1172 Phase 2.6: pre-deviation raw-luma gate. Outdoor
+            // carries 0 (byte-identical pre-#1172 NCC). Indoor carries 180,
+            // the leading-edge of the bright-pip luma peak measured at
+            // 160–220 per `indoor-pre-deviation-luma-distribution.md`.
+            // The gate zeros floor pixels (mid-gray, luma 32–63) on both
+            // screenshot and texture sides before the integral image, so the
+            // local-NCC window cannot smear icon halos through the floor —
+            // the load-bearing follow-up after Phase 2.5 morph-open's
+            // negative result.
+            MinLumaForDeviation = profile.MinLumaForDeviation,
         };
 
         _logger?.LogInformation(

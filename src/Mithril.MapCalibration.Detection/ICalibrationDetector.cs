@@ -142,6 +142,26 @@ public sealed record DetectionRequest(
     /// once a different audit angle lifts the underlying bridge structure.</para>
     /// </summary>
     public int MorphOpenRadiusPx { get; init; }
+
+    /// <summary>
+    /// Pre-deviation raw-luma threshold (mithril#1172, Phase 2.6) applied
+    /// inside <see cref="LocalNccDeviation.DeviationMap"/> BEFORE the
+    /// integral image is built. Screenshot pixels with luma below this byte
+    /// value are zeroed on BOTH the screenshot and texture float buffers,
+    /// so they don't participate in the local NCC. <c>0</c> = gate disabled
+    /// (byte-identical pre-#1172 behaviour).
+    ///
+    /// <para>Sourced from <c>SceneCalibrationProfile.MinLumaForDeviation</c>
+    /// via <c>AutoCalibrationEngine</c>. Outdoor ships <c>0</c> (Outdoor
+    /// scenes have alpha-1 textures where the texture itself carries
+    /// detail across most of the frame; gating low-luma would discard
+    /// terrain). Indoor ships <c>180</c> — sits in the leading edge of
+    /// the bright-pip luma peak measured at 160–220 per the
+    /// <c>indoor-pre-deviation-luma-distribution.md</c> measurement; the
+    /// <c>indoor-pre-deviation-luma-threshold.md</c> sweep is the
+    /// load-bearing pick.</para>
+    /// </summary>
+    public byte MinLumaForDeviation { get; init; }
 }
 
 /// <summary>

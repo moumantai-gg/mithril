@@ -39,9 +39,40 @@ public static class LocalNccDeviation
     /// "obscured", not added, and hold no detectable icon, so they're treated as a
     /// match. Distinguishes added-content from obscured-content by which side the
     /// detail is on — the correct fog discriminator (shape isn't).
+    ///
+    /// <para><b>mithril#1172 — <paramref name="minLumaForDeviation"/>.</b> When
+    /// non-zero, screenshot pixels with raw luma BELOW the threshold are zeroed
+    /// on BOTH input buffers (<paramref name="a"/> AND <paramref name="b"/>)
+    /// BEFORE the integral images are built. This severs the overlapping
+    /// deviation halos of near-coincident bright icons whose connecting region
+    /// is dim (the canonical Hogan's NPC-pip merge — Phase 2.5 falsified
+    /// morph-open and the
+    /// <c>indoor-recall-phase-2.5-morph-open.md</c> Finding 5 identified the
+    /// "bridge" as overlapping deviation halos, not a thin filament). With
+    /// floor pixels zeroed on both sides, windows centred on the floor see
+    /// zero variance on both sides → <c>flatVar</c> branch → <c>ncc = 1</c> →
+    /// no false "added" evidence at the bridge. Default 0 disables the gate
+    /// (byte-identical pre-#1172 behaviour); the zero-threshold path skips the
+    /// pre-scan entirely so byte-identical includes "no extra pass over the
+    /// inputs". Mutates the input buffers in place — production callers
+    /// (<see cref="DeviationBlobCalibrationDetector.Detect"/>) allocate fresh
+    /// via <see cref="ToGrayFloat"/> per call so the mutation is invisible.</para>
     /// </summary>
-    public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc, bool addedOnly = false)
+    public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc, bool addedOnly = false, byte minLumaForDeviation = 0)
     {
+        if (minLumaForDeviation > 0)
+        {
+            float thresh = minLumaForDeviation;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] < thresh)
+                {
+                    a[i] = 0f;
+                    b[i] = 0f;
+                }
+            }
+        }
+
         int r = win / 2;
         double[] ia = Integral(a, w, h);
         double[] ib = Integral(b, w, h);
