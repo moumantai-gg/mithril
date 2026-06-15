@@ -88,6 +88,23 @@ public sealed record DetectionRequest(
     /// short-circuits to byte-identical pre-#1155 behaviour.
     /// </summary>
     public byte[]? RawBgra { get; init; }
+
+    /// <summary>
+    /// Orientation flag (mithril#1155 Phase 3 follow-up): <c>true</c> means the
+    /// solver is running the rotated-180° base-texture pass. The detector uses
+    /// this to scope the per-orientation 100%-drop LogWarning emitted by the
+    /// peak-luma filter — non-mirrored Indoor scenes legitimately produce zero
+    /// surviving blobs on the 180° pass (the texture orientation doesn't match
+    /// the screenshot), so the "calibration will fail downstream" framing is
+    /// structurally wrong at the per-orientation level. The 0° pass is the
+    /// signal-bearing branch; the 180° pass demotes 100%-drop to LogTrace.
+    ///
+    /// <para><see cref="MapCalibrationSolveEngine"/> sets this per pass via
+    /// <c>request with { Rotate180 = rotate180 }</c>. Pre-#1155 callers and the
+    /// non-orientation-aware paths default to <c>false</c>, preserving the
+    /// existing Warning behaviour on the only orientation they invoke.</para>
+    /// </summary>
+    public bool Rotate180 { get; init; }
 }
 
 /// <summary>

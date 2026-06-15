@@ -52,7 +52,8 @@ public static class DeviationBlobDetector
         double meanNcc = double.NaN,
         ILogger? logger = null,
         bool[]? deviationMask = null,
-        byte[]? rawBgra = null)
+        byte[]? rawBgra = null,
+        bool rotate180 = false)
     {
         if (rim == RimMaskMode.ColourFlood)
         {
@@ -337,15 +338,32 @@ public static class DeviationBlobDetector
                 }
                 if (survivors.Count == 0 && icons.Count > 0)
                 {
-                    logger?.LogWarning(
-                        "PeakLumaFilter: rejected ALL {Total} Icon-class blobs (threshold {Threshold:0.00}). Indoor calibration will fail downstream with 'no detections'; check for upstream BGRA-dim drift, an unexpectedly dim capture, or a misaligned crop.",
-                        icons.Count, minPeakLuma);
+                    // mithril#1155 Phase 3 follow-up — scope the Warning to the
+                    // 0° pass. The 180° pass on non-mirrored Indoor scenes (PG's
+                    // common case) legitimately drops every blob because the
+                    // rotated texture doesn't correlate with the screenshot; the
+                    // 0° pass is the signal-bearing branch where 100%-drop IS a
+                    // real "calibration will fail" signal. Per-orientation phase-3-
+                    // live-verification.md confirmed the 0° pass produces 3 valid
+                    // detections while the 180° pass legitimately rejects all 40.
+                    if (rotate180)
+                    {
+                        logger?.LogTrace(
+                            "PeakLumaFilter (rotate180=True): rejected ALL {Total} Icon-class blobs (threshold {Threshold:0.00}). Expected on non-mirrored Indoor scenes — the 0° pass owns the failure-mode Warning.",
+                            icons.Count, minPeakLuma);
+                    }
+                    else
+                    {
+                        logger?.LogWarning(
+                            "PeakLumaFilter (rotate180=False): rejected ALL {Total} Icon-class blobs (threshold {Threshold:0.00}). Indoor calibration will fail downstream with 'no detections'; check for upstream BGRA-dim drift, an unexpectedly dim capture, or a misaligned crop.",
+                            icons.Count, minPeakLuma);
+                    }
                 }
                 else
                 {
                     logger?.LogTrace(
-                        "PeakLumaFilter: kept {Kept}/{Total} Icon-class blobs (threshold {Threshold:0.00}, dropped {Dropped}).",
-                        survivors.Count, icons.Count, minPeakLuma, dropped);
+                        "PeakLumaFilter (rotate180={Rotate180}): kept {Kept}/{Total} Icon-class blobs (threshold {Threshold:0.00}, dropped {Dropped}).",
+                        rotate180, survivors.Count, icons.Count, minPeakLuma, dropped);
                 }
                 return survivors;
             }
