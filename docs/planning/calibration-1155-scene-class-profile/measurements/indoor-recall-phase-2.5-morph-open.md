@@ -8,19 +8,28 @@ merge that the [`indoor-recall-stage-attribution.md`](indoor-recall-stage-attrib
 audit identified and the [`indoor-recall-merge-fix-candidates.md`](indoor-recall-merge-fix-candidates.md)
 T3 sweep deferred.
 
-## TL;DR — morph-open hypothesis FALSIFIED on the canonical bundle
+## TL;DR — morph-open hypothesis FALSIFIED across both available bundles
 
 **No combination of `(openRadius ∈ {0, 1, 2, 3}, closeRadius ∈ {0, 1})` splits
-IconB (411, 185) and IconC (432, 202) into two distinct connected components,
-each classified as `BlobClass.Icon`.** The B+C connecting region in the
-deviation map is a substantial bridge — not a thin spike — and survives every
-erosion-then-dilation kernel tested.
+the merged NPC pair into two distinct Icon-class connected components.** Confirmed
+across two bundles:
 
-Worse, every non-zero `openRadius` value DEGRADES Real-Icon-Class (RIC) recall
-on this bundle: at `openRadius=2`, IconE and IconF collapse below `MinArea` or
-above the icon-band aspect ceiling (they're narrow halos that the erosion
-shrinks asymmetrically and the dilation doesn't reconstitute back to their
-original shape).
+- **06-13 canonical** — IconB at (411, 185) + IconC at (432, 202) merge into a single
+  Structure-class blob at every measured kernel setting.
+- **06-15 live verification** — NPCs at centers (455, 212) + (478, 230) reproduce the
+  same merge pattern, same Structure-class outcome.
+
+The "bridge" between the merged pips is NOT a thin filament that erosion can sever — it's
+the **overlapping deviation halos of the two pips themselves**. The deviation map's
+local-NCC window (size 11) extends each ~16-px pip's deviation footprint by ~5 px on every
+side, totaling ~26–28 px. When pips sit ~27–29 px apart, their footprints overlap by
+geometric necessity. Morph-open cannot distinguish "icon edge" from "bridge edge" because
+they are the same pixels.
+
+Every non-zero `openRadius` value DEGRADES Real-Icon-Class (RIC) recall on the canonical
+bundle: at `openRadius=2`, IconE and IconF collapse below `MinArea` or above the
+icon-band aspect ceiling (they're narrow halos that the erosion shrinks asymmetrically
+and the dilation doesn't reconstitute back to their original shape).
 
 The path forward is therefore NOT to enable morph-open on Indoor. Phase 2.5
 ships the **carrier infrastructure** (`Morphology.Open`, `openRadius` parameter
@@ -115,7 +124,67 @@ job — severing thin connecting bridges. Confirms the sequencing (open BEFORE
 close) is correct in concept; the issue is that the open step doesn't sever
 *this particular* bridge.
 
-### Finding 4 — `MaxIconArea = 900` traps the B+C merge into Structure regardless
+### Finding 4 — Cross-bundle generalization: 06-15 confirms the same failure mode
+
+Re-running the sweep against the 06-15 live-verification bundle
+(`Map_HogansKeepBasement-20260615-012510-030-rejected-solve-insufficient-inliers`,
+the bundle the Phase 3 live verification was performed against) reproduces the
+identical failure mode at three NPC pip positions visible in `06-aligned-screenshot.png`:
+
+- NPC (a) bbox `(446, 203, 18, 19)` → center `(455, 212)`
+- NPC (b) bbox `(469, 221, 19, 19)` → center `(478, 230)`
+- NPC (c) bbox `(464, 282, 19, 19)` → center `(473, 291)` — the one detected as `Npc 0.917`
+
+| openRadius | closeRadius | (a)+(b) merged blob area | (a)+(b) class | (c) class |
+|---:|---:|---:|---|---|
+| **0** | **1** (prod) | **1016** | Structure | **Icon ✓** |
+| 0 | 0 |  999 | Structure | Icon |
+| 1 | 0 |  981 | Structure | Icon |
+| 1 | 1 |  988 | Structure | Icon |
+| 2 | 0 |  970 | Structure | Icon |
+| 2 | 1 |  977 | Structure | Icon |
+| 3 | 0 |  959 | Structure | Icon |
+| 3 | 1 |  964 | Structure | Icon |
+
+The same symptom as 06-13: at every `(openRadius, closeRadius)` setting, NPCs (a) and (b)
+share the same connected component, area always just above the `MaxIconArea = 900` ceiling
+(959–1016) → always classifies as Structure. The bridge survives every kernel.
+
+Side-by-side at production settings:
+
+| Bundle | (a)+(b) center distance | (a)+(b) merged blob area | (a)+(b) class | (c) class |
+|---|---|---|---|---|
+| 06-13 (canonical) | 27 px | 1242 | Structure | Icon ✓ |
+| 06-15 (live) | 29 px | 1016 | Structure | Icon ✓ |
+
+Two distinct captures, two distinct icon position sets, **identical failure mode** — confirms
+the finding is structural (a property of the deviation pipeline applied to PG's indoor
+NPC-pip spacing), not per-bundle. The morph-open hypothesis is falsified across the
+available canonical + live corpus.
+
+Reproduced via the sibling test [`IndoorRecallMergeTuning0615Tests.Measure_morph_open_pipeline_on_0615_bundle`](../../../../tests/Mithril.MapCalibration.Tests/Detection/IndoorRecallMergeTuning0615Tests.cs).
+
+### Finding 5 — Mechanism: the "bridge" is overlapping deviation halos, not a thin filament
+
+The deviation map (`LocalNccDeviation.DeviationMap` at `win=11`) computes local NCC over an
+11×11 window — each icon's deviation footprint is the visible pip (~16 px) PLUS ~5 px of
+NCC-window smearing on every side, ~26–28 px total. When two NPC pips sit ~27–29 px apart
+center-to-center, their deviation footprints overlap by definition. There is no thin
+connecting filament to sever — the bridge IS the icons' overlapping halos.
+
+Morph-open's mechanism (erode-then-dilate) shrinks foreground regions uniformly; it cannot
+distinguish "edge of NPC (a)'s halo" from "edge of the bridge between (a) and (b)" because
+they are the SAME pixels. Aggressive erosion (radius 3) destroys the halos themselves,
+which is why Real-Icon-Class recall collapses to 0–2 at high `openRadius`.
+
+This rules out morph-open as a viable mechanism for PG's indoor NPC-pip spacing in general,
+not just for the canonical bundle. Splitting the merge requires a mechanism that operates
+BEFORE the NCC blur (e.g. pre-deviation luma threshold — PG indoor pips are bright-white at
+raw luma > 180, the floor connecting them at ~120–140) or AFTER the merge has formed (e.g.
+peak finding inside the merged blob's bbox at icon-render-size separation), NOT inside the
+binary-morphology layer between them.
+
+### Finding 6 — `MaxIconArea = 900` traps the B+C merge into Structure regardless
 
 At `openRadius ≥ 2`, the merged B+C blob area drops to 970–996 — just over
 the 900 ceiling. This is the same trap the previous merge-fix-candidates
@@ -166,18 +235,27 @@ identical fg buffer it produced before this PR.
 ## Open follow-ups for a future Phase 2.5-v2 / Phase 2.6
 
 The negative result above falsifies the audit's morph-open T3 candidate
-specifically. The B+C merge problem itself is still open. Alternative angles
-worth investigating in a follow-up issue under #1155:
+specifically. The merge problem itself is still open and remains the load-bearing
+failure preventing Indoor calibration acceptance (3 inliers reachable, 4 needed,
+1 short — exactly what splitting the merged blob into two would fix). Alternative
+angles worth investigating in a follow-up issue under #1155:
 
-1. **Pre-deviation luma threshold.** Per the
-   [`indoor-recall-merge-fix-candidates.md`](indoor-recall-merge-fix-candidates.md)
-   "Recover IconA" follow-up — PG indoor icons are bright-white (PeakLuma
-   > 0.78); the adjacent floor connecting B+C is mid-gray (luma ~120–140 /
-   255). A PRE-deviation luma threshold (only treat pixels with screenshot
-   luma > 180 as deviation candidates) would suppress the floor-noise bridge
-   while keeping both icon glyphs intact. Different mechanism than the
-   post-classification peak-luma filter Phase 3 ships — this would change
-   what the deviation map sees, not what survives classification.
+1. **Pre-deviation luma threshold (most promising).** Per Finding 5 above, the
+   merge isn't a thin filament — it's the overlapping deviation halos of the two
+   pips themselves. The deviation kernel can't be made smaller without losing
+   icon recall (see [`indoor-recall-merge-fix-candidates.md`](indoor-recall-merge-fix-candidates.md)
+   Finding 1). But the bridge ONLY exists in the deviation map; in the raw
+   screenshot, PG indoor pips are bright-white (luma > 180) and the floor
+   between them is mid-gray (~120–140). A PRE-deviation luma threshold (only
+   treat pixels with screenshot luma > 180 as deviation candidates) would
+   suppress the floor-noise bridge BEFORE the NCC window has a chance to smear
+   the pip halos together. Different mechanism than the post-classification
+   peak-luma filter Phase 3 ships — this would change what the deviation map
+   sees, not what survives classification. The two confirmed-merge bundles
+   (06-13 and 06-15) give clean test cases: NPC pip centers (411,185)/(432,202)
+   in 06-13, (455,212)/(478,230) in 06-15. Implementation surface is small —
+   one boolean-mask AND inside `LocalNccDeviation.DeviationMap` gated on a
+   profile-level `MinLumaForDeviation` knob, Outdoor at 0 (byte-identical).
 
 2. **Watershed / distance-transform split.** Replace the binary
    connected-components labeller with a watershed-style split that breaks a
