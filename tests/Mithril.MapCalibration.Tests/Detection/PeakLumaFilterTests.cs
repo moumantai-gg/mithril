@@ -290,6 +290,13 @@ public sealed class PeakLumaFilterTests
         icons180.Should().BeEmpty("180° pass still drops every blob — only the log severity changed.");
         logger180.WarningCount.Should().Be(0,
             "180° pass at 100% drop is expected on non-mirrored Indoor scenes; the Warning belongs to the 0° pass, not this one. Demoted to LogTrace.");
+        // Review #1170-r2 finding #10: don't just assert the Warning is absent —
+        // verify the Trace replacement actually fired. A future refactor that
+        // accidentally drops both branches passes the WarningCount==0 assertion
+        // silently and loses ALL observability on the 180° pass; the TraceCount
+        // assertion closes that seam.
+        logger180.TraceCount.Should().BeGreaterThan(0,
+            "180° demotion must REPLACE the Warning with a Trace, not silently drop both — the per-orientation observability claim depends on the Trace actually firing.");
     }
 
     /// <summary>Synthesises a deviation map with one bright (high-dev) blob at (5..9, 5..9).</summary>
@@ -315,10 +322,16 @@ public sealed class PeakLumaFilterTests
         return bgra;
     }
 
-    /// <summary>Captures LogWarning count across the DetectIconBlobs path so the guards are testable.</summary>
+    /// <summary>
+    /// Captures per-level counts across the DetectIconBlobs path so the guards
+    /// are testable. Review #1170-r2 finding #10: WarningCount alone can't tell
+    /// a refactor that drops BOTH the Warning AND its replacement Trace from a
+    /// successful demotion — TraceCount closes that seam.
+    /// </summary>
     private sealed class RecordingLogger : Microsoft.Extensions.Logging.ILogger
     {
         public int WarningCount { get; private set; }
+        public int TraceCount { get; private set; }
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -332,6 +345,7 @@ public sealed class PeakLumaFilterTests
             Func<TState, Exception?, string> formatter)
         {
             if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning) WarningCount++;
+            else if (logLevel == Microsoft.Extensions.Logging.LogLevel.Trace) TraceCount++;
         }
     }
 

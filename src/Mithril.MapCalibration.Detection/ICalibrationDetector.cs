@@ -91,18 +91,38 @@ public sealed record DetectionRequest(
 
     /// <summary>
     /// Orientation flag (mithril#1155 Phase 3 follow-up): <c>true</c> means the
-    /// solver is running the rotated-180° base-texture pass. The detector uses
-    /// this to scope the per-orientation 100%-drop LogWarning emitted by the
-    /// peak-luma filter — non-mirrored Indoor scenes legitimately produce zero
-    /// surviving blobs on the 180° pass (the texture orientation doesn't match
-    /// the screenshot), so the "calibration will fail downstream" framing is
-    /// structurally wrong at the per-orientation level. The 0° pass is the
-    /// signal-bearing branch; the 180° pass demotes 100%-drop to LogTrace.
+    /// solver is running the rotated-180° base-texture pass. Used by the peak-
+    /// luma filter to scope the per-orientation 100%-drop LogWarning — non-
+    /// mirrored Indoor scenes legitimately produce zero surviving blobs on the
+    /// 180° pass (the texture orientation doesn't match the screenshot), so
+    /// the "calibration will fail downstream" framing is structurally wrong at
+    /// the per-orientation level. The 0° pass is the signal-bearing branch on
+    /// the current PG asset set; the 180° pass demotes 100%-drop to LogTrace.
     ///
-    /// <para><see cref="MapCalibrationSolveEngine"/> sets this per pass via
-    /// <c>request with { Rotate180 = rotate180 }</c>. Pre-#1155 callers and the
-    /// non-orientation-aware paths default to <c>false</c>, preserving the
-    /// existing Warning behaviour on the only orientation they invoke.</para>
+    /// <para><see cref="MapCalibrationSolveEngine.Solve"/> OWNS this field —
+    /// the orientation loop sets <c>request with { Rotate180 = rotate180 }</c>
+    /// per pass, so a caller-supplied value is silently overwritten on every
+    /// iteration. <see cref="MapCalibrationSolveEngine.DetectOnly"/> HONORS the
+    /// caller-supplied value as-is (single pass, no overwrite); drift checks
+    /// inherit the default <c>false</c> which matches the single-orientation
+    /// detector behaviour. If you set <c>Rotate180 = true</c> on a request
+    /// passed to <c>DetectOnly</c>, the detector takes you at your word — it
+    /// does NOT rotate the texture on your behalf. (Review #1170-r2 finding #7.)</para>
+    ///
+    /// <para><b>Architectural debt acknowledged.</b> The severity-decision-by-
+    /// orientation logic is at the wrong altitude — the engine knows BOTH
+    /// orientations' results and should own the Warning emission; threading
+    /// orientation through the public detector contract leaks engine-loop
+    /// state. The current shape preserves orientation tagging in detector-
+    /// level Trace lines (which has real triage value) while accepting that
+    /// the Warning-vs-Trace severity decision should migrate engine-side
+    /// when Phase 4 / a future refactor consolidates the per-orientation
+    /// diagnostic surface. (Review #1170-r2 finding #1 — deferred.) The
+    /// "non-mirrored Indoor" assumption embedded in the 0°-as-signal-bearing
+    /// branch is also empirical to today's PG asset set, not a structural
+    /// invariant — a mirrored Indoor scene would flip which orientation
+    /// should fire the Warning. (Review #1170-r2 finding #5 — deferred until
+    /// PG ships such an asset.)</para>
     /// </summary>
     public bool Rotate180 { get; init; }
 }

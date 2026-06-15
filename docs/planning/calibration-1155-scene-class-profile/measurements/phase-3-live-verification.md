@@ -2,6 +2,8 @@
 
 **Verdict: PHASE 3 MECHANISM VERIFIED. CALIBRATION STILL REJECTED.** Phase 3 fires correctly end-to-end on a fresh in-game capture, drops 93 % of floor-noise blobs at the 0° orientation, and leaves three semantically-real detections. RANSAC finds 3 inliers; the gate is ≥ 4. The remaining 1-inlier gap is the recall ceiling identified in the Phase 2 audit — `IconB + IconC` merge plus `IconA` bbox/centroid mismatch — that the plan's **Phase 2.5 (morph-open)** is scoped to address.
 
+> **Scope of this verification (review #1170-r2 finding #2).** This doc captures the LIVE in-game state at engine `3.0.0.93+98fdd54bef` — the post-#1169 squash merge, which is also the base of PR #1170. The peak-luma mechanism (Phase 3) IS field-verified by this doc. The PR #1170 log-format changes (`(rotate180={Rotate180})` template prefix on the kept/dropped/rejected-all Trace lines, the 180°-pass Trace demotion, the per-orientation tagging on the sibling Deviation/RimMask/DeviationMask/Morph/BlobClassification Trace lines) are NOT visible in the log excerpts quoted below — those quote the pre-#1170 log format. The #1170 changes are pinned by the test battery (`PeakLumaFilterTests`), not by a fresh live run. A future re-verification on engine `3.0.0.94+` (post-#1170 merge) would close that gap; for the immediate "stop false-positive 180° Warning" goal, the test-side pin is sufficient.
+
 ## Setup
 
 | | |
@@ -46,8 +48,10 @@ That's the per-orientation 0° pass. Out of 41 classified Icon-class blobs (post
 
 | Orientation | Total blobs | Icon | Noise | Fog | Structure |
 |---|---:|---:|---:|---:|---:|
-| `rotate180=false` (0°) | 250 | 41 | 203 | 2 | 4 |
-| `rotate180=true` (180°) | 126 | 40 | 66 | 0 | 20 |
+| `rotate180=False` (0°) | 250 | 41 | 203 | 2 | 4 |
+| `rotate180=True` (180°) | 126 | 40 | 66 | 0 | 20 |
+
+> Review #1170-r2 finding #14: PR #1170 emits the .NET-default `bool.ToString()` form (`True` / `False`) for the `{Rotate180}` MEL template. The table headers above were originally written in C-style lowercase; corrected so a triager copy-pasting the table value to grep the log gets a match.
 
 The 81 Icon-class total across orientations matches the per-bundle log lines (`kept 3/41` at 0° + `rejected ALL 40` at 180°).
 
