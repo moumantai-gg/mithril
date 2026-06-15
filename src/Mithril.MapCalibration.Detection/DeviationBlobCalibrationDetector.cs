@@ -78,7 +78,12 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
             // filter. Null on Outdoor profile / pre-#1155 callers — DetectIconBlobs
             // short-circuits the filter when either rawBgra is null or
             // BlobOptions.MinPeakLuma is null, so legacy paths are byte-identical.
-            rawBgra: request.RawBgra);
+            rawBgra: request.RawBgra,
+            // mithril#1155 Phase 3 follow-up: forward orientation so the
+            // 100%-drop LogWarning demotes to LogTrace on the 180° pass
+            // (non-mirrored Indoor scenes legitimately drop everything there;
+            // the 0° pass is the signal-bearing branch).
+            rotate180: request.Rotate180);
 
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
 

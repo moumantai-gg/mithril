@@ -105,6 +105,14 @@ public sealed class MapCalibrationSolveEngine
                 BaseTexture = texture,
                 BlobScoreSink = wrappedSink,
                 Diagnostics = wrappedHooks,
+                // mithril#1155 Phase 3 follow-up: scope the per-orientation
+                // 100%-drop LogWarning inside DeviationBlobDetector. The
+                // detector itself has no orientation knowledge; the solver
+                // owns it. Without this, the 180° pass on non-mirrored Indoor
+                // scenes (e.g. Hogan's basement) fires a structurally-wrong
+                // "Indoor calibration will fail downstream" Warning even when
+                // the 0° pass produced valid detections.
+                Rotate180 = rotate180,
             };
 
             var detections = _detector.Detect(req);

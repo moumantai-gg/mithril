@@ -52,7 +52,8 @@ public static class DeviationBlobDetector
         double meanNcc = double.NaN,
         ILogger? logger = null,
         bool[]? deviationMask = null,
-        byte[]? rawBgra = null)
+        byte[]? rawBgra = null,
+        bool rotate180 = false)
     {
         if (rim == RimMaskMode.ColourFlood)
         {
@@ -103,9 +104,16 @@ public static class DeviationBlobDetector
                 P50: p50, P95: p95, P99: p99,
                 AboveThresholdCount: aboveThresholdCount,
                 ForegroundBuffer: ((bool[])fgInitial.Clone()).AsMemory()));
+            // Review #1170-r2 finding #4: thread the real rotate180 into the
+            // LogTrace text. The snapshot record's Rotate180 field is still
+            // hardcoded `false` here and rewritten by the engine's hook-wrap
+            // for sink consumers (MapCalibrationSolveEngine.cs:65-101) — that's
+            // the existing dual-mechanism pattern. The Trace TEXT is the
+            // triager's grep target and was the immediate fix: don't lie on
+            // the 180° pass.
             logger?.LogTrace(
-                "Deviation (rotate180=False): mean ncc={MeanNcc:0.000} above-threshold={AboveCount} of {Total} px (threshold={Threshold:0.000}, p50={P50:0.000} p95={P95:0.000} p99={P99:0.000}).",
-                meanNcc, aboveThresholdCount, n, devThr, p50, p95, p99);
+                "Deviation (rotate180={Rotate180}): mean ncc={MeanNcc:0.000} above-threshold={AboveCount} of {Total} px (threshold={Threshold:0.000}, p50={P50:0.000} p95={P95:0.000} p99={P99:0.000}).",
+                rotate180, meanNcc, aboveThresholdCount, n, devThr, p50, p95, p99);
 
             // fg is the working buffer that subsequent stages mutate; fgInitial
             // is retained by the snapshot.
@@ -157,8 +165,8 @@ public static class DeviationBlobDetector
                     FgSurvivorCount: survivorCount,
                     RimMaskBuffer: ((bool[])rimMask.Clone()).AsMemory()));
                 logger?.LogTrace(
-                    "RimMask (rotate180=False, pipeline=blob_detection): rim={Rim} of {Total} px, fg pre={Pre} post={Post}.",
-                    rimCount, n, aboveThresholdCount, survivorCount);
+                    "RimMask (rotate180={Rotate180}, pipeline=blob_detection): rim={Rim} of {Total} px, fg pre={Pre} post={Post}.",
+                    rotate180, rimCount, n, aboveThresholdCount, survivorCount);
             }
             else
             {
@@ -206,8 +214,8 @@ public static class DeviationBlobDetector
                     FgSurvivorCount: fgSurvivorCount,
                     MaskBuffer: ((bool[])deviationMask.Clone()).AsMemory()));
                 logger?.LogTrace(
-                    "DeviationMask (rotate180=False): masked={Masked} of {Total} px, fg pre={Pre} post={Post}.",
-                    maskedCount, n, fgInputCount, fgSurvivorCount);
+                    "DeviationMask (rotate180={Rotate180}): masked={Masked} of {Total} px, fg pre={Pre} post={Post}.",
+                    rotate180, maskedCount, n, fgInputCount, fgSurvivorCount);
             }
             else
             {
@@ -238,8 +246,8 @@ public static class DeviationBlobDetector
                     FgOutputCount: fgOutputCount,
                     FgAfterMorphBuffer: ((bool[])fg.Clone()).AsMemory()));
                 logger?.LogTrace(
-                    "Morph (rotate180=False): closeRadius={R} fg pre={Pre} post={Post}.",
-                    closeRadius, fgInputCount, fgOutputCount);
+                    "Morph (rotate180={Rotate180}): closeRadius={R} fg pre={Pre} post={Post}.",
+                    rotate180, closeRadius, fgInputCount, fgOutputCount);
             }
         }
 
@@ -268,8 +276,8 @@ public static class DeviationBlobDetector
                     // colourmap); not serialised to 10c JSON.
                     Pixels: f.Pixels.ToArray()));
                 logger?.LogTrace(
-                    "Blob #{Ord} ({Mx},{My},{W},{H}) area={A} meanDev={MeanDev:0.000} peakDev={PeakDev:0.000} solidity={Sol:0.00} aspect={Asp:0.00} -> {Class}.",
-                    f.Ordinal, f.MinX, f.MinY, f.W, f.H, f.Area,
+                    "Blob #{Ord} (rotate180={Rotate180}) ({Mx},{My},{W},{H}) area={A} meanDev={MeanDev:0.000} peakDev={PeakDev:0.000} solidity={Sol:0.00} aspect={Asp:0.00} -> {Class}.",
+                    f.Ordinal, rotate180, f.MinX, f.MinY, f.W, f.H, f.Area,
                     f.MeanDev, f.PeakDev, f.Solidity, f.Aspect, cls);
             }
 
@@ -315,6 +323,18 @@ public static class DeviationBlobDetector
                     minPeakLuma);
                 return icons;
             }
+            if (icons.Count == 0)
+            {
+                // Review #1170-r2 finding #12: when the upstream classifier
+                // already rejected every blob, the peak-luma filter has nothing
+                // to do — but a triager scanning the log on a "no detections"
+                // attempt needs to distinguish "classifier rejected all" from
+                // "filter rejected all" per orientation. Emit a Trace so the
+                // gap doesn't silently swallow the orientation-tagged signal.
+                logger?.LogTrace(
+                    "PeakLumaFilter (rotate180={Rotate180}): skipped — 0 Icon-class candidates from upstream classifier (threshold {Threshold:0.00}).",
+                    rotate180, minPeakLuma);
+            }
             if (icons.Count > 0)
             {
                 var survivors = new List<BlobFeat>(icons.Count);
@@ -329,23 +349,57 @@ public static class DeviationBlobDetector
                     else
                     {
                         dropped++;
+                        // Review #1170-r2 finding #6: thread rotate180 into the
+                        // per-blob drop Trace so triagers can correlate by
+                        // orientation without chaining trace_id / span_id.
                         logger?.LogTrace(
-                            "Blob #{Ord} ({Mx},{My},{W},{H}) area={A}: dropped by peak-luma filter (peakLuma={PeakLuma:0.000} < threshold {Threshold:0.00}).",
-                            blob.Ordinal, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
+                            "Blob #{Ord} (rotate180={Rotate180}) ({Mx},{My},{W},{H}) area={A}: dropped by peak-luma filter (peakLuma={PeakLuma:0.000} < threshold {Threshold:0.00}).",
+                            blob.Ordinal, rotate180, blob.MinX, blob.MinY, blob.W, blob.H, blob.Area,
                             peakLuma, minPeakLuma);
                     }
                 }
                 if (survivors.Count == 0 && icons.Count > 0)
                 {
-                    logger?.LogWarning(
-                        "PeakLumaFilter: rejected ALL {Total} Icon-class blobs (threshold {Threshold:0.00}). Indoor calibration will fail downstream with 'no detections'; check for upstream BGRA-dim drift, an unexpectedly dim capture, or a misaligned crop.",
-                        icons.Count, minPeakLuma);
+                    // mithril#1155 Phase 3 follow-up — scope the Warning to the
+                    // 0° pass. The 180° pass on non-mirrored Indoor scenes (PG's
+                    // common case) legitimately drops every blob because the
+                    // rotated texture doesn't correlate with the screenshot; the
+                    // 0° pass is the signal-bearing branch where 100%-drop IS a
+                    // real "calibration will fail" signal. Per-orientation phase-3-
+                    // live-verification.md confirmed the 0° pass produces 3 valid
+                    // detections while the 180° pass legitimately rejects all 40.
+                    //
+                    // Review #1170-r2 finding #1 (altitude): the right home for
+                    // this Warning is the engine layer (which knows BOTH
+                    // orientations' results — "no detections after both passes"
+                    // is the actual user-visible failure). Documenting the
+                    // architectural debt explicitly; deferred because moving the
+                    // Warning to the engine is a larger refactor (DetectionRequest
+                    // contract change, engine-layer Warning emission, possibly a
+                    // structured detector-event sink) that's out of scope for the
+                    // immediate "stop false-positive 180° Warning" fix.
+                    //
+                    // Review #1170-r2 finding #3: unify `(rotate180={Rotate180})`
+                    // template across all three log lines so the structured
+                    // property is consistently queryable by OTLP / jq / Seq.
+                    if (rotate180)
+                    {
+                        logger?.LogTrace(
+                            "PeakLumaFilter (rotate180={Rotate180}): rejected ALL {Total} Icon-class blobs (threshold {Threshold:0.00}). Expected on non-mirrored Indoor scenes — the 0° pass owns the failure-mode Warning.",
+                            rotate180, icons.Count, minPeakLuma);
+                    }
+                    else
+                    {
+                        logger?.LogWarning(
+                            "PeakLumaFilter (rotate180={Rotate180}): rejected ALL {Total} Icon-class blobs (threshold {Threshold:0.00}). Indoor calibration will fail downstream with 'no detections'; check for upstream BGRA-dim drift, an unexpectedly dim capture, or a misaligned crop.",
+                            rotate180, icons.Count, minPeakLuma);
+                    }
                 }
                 else
                 {
                     logger?.LogTrace(
-                        "PeakLumaFilter: kept {Kept}/{Total} Icon-class blobs (threshold {Threshold:0.00}, dropped {Dropped}).",
-                        survivors.Count, icons.Count, minPeakLuma, dropped);
+                        "PeakLumaFilter (rotate180={Rotate180}): kept {Kept}/{Total} Icon-class blobs (threshold {Threshold:0.00}, dropped {Dropped}).",
+                        rotate180, survivors.Count, icons.Count, minPeakLuma, dropped);
                 }
                 return survivors;
             }

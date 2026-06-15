@@ -24,6 +24,12 @@ Phase 0 of the [implementation plan](../plan.md). Validates spec §6 verificatio
 |---|---|---|
 | [indoor-peak-luma-threshold.md](indoor-peak-luma-threshold.md) | Broader-corpus expansion of the §6.c spike — runs the Indoor profile (peak-luma disabled) across all 11 Hogan's + GoblinDungeon bundles in `%LOCALAPPDATA%/Mithril/diagnostics/calibration/` and reports the per-blob PeakLuma distribution. | **CONFIRMED.** Across 130 Icon-class blobs, 0 sit in the [0.55, 0.78) safety band. The 5 ≥ 0.78 are all real-icon containers; the 125 ≤ 0.55 are all floor noise. `MinPeakLuma = 0.7` ships. |
 
+## Phase 3 live verification (post-#1169)
+
+| File | Scope | Verdict |
+|---|---|---|
+| [phase-3-live-verification.md](phase-3-live-verification.md) | Fresh in-game calibration attempt against Hogan's Keep Basement on engine `3.0.0.93+98fdd54b` (post-#1169) + Eltibule drift-check (Outdoor sibling). Verifies bundle JSON carries `MinPeakLuma=0.7`, filter LogTrace fires, and the 3 final detections (Npc + 2 Portal) are semantically real vs the canonical 2-noise-Portal baseline. | **MECHANISM VERIFIED, CALIBRATION STILL REJECTED.** Phase 3 works end-to-end; detection quality lifted from 2 noise to 3 real detections. RANSAC inliers 3, gate ≥ 4 — 1 inlier short. Outdoor Eltibule byte-identical. Next load-bearing piece: Phase 2.5 morph-open to split the `IconB + IconC` merge per the audit recommendation. |
+
 ## TL;DR
 
 - §6.a + §6.e — green, spec stands.

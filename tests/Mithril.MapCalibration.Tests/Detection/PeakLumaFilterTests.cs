@@ -252,6 +252,53 @@ public sealed class PeakLumaFilterTests
             "the 100%-drop case is a safe-degrade signal — must LogWarning so the silent-zero-icon failure mode is visible at production log levels.");
     }
 
+    [Fact]
+    public void DetectIconBlobs_demotes_100_percent_drop_Warning_to_Trace_when_rotate180_true()
+    {
+        // Phase 3 follow-up — the 180° base-texture pass on non-mirrored Indoor
+        // scenes (PG's common case) legitimately drops every blob because the
+        // rotated texture doesn't correlate with the screenshot. The 0° pass
+        // owns the signal-bearing failure-mode Warning; the 180° pass demotes
+        // to LogTrace to avoid Warning-noise on the live diagnostics surface.
+        // See phase-3-live-verification.md for the in-game evidence.
+        int w = 20, h = 20;
+        var dev = SyntheticDevWithOneBrightBlob(w, h);
+        var bgraDark = new byte[w * h * 4];  // all-dark → 100% drop expected.
+
+        var opts = new BlobOptions(MinArea: 4, MaxIconArea: 1000, MinSolidity: 0.0, MaxAspect: 100, MinPeak: 0.0)
+        {
+            MinPeakLuma = 0.7,
+        };
+
+        // Sanity-pin the 0° pass — it MUST still LogWarning (sibling test pins
+        // the same case at default rotate180=false, but capturing here side-by-
+        // side keeps the asymmetry explicit and resistant to a future refactor
+        // that accidentally flips the default).
+        var logger0 = new RecordingLogger();
+        _ = DeviationBlobDetector.DetectIconBlobs(
+            dev, w, h, lowNcc: 0.5, rim: RimMaskMode.None, opts, closeRadius: 0,
+            logger: logger0, rawBgra: bgraDark, rotate180: false);
+        logger0.WarningCount.Should().BeGreaterThan(0,
+            "0° pass at 100% drop must still LogWarning — that's the signal-bearing branch.");
+
+        // 180° pass — same inputs, must NOT increment WarningCount.
+        var logger180 = new RecordingLogger();
+        var icons180 = DeviationBlobDetector.DetectIconBlobs(
+            dev, w, h, lowNcc: 0.5, rim: RimMaskMode.None, opts, closeRadius: 0,
+            logger: logger180, rawBgra: bgraDark, rotate180: true);
+
+        icons180.Should().BeEmpty("180° pass still drops every blob — only the log severity changed.");
+        logger180.WarningCount.Should().Be(0,
+            "180° pass at 100% drop is expected on non-mirrored Indoor scenes; the Warning belongs to the 0° pass, not this one. Demoted to LogTrace.");
+        // Review #1170-r2 finding #10: don't just assert the Warning is absent —
+        // verify the Trace replacement actually fired. A future refactor that
+        // accidentally drops both branches passes the WarningCount==0 assertion
+        // silently and loses ALL observability on the 180° pass; the TraceCount
+        // assertion closes that seam.
+        logger180.TraceCount.Should().BeGreaterThan(0,
+            "180° demotion must REPLACE the Warning with a Trace, not silently drop both — the per-orientation observability claim depends on the Trace actually firing.");
+    }
+
     /// <summary>Synthesises a deviation map with one bright (high-dev) blob at (5..9, 5..9).</summary>
     private static float[] SyntheticDevWithOneBrightBlob(int w, int h)
     {
@@ -275,10 +322,16 @@ public sealed class PeakLumaFilterTests
         return bgra;
     }
 
-    /// <summary>Captures LogWarning count across the DetectIconBlobs path so the guards are testable.</summary>
+    /// <summary>
+    /// Captures per-level counts across the DetectIconBlobs path so the guards
+    /// are testable. Review #1170-r2 finding #10: WarningCount alone can't tell
+    /// a refactor that drops BOTH the Warning AND its replacement Trace from a
+    /// successful demotion — TraceCount closes that seam.
+    /// </summary>
     private sealed class RecordingLogger : Microsoft.Extensions.Logging.ILogger
     {
         public int WarningCount { get; private set; }
+        public int TraceCount { get; private set; }
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
@@ -292,6 +345,7 @@ public sealed class PeakLumaFilterTests
             Func<TState, Exception?, string> formatter)
         {
             if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning) WarningCount++;
+            else if (logLevel == Microsoft.Extensions.Logging.LogLevel.Trace) TraceCount++;
         }
     }
 
