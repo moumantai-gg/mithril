@@ -618,12 +618,30 @@ internal static class ConnectedComponents
 /// pixels into a single component without growing the overall footprint.</para>
 ///
 /// <para><see cref="Open"/> (erode then dilate; mithril#1155 Phase 2.5) is the
-/// dual — strips foreground pixels off the boundary of every component
-/// (severing thin connecting bridges between near-coincident blobs) and then
-/// regrows each survivor by the same radius. The Indoor IconB+C merge pattern
-/// (two distinct in-game icons whose deviation halos join via a ~1-px-thick
-/// floor-noise bridge) is exactly what Open is designed to split. Outdoor
-/// callers pass <c>openRadius=0</c> for byte-identical pre-#1155 behaviour.</para>
+/// dual — strips foreground pixels off the boundary of every component and
+/// then regrows each survivor by the same radius. The operation severs
+/// components joined by a connecting bridge thinner than 2r+1 pixels while
+/// preserving the bulk of components whose minimum thickness exceeds the
+/// kernel.</para>
+///
+/// <para><b>Why this exists despite shipping at <c>openRadius=0</c>.</b> Open
+/// was investigated as a candidate to split the Indoor IconB+C merge that
+/// blocks calibration acceptance, then measured to NOT help. The 2026-06-13
+/// + 2026-06-15 Hogan's bundles confirmed the merged-blob "bridge" between
+/// adjacent NPC pips is NOT a thin filament — it's the overlapping deviation
+/// halos of the two pips themselves (LocalNcc <c>win=11</c> extends each
+/// ~16-px pip's footprint by ~5 px on every side, so pips ~27-29 px apart
+/// overlap by geometric necessity). Open cannot distinguish "halo edge" from
+/// "bridge edge" because they're the same pixels; aggressive erosion collapses
+/// real-icon recall instead of splitting the merge. The carrier ships
+/// disabled so a future investigator can flip the value once a structurally
+/// different mechanism (e.g. pre-deviation luma threshold, watershed split)
+/// addresses the merge upstream. Full measurement: see
+/// <c>indoor-recall-phase-2.5-morph-open.md</c> Findings 1, 4, and 5.</para>
+///
+/// <para>Outdoor callers and any caller that passes <c>openRadius=0</c> get
+/// byte-identical pre-#1155 behaviour — the open branch short-circuits before
+/// any allocation.</para>
 /// </summary>
 internal static class Morphology
 {
