@@ -64,7 +64,15 @@ public sealed class MapCalibrationLocateOptions : INotifyPropertyChanged, IVersi
     private double _fallbackNccFloor = 0.20;
     private int _fallbackPadPx = 100;
     private double _scaleMin = 0.20;
-    private double _scaleMax = 1.20;
+    // mithril#1153: bumped 1.20 → 2.00. Two corroborating
+    // Map_HogansKeepBasement bundles four days apart (engine 3.0.0.88 on
+    // 20260612-233006-375 and engine 3.0.0.96 on 20260616-103608-261) showed
+    // the locator picking ladder-bottom (scale 0.14 / 0.18) with fallbackNcc
+    // just above the 0.20 gate floor because the true scale (~1.5×) sat
+    // OUTSIDE the [ScaleMin, ScaleMax] search range. 2.00 covers the measured
+    // 1.495 and headroom for higher in-game map zooms; ~67% more scale-ladder
+    // steps per coarse stage is user-imperceptible at typical attempt rates.
+    private double _scaleMax = 2.00;
     private double _scaleStep = 0.02;
     private int _minScaledDim = 20;
     private int _minScaledDimHalf = 10;
@@ -160,7 +168,14 @@ public sealed class MapCalibrationLocateOptions : INotifyPropertyChanged, IVersi
         set { if (_scaleMin != value) { _scaleMin = value; OnChanged(); } }
     }
 
-    /// <summary>Upper bound of the fallback's scale ladder. Default 1.20 (mithril#1061).</summary>
+    /// <summary>
+    /// Upper bound of the fallback's scale ladder. Default 2.00 (mithril#1153,
+    /// bumped from 1.20). The original 1.20 ceiling truncated the search range
+    /// when the in-game map view rendered the texture above 1.20× native — two
+    /// Hogan's Keep Basement bundles (06-12 + 06-16) had true scale ~1.50, and
+    /// the locator silently picked ladder-bottom degenerate regions instead.
+    /// Originally introduced at mithril#1061.
+    /// </summary>
     public double ScaleMax
     {
         get => _scaleMax;
