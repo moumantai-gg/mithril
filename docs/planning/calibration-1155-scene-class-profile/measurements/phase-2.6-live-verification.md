@@ -52,26 +52,48 @@ engineVersion:                               3.0.0.96+447acb150f
 The pre-deviation luma threshold is correctly wired into the live profile
 (scene class = `Indoor`, opaque fraction in the expected 0.07–0.36 band,
 `profile.minLumaForDeviation = 200`), so the static-bundle measurement
-generalises to the in-game profile selection. However the entire
-blob-detection pipeline emitted zero output: deviation has
-`aboveThresholdCount = 0`, `meanNcc = 1` (degenerate empty-mask state),
-morph input count = 0, blobs = 0, detections = 0. The Phase 5 synthesis-J
-shadow rail likewise produced `verdict: "no_winner"` with `synthesis.j =
-null`. The geometric solver had nothing to fit and rejected with
-`"no geometrically-consistent fit"`. The 06-15 baseline at the same area
-produced `aboveThresholdCount = 149,483` and 119+ blobs, so this is a new
-failure mode.
+generalises to the in-game profile selection.
 
-The locator candidate also collapsed to a 184×184 / scale-0.18 region vs
-1246×1246 / scale-1.217 on 06-15, with `fallbackNcc` dropping from 0.718 to
-0.266 — the locator picked a very different candidate this run. Two
-candidate root-cause families: (1) the in-game camera zoom / map-window
-state on this capture differed materially from the 06-15 baseline and the
-locator settled on a poor candidate that then starved the deviation
-pipeline; (2) something in the locator / deviation path regressed between
-engine `3.0.0.93+98fdd54bef` (06-15) and `3.0.0.96+447acb150f` (06-16). The
-06-16 attempt finalized 0.94 s after start (06-15 took 5.0 s), consistent
-with the pipeline short-circuiting on an empty mask.
+The actual failure chain (sharpened after looking at the bundle images):
+
+1. **The locator failed to find the map widget.** `02-screenshot-raw.png`
+   shows the in-game map rendered large and well-lit with pips visible at
+   near-native size — this is NOT a tiny-minimap operational state.
+2. **`locatorBest` returned a junk 184×184 region.** `04-maprect.json`
+   `origin (838, 430) / size 184×184` is identical to `locatorBest`, so the
+   maprect that fed every downstream stage is whatever the locator picked.
+   `06-aligned-screenshot.png` shows that picked region is a uniform dark
+   tile-floor patch with no map content.
+3. **Downstream pipelines starved on the junk region.** The 11×11 windowed
+   NCC against the actual base texture (`05-base-texture-resampled.png`)
+   degenerates to 1 because the chosen region has near-zero variance,
+   making `aboveThresholdCount = 0`, no rim mask, no morph input, no
+   blobs, no detections. The Phase 5 synthesis-J shadow rail likewise
+   produced `verdict: "no_winner"` with `synthesis.j = null`. The
+   geometric solver had nothing to fit and rejected with `"no
+   geometrically-consistent fit"`.
+
+Compounded by suspicious locator-stage stats:
+
+| Field | 06-15 baseline | 06-16 fresh |
+|---|---|---|
+| `locatorBest.inlierCount` | 0 | 0 |
+| `locatorBest.candidateCount` | 0 | 0 |
+| `locatorBest.fallbackNcc` | 0.718 | **0.266** |
+| `locatorBest.blurAppliedSigma` | 0 | **3** |
+| `locatorBest.scale` | 1.217 | **0.18** |
+| `locatorBest.width` | 1246 | **184** |
+
+The `blurAppliedSigma` flipping from 0 to 3 between the two runs is a
+non-trivial pre-filter behaviour change and a plausible proximate cause —
+worth grepping the `MapCalibration` project for that field. The 06-16
+attempt finalized 0.94 s after start (06-15 took 5.0 s), consistent with
+the pipeline short-circuiting on an empty mask.
+
+The pre-deviation luma threshold from #1172 itself is structurally fine:
+it's only invoked after the locator has chosen a region, and this run the
+locator never gave it a real map to gate. The merge-split demonstration
+owed to #1172 still requires a non-degenerate capture.
 
 ## Follow-up
 
