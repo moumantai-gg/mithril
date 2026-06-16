@@ -1,8 +1,11 @@
 # Phase 2.6 live verification — mithril#1172
 
-Live in-game verification slot for the pre-deviation luma threshold. Updated
-in-place after Arthur captures a fresh Hogan's Basement attempt from this
-branch.
+Live in-game verification slot for the pre-deviation luma threshold.
+
+**Status (2026-06-16):** PR #1173 merged to `main` (squash commit
+`f9d7d4a6`). Awaiting Arthur's in-game capture from a build off `main`;
+this file gets the bundle name + JSON values filled in below after capture.
+#1172 stays open until then; #1155 stays open until #1172 closes.
 
 ## Expected headline (post-#1172 ship)
 
@@ -17,12 +20,12 @@ matches the static reproduction.
 
 ## To populate
 
-1. Pull `feat/calibration-1172-pre-deviation-luma` and rebuild.
+1. Pull `main` (post-PR #1173) and rebuild.
 2. Capture a fresh attempt in Hogan's Keep Basement.
 3. The bundle lands at
    `%LOCALAPPDATA%/Mithril/diagnostics/calibration/Map_HogansKeepBasement-<ts>-<outcome>/`.
-4. Replace this section with the bundle name + the headline JSON fields
-   below.
+4. Replace the "To populate" block below with the bundle name + the
+   headline JSON fields.
 
 ```text
 Bundle:                              <TBD>
