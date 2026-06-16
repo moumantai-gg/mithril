@@ -3,13 +3,18 @@
 Live in-game verification slot for the pre-deviation luma threshold.
 
 **Status (2026-06-16):** PR #1173 merged to `main` (squash commit
-`f9d7d4a6`). Fresh in-game capture taken from build
-`3.0.0.96+447acb150f` (post-merge). The headline `profile.minLumaForDeviation
-= 200` is confirmed wired into the live profile, but the attempt rejected at
-the geometric-fit stage with a degenerate blob pipeline — a new failure mode
-that did NOT appear on the 06-15 pre-merge baseline at the same area. See
-"Result" below. #1172 stays open for the Phase 2.7 investigation; #1155
-stays open behind it.
+`f9d7d4a6`). Two fresh in-game captures from build `3.0.0.96+447acb150f`:
+
+- **10:36 — rejected-solve** (`Map_HogansKeepBasement-20260616-103608-261-rejected-solve`):
+  locator failed to find the map widget (returned a 184×184 tile-floor
+  patch with `blurAppliedSigma: 3`), downstream pipeline starved. Not a
+  #1172 regression — locator-stage issue tracked separately as #1179.
+- **11:55 — accepted** (`Map_HogansKeepBasement-20260616-115535-692-accepted`):
+  full pipeline ran end-to-end. `profile.minLumaForDeviation = 200`
+  selected by the live Indoor profile, **merge-split confirmed**
+  (9 Icon-class blobs across R0/R180 where the pre-#1173 pipeline emitted
+  a single Structure blob), 5 inliers recovered, residual 1.346 px
+  (sub-pixel mean fit). **#1172 closed.**
 
 ## Expected headline (post-#1172 ship)
 
@@ -22,90 +27,119 @@ reproduce the merge split on BOTH the 06-13 canonical and 06-15 live-
 verification bundles; the live verification confirms in-game behaviour
 matches the static reproduction.
 
-## Result
+## Result — 11:55 accepted capture (canonical)
 
 ```text
-Bundle:                                      Map_HogansKeepBasement-20260616-103608-261-rejected-solve
-engineVersion:                               3.0.0.96+447acb150f
-01-attempt.json/outcome:                     "rejected-solve"
-01-attempt.json/rejectReason:                "no geometrically-consistent fit"
-01-attempt.json/sceneClass:                  "Indoor"
-01-attempt.json/sceneClassOpaqueFraction:    0.1749134063720703
-01-attempt.json/profile.minLumaForDeviation: 200            ← confirmed
-01-attempt.json/profile.minPeakLuma:         0.7
-01-attempt.json/profile.morphOpenRadiusPx:   0
-01-attempt.json/synthesis.j:                 null
-01-attempt.json/synthesis.verdict:           "no_winner"
-01-attempt.json/locatorBest.width:           184            ← vs 1246 on 06-15
-01-attempt.json/locatorBest.scale:           0.18           ← vs 1.217 on 06-15
-01-attempt.json/locatorBest.fallbackNcc:     0.266          ← vs 0.718 on 06-15
-10-detections.json/detections.count:         0              ← expected ≥ 4
-10c-blob-pipeline.json/deviation[0].aboveThresholdCount: 0  ← vs 149,483 on 06-15
-10c-blob-pipeline.json/deviation[0].meanNcc:             1  ← degenerate (empty mask)
-10c-blob-pipeline.json/rimMasks.blob_detection[0].rimPixelCount: 0
-10c-blob-pipeline.json/morph[0].fgInputCount:            0
+Bundle:                                          Map_HogansKeepBasement-20260616-115535-692-accepted
+engineVersion:                                   3.0.0.96+447acb150f
+01-attempt.json/outcome:                         "accepted"
+01-attempt.json/rejectReason:                    null
+01-attempt.json/sceneClass:                      "Indoor"
+01-attempt.json/sceneClassOpaqueFraction:        0.1749134063720703
+01-attempt.json/profile.minLumaForDeviation:     200             ← #1172 mechanism, confirmed
+01-attempt.json/profile.minPeakLuma:             0.7
+01-attempt.json/profile.morphOpenRadiusPx:       0
+01-attempt.json/locatorBest.width:               1129
+01-attempt.json/locatorBest.scale:               1.103
+01-attempt.json/locatorBest.fallbackNcc:         0.7065
+01-attempt.json/locatorBest.blurAppliedSigma:    0
+01-attempt.json/locatorBest.gateAccepted:        true
+01-attempt.json/synthesis.j:                     4.343           (shadow rail "reject", gate accepted; disagree)
+01-attempt.json/synthesis.verdict:               "reject"
+01-attempt.json/synthesis.gateVerdict:           "accept"
+01-attempt.json/synthesis.disagreeChange:        "accept_to_reject"
+10-detections.json/detections.count:             5               (3 NPCs + 2 Portals)
+11-recovered-cal.json/residualPixels:            1.346
+11-recovered-cal.json/referenceCount:            5
+11-recovered-cal.json/scale:                     3.4203
+11-recovered-cal.json/rotationRadians:           0.00543
+11-recovered-cal.json/mirrorNorth:               false
+10c-blob-pipeline.json icon-class blobs (R0+R180): 9             ← vs 1 merged Structure pre-#1173
+```
+
+### Inliers
+
+| Label | matchScore | pixelX, pixelY |
+|---|---|---|
+| `landmark_npc:Gribburn` | 0.927 | 373.3, 172.3 |
+| `landmark_npc:Gorvessa` | 0.899 | 392.4, 187.2 |
+| `landmark_npc:Malvol` | 0.909 | 388.6, 237.6 |
+| `landmark_portal:Exit` | 0.888 | 338.1, 605.6 |
+| `landmark_portal:Exit` | 0.839 | 447.4, 617.2 |
+
+### 10:36 rejected capture (for context)
+
+```text
+Bundle:                                          Map_HogansKeepBasement-20260616-103608-261-rejected-solve
+engineVersion:                                   3.0.0.96+447acb150f
+01-attempt.json/outcome:                         "rejected-solve"
+01-attempt.json/rejectReason:                    "no geometrically-consistent fit"
+01-attempt.json/sceneClass:                      "Indoor"
+01-attempt.json/sceneClassOpaqueFraction:        0.1749134063720703
+01-attempt.json/profile.minLumaForDeviation:     200            ← confirmed (same as accepted run)
+01-attempt.json/locatorBest.width:               184            ← locator returned junk patch
+01-attempt.json/locatorBest.scale:               0.18
+01-attempt.json/locatorBest.fallbackNcc:         0.266
+01-attempt.json/locatorBest.blurAppliedSigma:    3              ← vs 0 in accepted run (same engine!)
+10-detections.json/detections.count:             0
+10c-blob-pipeline.json/deviation[0].aboveThresholdCount: 0
+10c-blob-pipeline.json/deviation[0].meanNcc:             1
 10c-blob-pipeline.json/blobs.count:                      0
 ```
 
 ### Interpretation
 
-The pre-deviation luma threshold is correctly wired into the live profile
-(scene class = `Indoor`, opaque fraction in the expected 0.07–0.36 band,
-`profile.minLumaForDeviation = 200`), so the static-bundle measurement
-generalises to the in-game profile selection.
+**#1172 mechanism verified end-to-end on the 11:55 accepted capture.** The
+pre-deviation luma threshold is correctly wired into the live `Indoor`
+profile (`sceneClassOpaqueFraction = 0.175` inside the predicted
+0.07–0.36 band → `profile.minLumaForDeviation = 200`). The
+`10c-blob-pipeline.json` shows **9 Icon-class blobs across R0/R180**, where
+the pre-#1173 pipeline emitted a single merged `Structure` blob in the
+upper-right region — the merge-split that motivated #1172.
 
-The actual failure chain (sharpened after looking at the bundle images):
+The geometric solve produced 5 inliers (3 NPCs + 2 Portals) with
+`residualPixels = 1.346`, consistent with the resolved [#897 finding](https://github.com/moumantai-gg/mithril-calibration/wiki/Legolas-Calibration-Findings)
+(PG map = per-area global isotropic similarity, sub-pixel, no warp).
 
-1. **The locator failed to find the map widget.** `02-screenshot-raw.png`
-   shows the in-game map rendered large and well-lit with pips visible at
-   near-native size — this is NOT a tiny-minimap operational state.
-2. **`locatorBest` returned a junk 184×184 region.** `04-maprect.json`
-   `origin (838, 430) / size 184×184` is identical to `locatorBest`, so the
-   maprect that fed every downstream stage is whatever the locator picked.
-   `06-aligned-screenshot.png` shows that picked region is a uniform dark
-   tile-floor patch with no map content.
-3. **Downstream pipelines starved on the junk region.** The 11×11 windowed
-   NCC against the actual base texture (`05-base-texture-resampled.png`)
-   degenerates to 1 because the chosen region has near-zero variance,
-   making `aboveThresholdCount = 0`, no rim mask, no morph input, no
-   blobs, no detections. The Phase 5 synthesis-J shadow rail likewise
-   produced `verdict: "no_winner"` with `synthesis.j = null`. The
-   geometric solver had nothing to fit and rejected with `"no
-   geometrically-consistent fit"`.
+### Quality notes
 
-Compounded by suspicious locator-stage stats:
+1. Arthur observed **two pink autocal pins offset by a few pixels** in the
+   live overlay. With a 1.346 px mean fit residual across 5 inliers,
+   individual residuals can be ~2–3 px on the lowest-scoring inliers —
+   consistent with the two `landmark_portal:Exit` matches (scores 0.888 and
+   0.839, the lowest of the five). Sub-pixel mean fit + visible offset on
+   the outlier inliers is the expected isotropic-similarity-fit signature.
+2. **synthesis-J shadow rail disagreed.** `synthesis.j = 4.343 < jMin = 8`
+   → shadow `verdict = "reject"`, but gate accepted. `disagreeChange:
+   "accept_to_reject"`. This is the deferred Phase 5 shadow rail recording
+   that the conservative gate would have been stricter — not a regression,
+   just observability for the Phase 5 follow-up.
 
-| Field | 06-15 baseline | 06-16 fresh |
-|---|---|---|
-| `locatorBest.inlierCount` | 0 | 0 |
-| `locatorBest.candidateCount` | 0 | 0 |
-| `locatorBest.fallbackNcc` | 0.718 | **0.266** |
-| `locatorBest.blurAppliedSigma` | 0 | **3** |
-| `locatorBest.scale` | 1.217 | **0.18** |
-| `locatorBest.width` | 1246 | **184** |
+### The 10:36 rejected capture — intermittent locator behaviour
 
-The `blurAppliedSigma` flipping from 0 to 3 between the two runs is a
-non-trivial pre-filter behaviour change and a plausible proximate cause —
-worth grepping the `MapCalibration` project for that field. The 06-16
-attempt finalized 0.94 s after start (06-15 took 5.0 s), consistent with
-the pipeline short-circuiting on an empty mask.
+The first capture of the day rejected with a degenerate output: the
+locator returned a 184×184 junk region (a tile-floor patch — see
+`06-aligned-screenshot.png` next to `05-base-texture-resampled.png`) and
+the downstream pipeline starved. **Both captures came from the same engine
+build** `3.0.0.96+447acb150f`, so this rules out a deterministic
+regression between `3.0.0.93+98fdd54bef` and the post-#1173 build. The
+likely candidate is a state-dependent / input-dependent branch in the
+locator that flipped `blurAppliedSigma` from 0 (accepted run) to 3
+(rejected run) and returned a worse candidate. Tracked separately as
+[#1179](https://github.com/moumantai-gg/mithril/issues/1179) — does not
+block this phase.
 
-The pre-deviation luma threshold from #1172 itself is structurally fine:
-it's only invoked after the locator has chosen a region, and this run the
-locator never gave it a real map to gate. The merge-split demonstration
-owed to #1172 still requires a non-degenerate capture.
+## Status
 
-## Follow-up
+- **#1172 closed** on the 11:55 accepted capture — merge-split confirmed,
+  sub-pixel solve, 5 real-landmark inliers, `profile.minLumaForDeviation =
+  200` selected by the live Indoor profile.
+- **#1155 closed** earlier the same day (2026-06-16) — upstream typeFloor
+  issue resolved by the broader scene-class-profile shipment.
 
-`profile.minLumaForDeviation = 200` is confirmed wired. The merge-split
-demonstration on a real in-game capture is **not** confirmed because the
-06-16 bundle has no blobs to count. Filed as Phase 2.7 follow-up
-[#1179](https://github.com/moumantai-gg/mithril/issues/1179) — #1172 stays
-open behind it; needs a second capture under matched conditions (or a fix
-for the new starvation mode) before #1172 can close.
+## Follow-ups (open, not blocking)
 
-The reject reason does NOT match the
-[`indoor-pre-deviation-luma-threshold.md`](indoor-pre-deviation-luma-threshold.md)
-prediction (`"only 3 inliers"` after gate); the new bottleneck is upstream
-of the gate itself. `10b-blob-template-scores.json` is null in this bundle
-because there were no blob candidates to score.
+- [#1174](https://github.com/moumantai-gg/mithril/issues/1174) — NPCc 06-15 separate detection mechanism
+- [#1175](https://github.com/moumantai-gg/mithril/issues/1175) — #1148 alpha-zero interior gap
+- [#1176](https://github.com/moumantai-gg/mithril/issues/1176) — broader-corpus expansion for `MinLumaForDeviation = 200`
+- [#1179](https://github.com/moumantai-gg/mithril/issues/1179) — intermittent locator `blurAppliedSigma` flip (10:36 capture failure mode)
