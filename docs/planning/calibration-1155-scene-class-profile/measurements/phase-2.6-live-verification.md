@@ -77,9 +77,10 @@ with the pipeline short-circuiting on an empty mask.
 
 `profile.minLumaForDeviation = 200` is confirmed wired. The merge-split
 demonstration on a real in-game capture is **not** confirmed because the
-06-16 bundle has no blobs to count. Filed as Phase 2.7 follow-up on
-#1172 — needs a second capture under matched conditions (or a fix for the
-new starvation mode) before #1172 can close.
+06-16 bundle has no blobs to count. Filed as Phase 2.7 follow-up
+[#1179](https://github.com/moumantai-gg/mithril/issues/1179) — #1172 stays
+open behind it; needs a second capture under matched conditions (or a fix
+for the new starvation mode) before #1172 can close.
 
 The reject reason does NOT match the
 [`indoor-pre-deviation-luma-threshold.md`](indoor-pre-deviation-luma-threshold.md)
