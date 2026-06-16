@@ -78,10 +78,83 @@ namespace Mithril.MapCalibration.Detection;
 /// deviation, alternative connectivity / watershed split, etc.) lifts the
 /// underlying bridge structure.</para>
 /// </param>
+/// <param name="MinLumaForDeviation">
+/// Pre-deviation raw-luma threshold (mithril#1172, Phase 2.6). Applied
+/// INSIDE <see cref="LocalNccDeviation.DeviationMap"/> BEFORE the integral
+/// image is built — screenshot pixels with luma below this byte value are
+/// zeroed on the SCREENSHOT float buffer only (the texture buffer stays
+/// untouched), removing them from the local-NCC computation. Zero disables
+/// the gate (byte-identical pre-#1172 behaviour); positive values gate
+/// the floor pixels OUT of deviation evidence so the NCC window can't
+/// smear icon halos through them.
+///
+/// <para><b>Screenshot-only, not both buffers.</b> See
+/// <see cref="LocalNccDeviation.DeviationMap"/> for the load-bearing
+/// asymmetry: zeroing both `a` and `b` aligns the non-zero spatial
+/// pattern at icon positions, collapses covariance to ~1, and destroys
+/// the addedOnly deviation signal — the threshold sweep showed RIC drops
+/// to 0/6 under that interpretation. Anyone editing the implementation
+/// to match a "symmetric" mental model regresses real-icon recall to
+/// zero.</para>
+///
+/// <para><b>The load-bearing follow-up to Phase 2.5's negative result.</b>
+/// Phase 2.5's morph-open carrier proved (Finding 5 of
+/// <c>indoor-recall-phase-2.5-morph-open.md</c>) that the IconB+C "bridge"
+/// is the overlapping deviation halos of the two pips themselves, not a
+/// thin filament — so no post-deviation morphology can sever it without
+/// destroying the halos. The mechanism this knob enables operates at a
+/// DIFFERENT layer: it changes what the NCC kernel SEES. PG indoor pip
+/// pixels are bright-white (raw luma ≥ 160, peak ~220); the connecting
+/// floor is mid-gray (luma 48–63). The
+/// <c>indoor-pre-deviation-luma-distribution.md</c> measurement confirms
+/// the bimodal separation with a clean valley over luma [80, 144] on both
+/// the 06-13 canonical bundle and the 06-15 live-verification bundle. Once
+/// the floor is gated to zero, the kernel sees flat-on-both → ncc = 1 → no
+/// false "added" signal between the pips.</para>
+///
+/// <para><b>Outdoor: <c>MinLumaForDeviation = 0</c>.</b> Outdoor scenes
+/// have alpha-1 textures where the texture itself carries detail across
+/// most of the frame; gating low-luma pixels would discard legitimate
+/// terrain. Phase 2.6's mechanism is structurally Indoor (high-contrast
+/// icons over dark featureless floor); Outdoor's pre-#1172 byte-identical
+/// path is preserved by the default-zero. The Outdoor regression battery
+/// gates the PR on that invariant.</para>
+///
+/// <para><b>Indoor: <c>MinLumaForDeviation = 200</c>.</b> 200 is the
+/// load-bearing pick from the threshold sweep
+/// (<c>indoor-pre-deviation-luma-threshold.md</c>): at this value, with
+/// production <c>closeRadius = 1</c>, BOTH the 06-13 canonical bundle
+/// and the 06-15 live-verification bundle's merged NPC pair splits into
+/// TWO Icon-class blobs AND Real-Icon-Class recall LIFTS from the
+/// Phase 3 baseline of 3/6 to 5/6 (IconB and IconC reach Icon-class
+/// individually). 200 captures the icon CORE — gating the bright shoulder
+/// where it's narrow enough that morph-close at radius 1 doesn't
+/// reconnect it across the bridge. Lower thresholds (180, 160) split
+/// 06-15 but the 06-13 morph-close bridges the wider gated halos back
+/// together; higher thresholds (220+) over-gate the icon cores
+/// themselves.</para>
+///
+/// <para>The sweet spot 200 is unusually fortunate — it sits where the
+/// histogram's bright-peak tail starts to drop sharply, capturing the icon
+/// crown while excluding the dimmer halo. Real-icon recall stays high
+/// because the icon glyph's peak luma is &gt; 220 across the corpus per the
+/// Phase 3 <c>indoor-peak-luma-threshold.md</c> measurement; only the
+/// shoulder pixels get gated.</para>
+///
+/// <para><b>Composition with <c>BuildDeviationMask</c>.</b> The pre-
+/// deviation luma threshold runs UPSTREAM of
+/// <see cref="DeviationBlobDetector.DetectIconBlobs"/>'s alpha-boundary +
+/// fog mask: it operates inside <see cref="LocalNccDeviation.DeviationMap"/>
+/// (before the deviation map exists), while <c>BuildDeviationMask</c>
+/// gates the foreground buffer produced FROM the deviation map. They
+/// operate on different stages and don't need to compose at a single
+/// layer.</para>
+/// </param>
 public readonly record struct SceneCalibrationProfile(
     SceneClass SceneClass,
     BlobOptions BlobOptions,
-    int MorphOpenRadiusPx = 0)
+    int MorphOpenRadiusPx = 0,
+    byte MinLumaForDeviation = 0)
 {
     /// <summary>
     /// Outdoor profile — today's universal constants verbatim. The
@@ -125,7 +198,8 @@ public readonly record struct SceneCalibrationProfile(
             MinSolidity: 0.30, MaxAspect: 2.7, MinPeak: 0.7)
         {
             MinPeakLuma = 0.7,
-        });
+        },
+        MinLumaForDeviation: 200);
 
     /// <summary>
     /// Returns the canonical profile for <paramref name="sceneClass"/>. The
@@ -143,6 +217,18 @@ public readonly record struct SceneCalibrationProfile(
     /// to Outdoor's tighter gates (the bug the mithril#1168 review flagged).
     /// CS8524 doesn't fire here today; the manual review obligation is the
     /// guard.</para>
+    ///
+    /// <para><b>mithril#1172 widens the blast radius.</b> A new SceneClass
+    /// silently routed to Outdoor now ALSO inherits Outdoor's
+    /// MinLumaForDeviation=0 — the Phase 2.6 pre-deviation luma gate is
+    /// disabled for the new class. If that new class shares the Indoor
+    /// "near-coincident bright pips over featureless dim floor" geometry
+    /// (likely for Cave/Sewer/Dungeon-derivative classes), it will show
+    /// the same NPC-merge symptom #1172 fixed and the obvious-code
+    /// investigation path will be the gate implementation, not the
+    /// dispatcher. When extending <see cref="SceneClass"/>, audit BOTH
+    /// the classifier shape gates AND the pre-deviation luma gate
+    /// expected per class.</para>
     /// </summary>
     public static SceneCalibrationProfile For(SceneClass sceneClass) => sceneClass switch
     {

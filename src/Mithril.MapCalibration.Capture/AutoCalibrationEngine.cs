@@ -310,10 +310,19 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // cache emitting its own LogWarning at line 71-73 of FloorBoundaryMaskCache.
         var driftSceneClass = _boundaryMaskCache?.GetSceneClass(sceneRef.MapAssetKey) ?? SceneClass.Outdoor;
         var driftProfile = SceneCalibrationProfile.For(driftSceneClass);
+        // mithril#1172 review feedback: surface the resolved pre-deviation
+        // luma gate value in the drift-check trace alongside the other
+        // profile knobs. Without this, an Indoor drift-check that starts
+        // mysteriously rejecting (or accepting) under a future Phase 2.7
+        // re-tune of MinLumaForDeviation is invisible to log triage —
+        // exactly the mithril#1107 LiveMapViewService "looks wired but
+        // isn't" anti-pattern CLAUDE.md's instrumentation contract was
+        // written to prevent.
         _logger?.LogTrace(
-            "Drift check {MapAssetKey}: scene class {SceneClass} (cache_wired={CacheWired}); BlobOptions = {BlobOptions}; MorphOpenRadiusPx = {MorphOpenRadiusPx}.",
-            sceneRef.MapAssetKey, driftSceneClass, _boundaryMaskCache is not null, driftProfile.BlobOptions, driftProfile.MorphOpenRadiusPx);
+            "Drift check {MapAssetKey}: scene class {SceneClass} (cache_wired={CacheWired}); BlobOptions = {BlobOptions}; MorphOpenRadiusPx = {MorphOpenRadiusPx}; MinLumaForDeviation = {MinLumaForDeviation}.",
+            sceneRef.MapAssetKey, driftSceneClass, _boundaryMaskCache is not null, driftProfile.BlobOptions, driftProfile.MorphOpenRadiusPx, driftProfile.MinLumaForDeviation);
         span?.SetTag("scene.class", driftSceneClass.ToString());
+        span?.SetTag("profile.min_luma_for_deviation", driftProfile.MinLumaForDeviation);
         // mithril#1155 Phase 3 — same BGRA crop as the main calibration path
         // below; drift checks re-run the detector against an Indoor scene need
         // the peak-luma pre-filter for the same reason auto-cal does. Gated on
@@ -345,6 +354,14 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             // path so a future flip of either profile's value applies on
             // drift checks too.
             MorphOpenRadiusPx = driftProfile.MorphOpenRadiusPx,
+            // mithril#1172 Phase 2.6: source the pre-deviation luma gate
+            // from the resolved scene-class profile. Outdoor ships 0
+            // (byte-identical pre-#1172), Indoor ships 200. Wired
+            // symmetrically with the main calibration path below — drift
+            // checks against an Indoor scene must apply the same upstream
+            // gate so the dev[] the detector sees matches what the main
+            // calibration would have produced.
+            MinLumaForDeviation = driftProfile.MinLumaForDeviation,
         };
 
         // Step 6: run typed icon detector only (no geometric solve).
@@ -832,9 +849,15 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         {
             maskSpan?.SetTag("scene.opaque_fraction", frac);
         }
+        // mithril#1172 review feedback: symmetry with the drift-check trace —
+        // surface the resolved pre-deviation luma gate alongside BlobOptions
+        // so a Phase 2.7 re-tune is visible in log triage without code-
+        // reading. See drift path comment for the LiveMapViewService
+        // anti-pattern this prevents.
+        maskSpan?.SetTag("profile.min_luma_for_deviation", profile.MinLumaForDeviation);
         _logger?.LogTrace(
-            "Auto-calibration {Area}: scene class {SceneClass} (opaqueFraction={OpaqueFraction}); BlobOptions = {BlobOptions}; MorphOpenRadiusPx = {MorphOpenRadiusPx}.",
-            area, sceneClass, attempt.SceneClassOpaqueFraction, profile.BlobOptions, profile.MorphOpenRadiusPx);
+            "Auto-calibration {Area}: scene class {SceneClass} (opaqueFraction={OpaqueFraction}); BlobOptions = {BlobOptions}; MorphOpenRadiusPx = {MorphOpenRadiusPx}; MinLumaForDeviation = {MinLumaForDeviation}.",
+            area, sceneClass, attempt.SceneClassOpaqueFraction, profile.BlobOptions, profile.MorphOpenRadiusPx, profile.MinLumaForDeviation);
 
         // mithril#1155 Phase 3 — crop the raw BGRA to the same MapRect the gray
         // crop covers so the peak-luma pre-filter inside DeviationBlobDetector
@@ -881,6 +904,18 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             // profiles carry 0 — the carrier is wired so a future investigator
             // can flip the Indoor value without re-plumbing.
             MorphOpenRadiusPx = profile.MorphOpenRadiusPx,
+            // mithril#1172 Phase 2.6: pre-deviation raw-luma gate. Outdoor
+            // carries 0 (byte-identical pre-#1172 NCC). Indoor carries 200
+            // (the load-bearing threshold-sweep pick — see
+            // `indoor-pre-deviation-luma-threshold.md`). The gate zeros
+            // sub-threshold floor pixels on the SCREENSHOT float buffer
+            // only (texture buffer untouched) before the integral image,
+            // so the local-NCC window cannot smear icon halos through the
+            // floor. Zeroing both buffers — the issue body's literal
+            // reading — was tested and collapsed real-icon recall to 0/6
+            // (covariance spike at icon spike positions); see
+            // LocalNccDeviation.DeviationMap for the asymmetry rationale.
+            MinLumaForDeviation = profile.MinLumaForDeviation,
         };
 
         _logger?.LogInformation(

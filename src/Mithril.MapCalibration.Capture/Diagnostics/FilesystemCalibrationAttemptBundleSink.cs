@@ -551,6 +551,12 @@ public sealed class FilesystemCalibrationAttemptBundleSink : ICalibrationAttempt
                     // present (no nullable) so jq filters / downstream tooling
                     // can read it unconditionally.
                     MorphOpenRadiusPx = resolved.MorphOpenRadiusPx,
+                    // mithril#1172 Phase 2.6: surface the resolved pre-
+                    // deviation luma byte threshold. Outdoor emits 0,
+                    // Indoor emits 200 in v1. Always-emitted by JSON-shape
+                    // convention so a triager doesn't have to disambiguate
+                    // "0 = absent" from "0 = explicit Outdoor".
+                    MinLumaForDeviation = resolved.MinLumaForDeviation,
                 }
                 : null;
             var dto = new AttemptJson(

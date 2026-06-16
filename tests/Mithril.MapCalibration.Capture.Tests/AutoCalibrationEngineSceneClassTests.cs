@@ -36,7 +36,8 @@ public sealed class AutoCalibrationEngineSceneClassTests
 
         await engine.TryCalibrateCurrentAreaAsync(CancellationToken.None);
 
-        var blobOpts = harness.Solver.LastRequest!.BlobOptions;
+        var request = harness.Solver.LastRequest!;
+        var blobOpts = request.BlobOptions;
         blobOpts.Should().Be(SceneCalibrationProfile.Outdoor.BlobOptions,
             "Outdoor-classed scene must dispatch today's universal constants — the Outdoor regression battery depends on this.");
         // mithril#1155 Phase 3 — Outdoor profile leaves MinPeakLuma null so the
@@ -44,6 +45,14 @@ public sealed class AutoCalibrationEngineSceneClassTests
         // byte-identical-by-construction post-#1155.
         blobOpts.MinPeakLuma.Should().BeNull(
             "Outdoor profile MUST leave MinPeakLuma null so the peak-luma pre-filter is a no-op outdoors — the byte-identical Outdoor invariant depends on this.");
+        // mithril#1172 Phase 2.6 — Outdoor profile MUST thread
+        // MinLumaForDeviation=0 to the solver so the byte-identical pre-#1172
+        // path holds. The Phase 2.6 acceptance test calls DeviationMap directly
+        // with the value; this engine-level pin catches a refactor that drops
+        // the profile→DetectionRequest wiring (the mithril#1107 LiveMapViewService
+        // anti-pattern this suite was written to defend against).
+        request.MinLumaForDeviation.Should().Be(0,
+            "Outdoor must dispatch MinLumaForDeviation=0 — the byte-identical pre-#1172 detector path depends on the gate being inactive outdoors.");
     }
 
     [Fact]
@@ -57,7 +66,8 @@ public sealed class AutoCalibrationEngineSceneClassTests
 
         await engine.TryCalibrateCurrentAreaAsync(CancellationToken.None);
 
-        var blobOpts = harness.Solver.LastRequest!.BlobOptions;
+        var request = harness.Solver.LastRequest!;
+        var blobOpts = request.BlobOptions;
         blobOpts.Should().Be(SceneCalibrationProfile.Indoor.BlobOptions,
             "Indoor-classed scene must dispatch the relaxed T1+T2 gates — the Phase 2 recall lift depends on this.");
         blobOpts.MaxAspect.Should().Be(2.7);
@@ -67,6 +77,14 @@ public sealed class AutoCalibrationEngineSceneClassTests
         // relaxed shape gates. The engine MUST thread this value to the solver.
         blobOpts.MinPeakLuma.Should().Be(0.7,
             "Indoor profile MUST dispatch MinPeakLuma=0.7 — Phase 3 noise suppression depends on the threshold reaching the solver.");
+        // mithril#1172 Phase 2.6 — Indoor profile carries MinLumaForDeviation=200,
+        // the load-bearing threshold-sweep pick that splits both canonical
+        // bundles' merged NPC pair AND lifts RIC from 3/6 to 5/6. A refactor
+        // that drops the profile→DetectionRequest wiring silently disables
+        // Phase 2.6; this pin catches it before the dev-local Hogan's
+        // acceptance test does.
+        request.MinLumaForDeviation.Should().Be(200,
+            "Indoor MUST dispatch MinLumaForDeviation=200 — Phase 2.6 merge fix depends on the gate reaching the detector.");
     }
 
     /// <summary>
@@ -134,9 +152,17 @@ public sealed class AutoCalibrationEngineSceneClassTests
 
         await engine.TryCalibrateCurrentAreaAsync(CancellationToken.None);
 
-        var blobOpts = harness.Solver.LastRequest!.BlobOptions;
+        var request = harness.Solver.LastRequest!;
+        var blobOpts = request.BlobOptions;
         blobOpts.Should().Be(SceneCalibrationProfile.Outdoor.BlobOptions,
             "boundary cache unwired must safe-degrade to Outdoor — pre-#1163 graphs depend on byte-identical pre-existing behaviour.");
+        // mithril#1172 Phase 2.6 — the safe-degrade Outdoor fallback MUST also
+        // dispatch MinLumaForDeviation=0. Pre-#1172 test graphs unaware of the
+        // new field rely on the byte-identical detector path, and a safe-
+        // degrade that accidentally bound a non-zero threshold would silently
+        // gate floor pixels even on outdoor textures.
+        request.MinLumaForDeviation.Should().Be(0,
+            "safe-degrade Outdoor MUST dispatch MinLumaForDeviation=0 — pre-#1172 graphs depend on the gate being inactive.");
     }
 
     private static GrayImage AlphaBuffer(int w, int h, bool opaqueValue)

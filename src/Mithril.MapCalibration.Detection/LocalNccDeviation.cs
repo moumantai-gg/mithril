@@ -39,9 +39,63 @@ public static class LocalNccDeviation
     /// "obscured", not added, and hold no detectable icon, so they're treated as a
     /// match. Distinguishes added-content from obscured-content by which side the
     /// detail is on — the correct fog discriminator (shape isn't).
+    ///
+    /// <para><b>mithril#1172 — <paramref name="minLumaForDeviation"/>.</b> When
+    /// non-zero, screenshot pixels with raw luma BELOW the threshold are zeroed
+    /// on a fresh copy of the screenshot buffer (<paramref name="a"/>) BEFORE
+    /// the integral images are built. The texture buffer (<paramref name="b"/>)
+    /// is left untouched. This severs the overlapping deviation halos of
+    /// near-coincident bright icons whose connecting region is dim (the
+    /// canonical Hogan's NPC-pip merge — Phase 2.5 falsified morph-open and
+    /// the <c>indoor-recall-phase-2.5-morph-open.md</c> Finding 5 identified
+    /// the "bridge" as overlapping deviation halos, not a thin filament).
+    ///
+    /// <para><b>Why screenshot-only, not both buffers.</b> The issue body's
+    /// literal "AND-gate both" reading zeros floor pixels on BOTH sides,
+    /// which aligns the non-zero spatial pattern of <paramref name="a"/> and
+    /// <paramref name="b"/> at icon positions — covariance shoots up and the
+    /// icon's "added content" signal disappears (the
+    /// <c>indoor-pre-deviation-luma-threshold.md</c> measurement showed real-
+    /// icon recall collapsed to 0/6 at every non-zero threshold under that
+    /// implementation). The screenshot-only zeroing preserves the addedOnly
+    /// detection branch: at floor windows, <paramref name="a"/> goes flat
+    /// (<c>va &lt; flatVar</c>) while <paramref name="b"/> stays textured →
+    /// the OBSCURED branch fires (<c>ncc = 1</c> if addedOnly) → no false
+    /// bridge signal; at icon windows, the bright icon spike survives in
+    /// the gated copy against undisturbed texture in <paramref name="b"/>
+    /// → high <c>va</c> with low covariance → high deviation → icon
+    /// detected. The texture-side is the COMPARISON BASELINE — touching it
+    /// destroys the asymmetry the algorithm depends on.</para>
+    ///
+    /// <para>Default 0 disables the gate (byte-identical pre-#1172
+    /// behaviour); the zero-threshold path uses <paramref name="a"/> verbatim
+    /// with no extra pass or allocation. The non-zero path allocates a fresh
+    /// scratch buffer (one <c>float[w*h]</c>; small relative to the five
+    /// <c>double[(w+1)*(h+1)]</c> integral images that follow) and writes
+    /// the gated result into it. Caller-owned input <paramref name="a"/> is
+    /// NEVER mutated regardless of threshold — important for callers that
+    /// cache or reuse float buffers (review feedback: a future per-attempt
+    /// cache would silently corrupt across calls if mutation were allowed).</para>
     /// </summary>
-    public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc, bool addedOnly = false)
+    public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc, bool addedOnly = false, byte minLumaForDeviation = 0)
     {
+        if (minLumaForDeviation > 0)
+        {
+            // mithril#1172 review feedback: write the gated result into a
+            // fresh scratch buffer rather than mutating the caller's a[].
+            // The allocation is one float[w*h] = ~960KB on a 600x400 crop
+            // and is small relative to the five double[(w+1)*(h+1)] integral
+            // images allocated immediately below. Preserves the pre-#1172
+            // contract that DeviationMap's inputs are read-only.
+            float thresh = minLumaForDeviation;
+            var gated = new float[a.Length];
+            for (int i = 0; i < a.Length; i++)
+            {
+                gated[i] = a[i] < thresh ? 0f : a[i];
+            }
+            a = gated;
+        }
+
         int r = win / 2;
         double[] ia = Integral(a, w, h);
         double[] ib = Integral(b, w, h);
