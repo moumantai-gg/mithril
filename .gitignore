@@ -36,3 +36,4 @@ worktrees/
 # Visual-inspection PNG sidecars written by --phase emit-templates alongside the
 # committed icon-templates.{json,bin}; regenerated on demand, never embedded.
 /src/Mithril.MapCalibration/BundledData/*.png
+.superpowers/
