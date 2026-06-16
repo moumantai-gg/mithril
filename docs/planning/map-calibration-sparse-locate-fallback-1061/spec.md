@@ -23,7 +23,7 @@ For outdoor maps with rich texture (Eltibule: 696 Lowe survivors, 645 RANSAC inl
 4. **Parabolic peak refinement** on the L0 ladder's scale axis: `refinedScale = winner + step * 0.5 * (y_{i-1} - y_{i+1}) / (y_{i-1} - 2*y_i + y_{i+1})`, gated on concave-down curvature. Re-match at refinedScale to recover the refined response map.
 5. **Sub-pixel translation refinement** via 2D parabolic on the response map's 3×3 neighborhood around the integer peak (independent X/Y curves, clamped to ±1 px). Translate `(tx, ty)` back to original capture coords by subtracting the pad.
 
-Ladder parameters: `ScaleMin = 0.20`, `ScaleMax = 1.20`, `ScaleStep = 0.02`. Round 4 confirmed PG is empirically isotropic similarity — no anisotropic (`sx, sy`) search.
+Ladder parameters: `ScaleMin = 0.20`, `ScaleMax = 2.00` (bumped from 1.20 by [mithril#1153](https://github.com/moumantai-gg/mithril/pull/1181) after the original ceiling was found to truncate at in-game zooms above 1.20×), `ScaleStep = 0.02`. Round 4 confirmed PG is empirically isotropic similarity — no anisotropic (`sx, sy`) search.
 
 ## 3. Dispatch
 
@@ -122,7 +122,7 @@ All `MapCalibrationLocateOptions` properties — both pre-existing ORB knobs and
 | `FallbackNccFloor` | 0.20 | Sobel (new in this spec) |
 | `FallbackPadPx` | 100 | Sobel (new in this spec) |
 | `ScaleMin` | 0.20 | Sobel ladder bounds (promoted from `const`) |
-| `ScaleMax` | 1.20 | Sobel ladder bounds (promoted from `const`) |
+| `ScaleMax` | 2.00 | Sobel ladder bounds (promoted from `const`; bumped 1.20 → 2.00 by [mithril#1153](https://github.com/moumantai-gg/mithril/pull/1181)) |
 | `ScaleStep` | 0.02 | Sobel ladder bounds (promoted from `const`) |
 | `MinScaledDim` | 20 | Sobel min template dim — full res (promoted from `const`) |
 | `MinScaledDimHalf` | 10 | Sobel min template dim — half-res (promoted from `const`) |

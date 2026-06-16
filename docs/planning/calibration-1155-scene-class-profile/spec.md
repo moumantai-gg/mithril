@@ -267,7 +267,7 @@ Out of scope (file separately, link from #1155 / #1116):
 - **#1155-sibling: Alpha-zero interior mask gap.** `BuildDeviationMask` extends to gate `alpha < ε` regardless of boundary proximity. Small fix; landing path independent of this work. (Confirmed by Phase 0 spike — to be filed as #1148 follow-up.)
 - **#1155-sibling: Better / multi-scale templates** (candidate D). Root-cause fix for indoor type-discrimination failure; high engineering cost; needs a richer fixture corpus. Mode-B v1 sidesteps it via the Phase 2 recall fix + peak-luma pre-filter; future Mode-B v2 could revisit if the carrier still shows typing errors after Phase 4.
 - **#1116 close-out remaining work:** cross-scene landmark leak via `AreaCave1` aggregator (#1116's H1 hypothesis) — once Phase 5 ships Indoor synthesis-J in Enforcement mode (post-Phase 2 / 3), geometric self-consistency addresses it without needing landmarks.json structural changes.
-- **#1153 ScaleMax adaptive ladder** — separate trivial follow-up, not blocked by this.
+- **#1153 ScaleMax ceiling bump** — landed as a static `ScaleMax = 1.20 → 2.00` default-bump + v2→v3 schema migration in [PR #1181](https://github.com/moumantai-gg/mithril/pull/1181), not the adaptive-ladder shape originally sketched here. The adaptive-ladder follow-up (detect L1 winner at ladder edge, extend the search range one direction) and a downstream `ClampToFrame`/`ImageOps.Resize` correctness gap at scale > 1.0 are deferred — see #1181's body for the issue links.
 - **#1151 wiki close-out** — post-Mode-B.
 
 ## 8. Open questions answered in [`plan.md`](plan.md)
