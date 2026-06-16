@@ -25,7 +25,13 @@ internal static class SparseLocateSpike
 {
     private const double LoweRatio = 0.75;
     private const double ScaleMin = 0.30;
-    private const double ScaleMax = 1.20;
+    // mithril#1153: track the production default 2.00 (was 1.20). The spike's
+    // own ladder shape (ScaleStep=0.05, ScaleMin=0.30) is intentionally
+    // different from the production refiner — it's a coarser comparison sweep
+    // — but the ceiling must match production so the spike can actually
+    // reproduce Hogan's Basement-style >1.0× zoom captures it was built to
+    // investigate.
+    private const double ScaleMax = 2.00;
     private const double ScaleStep = 0.05;
 
     public static int Run()

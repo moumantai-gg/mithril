@@ -22,13 +22,13 @@ namespace Mithril.MapCalibration.Detection;
 /// </summary>
 public sealed class MapCalibrationLocateOptions : INotifyPropertyChanged, IVersionedState<MapCalibrationLocateOptions>
 {
-    public const int Version = 2;
+    public const int Version = 3;
     public static int CurrentVersion => Version;
 
     /// <summary>
     /// Persisted schema version. Defaults to <c>1</c> so a v1 JSON file (no
     /// pre-existing schema field) deserialises as v1; fresh in-memory instances
-    /// also start at <c>1</c> — <see cref="Migrate"/> is a no-op for v1→v2 (additive).
+    /// also start at <c>1</c> — <see cref="Migrate"/> back-fills any deltas.
     ///
     /// <para>Future deltas document themselves in this comment block, mirroring
     /// the <c>LegolasSettings</c> convention. The first time a property is
@@ -39,19 +39,50 @@ public sealed class MapCalibrationLocateOptions : INotifyPropertyChanged, IVersi
     /// knobs gating the blur-aware Sobel template at the fallback's
     /// full-resolution stage. Loading a v1 file leaves the new properties at
     /// their constructor defaults (the measured σ-curve).</para>
+    ///
+    /// <para><b>v2 → v3 (mithril#1153):</b> the default <see cref="ScaleMax"/>
+    /// changed from 1.20 to 2.00 after two Hogan's Keep Basement bundles four
+    /// days apart showed the locator's coarse ladder truncating at the in-game
+    /// map's true ~1.5× zoom. A constructor-default-only bump would leave
+    /// every existing install stuck at 1.20 on disk (the prior default), so
+    /// this Migrate body lifts the persisted value from 1.20 → 2.00 ONLY when
+    /// it equals the old default — an explicit user override (e.g. a value
+    /// the user set themselves) is preserved as-is.</para>
     /// </summary>
     public int SchemaVersion { get; set; } = 1;
 
     /// <summary>
-    /// Identity passthrough for v1 → v2 (mithril#1070, additive — new
-    /// RendererBlur* properties initialise from constructor defaults). Caller
-    /// (the versioned-settings loader) writes the bumped
-    /// <see cref="SchemaVersion"/> back after this returns, so Migrate doesn't
-    /// need to stamp it.
+    /// v2 → v3 (mithril#1153): lift the persisted <see cref="ScaleMax"/> from
+    /// the prior default 1.20 to the new default 2.00 when it has not been
+    /// explicitly customised. v1 → v2 (mithril#1070) was additive (new
+    /// RendererBlur* properties initialise from constructor defaults) so the
+    /// v1→v2 path also runs through this v2→v3 branch via the cumulative
+    /// migration shape — a v1 JSON that lacked any scaleMax field would have
+    /// deserialised to the (then-current) 1.20 default, so the same equality
+    /// gate lifts it to 2.00 on this migration.
+    ///
+    /// <para>Caller (the versioned-settings loader at
+    /// <c>AddMithrilVersionedSettings</c>) writes the bumped
+    /// <see cref="SchemaVersion"/> back after this returns, then persists, so
+    /// Migrate does not need to stamp the version itself.</para>
     /// </summary>
     public static MapCalibrationLocateOptions Migrate(MapCalibrationLocateOptions loaded)
     {
         if (loaded.SchemaVersion >= Version) return loaded;
+
+        // v2 → v3: bump the persisted ScaleMax default from 1.20 → 2.00 for
+        // users still carrying the pre-mithril#1153 value on disk. The check
+        // is exact-equal because STJ serialises the constructor default 1.20
+        // as the JSON literal "1.2", which parses back to the same IEEE-754
+        // double — so a user who never touched the setting has
+        // loaded.ScaleMax == 1.20 bit-for-bit. Anyone who explicitly set a
+        // different value (e.g. 1.5 to work around the prior failure mode)
+        // keeps their override.
+        if (loaded._scaleMax == 1.20)
+        {
+            loaded._scaleMax = 2.00;
+        }
+
         return loaded;
     }
 
@@ -70,8 +101,10 @@ public sealed class MapCalibrationLocateOptions : INotifyPropertyChanged, IVersi
     // the locator picking ladder-bottom (scale 0.14 / 0.18) with fallbackNcc
     // just above the 0.20 gate floor because the true scale (~1.5×) sat
     // OUTSIDE the [ScaleMin, ScaleMax] search range. 2.00 covers the measured
-    // 1.495 and headroom for higher in-game map zooms; ~67% more scale-ladder
-    // steps per coarse stage is user-imperceptible at typical attempt rates.
+    // 1.495 and headroom for higher in-game map zooms; ~78% more scale-ladder
+    // steps per coarse stage (51 → 91 rungs at step 0.02) is
+    // user-imperceptible at typical attempt rates. v2→v3 schema migration
+    // in Migrate above lifts the persisted value for existing installs.
     private double _scaleMax = 2.00;
     private double _scaleStep = 0.02;
     private int _minScaledDim = 20;
