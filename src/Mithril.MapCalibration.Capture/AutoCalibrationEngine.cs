@@ -778,6 +778,20 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         using var maskSpan = MithrilActivitySources.MapCalibration.StartActivity("calibration.detect.mask");
         maskSpan?.SetTag("area", area);
 
+        // mithril#1174: SceneClass + profile resolution moved BEFORE the boundary-
+        // mask build so the profile's BoundaryDilationPx override can flow into
+        // GetOrCompute. EnsureClassified is split out of GetOrCompute (no wasted
+        // mask compute), so the GetSceneClass call here only pays the alpha
+        // load + classify cost — the subsequent GetOrCompute reuses the cached
+        // alpha for the actual mask build.
+        var sceneClass = _boundaryMaskCache?.GetSceneClass(assetKey) ?? SceneClass.Outdoor;
+        var profile = SceneCalibrationProfile.For(sceneClass);
+        // Fallback chain: profile override → global options → 8 (the historical
+        // pre-#1174 default). The 8 path fires only when both `_detectorOptions`
+        // and the per-profile override are null, which today only happens in
+        // the test-graph fallback constructor (production always wires options).
+        int boundaryDilationPx = profile.BoundaryDilationPx ?? _detectorOptions?.BoundaryDilationPx ?? 8;
+
         GrayImage? combinedMask = null;
         bool[]? deviationMask = null;
         bool boundaryAvailable = false;
@@ -786,7 +800,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             && _boundaryMaskCache is not null
             && _fogOfWarDetector is not null)
         {
-            var boundaryNative = _boundaryMaskCache.GetOrCompute(assetKey);
+            var boundaryNative = _boundaryMaskCache.GetOrCompute(assetKey, boundaryDilationPx);
             GrayImage? boundaryResampled = boundaryNative is null
                 ? null
                 : ImageOps.Resize(boundaryNative, crop.Width, crop.Height);
@@ -833,18 +847,16 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         maskSpan?.SetTag("mask.fog.available", fogAvailable);
         attempt.DeviationMaskImage = combinedMask;
 
-        // mithril#1163 Phase 1: resolve SceneClass from the same alpha buffer
-        // the boundary cache loaded above (zero extra IO) and pick the matching
-        // SceneCalibrationProfile. Skipped → safe-degrade Outdoor (byte-identical
-        // to pre-#1163). When the boundary cache is wired AND the mask block
-        // ran (DeviationMaskingEnabled=true and boundary cache available), the
-        // GetSceneClass call hits the cache populated by GetOrCompute above.
-        var sceneClass = _boundaryMaskCache?.GetSceneClass(assetKey) ?? SceneClass.Outdoor;
-        var profile = SceneCalibrationProfile.For(sceneClass);
+        // mithril#1174: SceneClass + profile resolved at the top of the mask
+        // block so the dilation override is available before GetOrCompute. Here
+        // we just stash the verdict on the attempt + span tags (which couldn't
+        // happen earlier — `attempt` and `maskSpan` aren't in scope until
+        // after the mask block).
         attempt.SceneClass = sceneClass;
         attempt.SceneClassOpaqueFraction = _boundaryMaskCache?.TryGetOpaqueFraction(assetKey);
         attempt.Profile = profile;
         maskSpan?.SetTag("scene.class", sceneClass.ToString());
+        maskSpan?.SetTag("profile.boundary_dilation_px", boundaryDilationPx);
         if (attempt.SceneClassOpaqueFraction is { } frac)
         {
             maskSpan?.SetTag("scene.opaque_fraction", frac);

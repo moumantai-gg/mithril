@@ -30,6 +30,14 @@ forces a different solution space. Recommendation: **profile-specific
 threshold sweep — but the measurement story for that gate has to land before
 any code does.
 
+> **Update (sweep landed).** The threshold sweep is now committed in
+> [`indoor-recall-1174-boundary-dilation-sweep.md`](indoor-recall-1174-boundary-dilation-sweep.md).
+> Both bundles' transitions intersect at **dilation = 3**. The production
+> profile ships at that value. The sweep also surfaced a bonus IconA lift
+> on the 06-13 canonical bundle (RIC 5/6 → 6/6) that the brainstorm didn't
+> predict — multiple Indoor icons were over-dilation casualties, not just
+> NPCc. The fix is one knob, two bundles' worth of recall lift.
+
 ## Step 2 — NPCc signal characterisation
 
 Bundle: `Map_HogansKeepBasement-20260615-012510-030-rejected-solve-insufficient-inliers/`

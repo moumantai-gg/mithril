@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 
 namespace Mithril.MapCalibration.Detection.Internal;
@@ -39,15 +38,33 @@ internal sealed class FloorBoundaryMaskCache
     private readonly ILogger<FloorBoundaryMaskCache>? _logger;
 
     private readonly object _gate = new();
-    private readonly Dictionary<string, GrayImage?> _cache = new();
+    // mithril#1174: the boundary mask is keyed on (mapAssetKey, dilationPx)
+    // because the dilation now flows from the per-scene-class
+    // SceneCalibrationProfile, not the global options field. In production each
+    // area has ONE SceneClass → ONE dilation, so the composed key collapses to
+    // one mask per area. The composition exists for the tests' dilation-sweep
+    // theory and for any future settings-flip flow.
+    private readonly Dictionary<(string MapAssetKey, int DilationPx), GrayImage?> _cache = new();
 
     // mithril#1163 spec §5.2: cache the alpha-coverage-derived SceneClass
-    // alongside the boundary mask. Same cache key (mapAssetKey); separate dict
-    // so a future GetSceneClass-only call path doesn't pay the full mask
-    // construction cost. The alpha load is the only IO side; once the boundary
-    // mask is computed for a key the alpha is gone (we don't retain it), so
-    // we compute SceneClass at the same time as the mask and stash both.
+    // alongside the boundary mask. Single dictionary keyed on mapAssetKey only —
+    // SceneClass derives from alpha which is per-area, not per-dilation. After
+    // mithril#1174 split the dilation out of the mask-cache call, this cache is
+    // populated by EnsureClassified instead of as a GetOrCompute side effect, so
+    // a caller asking for SceneClass alone (or boundary mask at a non-default
+    // dilation) pays the alpha load exactly once per area.
     private readonly Dictionary<string, SceneClass> _sceneClassCache = new();
+
+    // Sentinel for "alpha load was attempted and failed (or returned a
+    // degenerate buffer) — don't ask the provider again." Separates "we tried"
+    // from "we haven't tried yet" in EnsureClassified.
+    private readonly HashSet<string> _alphaLoadAttempted = new();
+    // Cached alpha so a sweep over multiple dilations on the same area pays the
+    // provider IO once. Null means "we tried and alpha is unavailable or
+    // degenerate"; absence means "haven't tried yet." Cleared when the cache
+    // is reset (today: never; the entire FloorBoundaryMaskCache is a DI
+    // singleton living as long as the host).
+    private readonly Dictionary<string, GrayImage?> _alphaCache = new();
 
     public FloorBoundaryMaskCache(
         IBaseTextureProvider provider,
@@ -60,61 +77,114 @@ internal sealed class FloorBoundaryMaskCache
     }
 
     /// <summary>
-    /// Returns the dilated floor-boundary mask for <paramref name="mapAssetKey"/>,
-    /// or <c>null</c> when alpha is unavailable or degenerate. Cached per key —
-    /// repeat calls for the same key hit the cache (including cached nulls).
-    /// Also computes + caches the <see cref="SceneClass"/> for the same key as
-    /// a side effect (the alpha buffer is in scope; doing both in one pass
-    /// halves the provider IO when both APIs are called).
+    /// Returns the dilated floor-boundary mask for <paramref name="mapAssetKey"/>
+    /// at <paramref name="dilationPx"/>, or <c>null</c> when alpha is unavailable
+    /// or degenerate. Cached per (key, dilationPx) — repeat calls for the same
+    /// pair hit the cache (including cached nulls). The
+    /// <see cref="SceneClass"/> side cache populates on the same call so a
+    /// follow-up <see cref="GetSceneClass"/> sees it without re-loading alpha.
+    ///
+    /// <para><b>mithril#1174.</b> Replaces the pre-#1174 single-arg signature.
+    /// The dilation parameter is now caller-provided — the call site
+    /// (<see cref="Mithril.MapCalibration.Capture.AutoCalibrationEngine"/>)
+    /// resolves the value from
+    /// <see cref="Mithril.MapCalibration.Detection.SceneCalibrationProfile.BoundaryDilationPx"/>
+    /// (per-profile override) or falls back to
+    /// <see cref="MapCalibrationDetectorOptions.BoundaryDilationPx"/> (global
+    /// setting). Cache composition on (key, dilation) means a settings flip
+    /// invalidates one entry per area, not the whole cache.</para>
     /// </summary>
-    public GrayImage? GetOrCompute(string mapAssetKey)
+    public GrayImage? GetOrCompute(string mapAssetKey, int dilationPx)
     {
         lock (_gate)
         {
-            if (_cache.TryGetValue(mapAssetKey, out var cached))
+            var compositeKey = (mapAssetKey, dilationPx);
+            if (_cache.TryGetValue(compositeKey, out var cached))
             {
                 return cached;
             }
 
-            var alpha = _provider.TryGetTextureAlpha(mapAssetKey);
+            var alpha = EnsureClassified(mapAssetKey);
             if (alpha is null)
             {
-                _logger?.LogWarning(
-                    "Floor-boundary mask for {MapAsset} unavailable — provider returned no alpha (safe-degrade).",
-                    mapAssetKey);
-                _cache[mapAssetKey] = null;
-                // mithril#1163: alpha unavailable → can't classify → Outdoor by
-                // fail-soft default. Cache the verdict so a future call returns
-                // the same answer without re-paying the provider call.
-                _sceneClassCache[mapAssetKey] = SceneClass.Outdoor;
+                // EnsureClassified already logged + populated _sceneClassCache.
+                // Cache the null mask result so subsequent calls at any
+                // dilation for this key short-circuit.
+                _cache[compositeKey] = null;
                 return null;
             }
 
-            // mithril#1163 spec §5.2: classify SceneClass on the same alpha
-            // buffer the boundary mask uses (zero extra IO). Stamp into the
-            // cache BEFORE the degenerate-alpha early return — an
-            // all-transparent texture (degenerate Indoor candidate) still has a
-            // well-defined SceneClass label even if its boundary mask is null.
-            var (sceneClass, opaqueFraction) = ClassifySceneClass(alpha, _options.SceneClassOpaqueFractionThreshold);
-            _sceneClassCache[mapAssetKey] = sceneClass;
-            _opaqueFractionCache[mapAssetKey] = opaqueFraction;
-
-            if (IsDegenerate(alpha))
-            {
-                _logger?.LogWarning(
-                    "Floor-boundary mask for {MapAsset} skipped — alpha is degenerate (all-opaque or all-transparent) (safe-degrade); scene class {SceneClass}.",
-                    mapAssetKey, sceneClass);
-                _cache[mapAssetKey] = null;
-                return null;
-            }
-
-            var mask = ComputeBoundaryMask(alpha, _options.BoundaryDilationPx);
+            var mask = ComputeBoundaryMask(alpha, dilationPx);
+            var sceneClass = _sceneClassCache.TryGetValue(mapAssetKey, out var sc) ? sc : SceneClass.Outdoor;
             _logger?.LogInformation(
                 "Computed floor-boundary mask for {MapAsset} ({W}x{H}, dilation {DilationPx}px); scene class {SceneClass}.",
-                mapAssetKey, mask.Width, mask.Height, _options.BoundaryDilationPx, sceneClass);
-            _cache[mapAssetKey] = mask;
+                mapAssetKey, mask.Width, mask.Height, dilationPx, sceneClass);
+            _cache[compositeKey] = mask;
             return mask;
         }
+    }
+
+    /// <summary>
+    /// Loads alpha for <paramref name="mapAssetKey"/> (if not already loaded),
+    /// classifies the <see cref="SceneClass"/>, caches both, and returns the
+    /// alpha buffer for the caller to use (or null when unavailable /
+    /// degenerate). The alpha cache means a subsequent dilation-sweep on the
+    /// same area pays the provider IO exactly once.
+    ///
+    /// <para>Must be called with <c>_gate</c> held — mutates
+    /// <c>_alphaLoadAttempted</c>, <c>_alphaCache</c>, <c>_sceneClassCache</c>,
+    /// and <c>_opaqueFractionCache</c>.</para>
+    /// </summary>
+    private GrayImage? EnsureClassified(string mapAssetKey)
+    {
+        if (_alphaCache.TryGetValue(mapAssetKey, out var cachedAlpha))
+        {
+            return cachedAlpha;
+        }
+        // _alphaLoadAttempted is the "tried it, it failed" sentinel; this
+        // double-check is defensive — _alphaCache containing null is the
+        // primary signal, but tracking the attempt set means a future
+        // provider-throws-on-second-call wouldn't trip us up.
+        if (_alphaLoadAttempted.Contains(mapAssetKey))
+        {
+            return null;
+        }
+        _alphaLoadAttempted.Add(mapAssetKey);
+
+        var alpha = _provider.TryGetTextureAlpha(mapAssetKey);
+        if (alpha is null)
+        {
+            _logger?.LogWarning(
+                "Floor-boundary mask for {MapAsset} unavailable — provider returned no alpha (safe-degrade).",
+                mapAssetKey);
+            _alphaCache[mapAssetKey] = null;
+            // mithril#1163: alpha unavailable → can't classify → Outdoor by
+            // fail-soft default. Cache the verdict so a future call returns
+            // the same answer without re-paying the provider call.
+            _sceneClassCache[mapAssetKey] = SceneClass.Outdoor;
+            return null;
+        }
+
+        // mithril#1163 spec §5.2: classify SceneClass on the alpha buffer
+        // (zero extra IO once cached). Stamp into the cache BEFORE the
+        // degenerate-alpha early return — an all-transparent texture
+        // (degenerate Indoor candidate) still has a well-defined SceneClass
+        // label even if its boundary mask is null.
+        var (sceneClass, opaqueFraction) = ClassifySceneClass(alpha, _options.SceneClassOpaqueFractionThreshold);
+        _sceneClassCache[mapAssetKey] = sceneClass;
+        _opaqueFractionCache[mapAssetKey] = opaqueFraction;
+
+        if (IsDegenerate(alpha))
+        {
+            _logger?.LogWarning(
+                "Floor-boundary mask for {MapAsset} skipped — alpha is degenerate (all-opaque or all-transparent) (safe-degrade); scene class {SceneClass}.",
+                mapAssetKey, sceneClass);
+            _alphaCache[mapAssetKey] = null;
+            return null;
+        }
+
+        _alphaCache[mapAssetKey] = alpha;
+        return alpha;
     }
 
     /// <summary>
@@ -134,19 +204,18 @@ internal sealed class FloorBoundaryMaskCache
             {
                 return cached;
             }
-        }
 
-        // GetOrCompute populates _sceneClassCache as a side effect (the
-        // boundary mask + scene class share the same alpha buffer; doing both
-        // in one pass keeps the cache in sync). The boundary mask result is
-        // discarded — the caller of GetSceneClass doesn't need it.
-        _ = GetOrCompute(mapAssetKey);
-
-        lock (_gate)
-        {
-            // After GetOrCompute, _sceneClassCache MUST have the key (every
-            // code path through GetOrCompute writes it). Defensive default to
-            // Outdoor if a future refactor breaks that invariant.
+            // mithril#1174: EnsureClassified replaces the pre-#1174
+            // GetOrCompute-as-side-effect pattern. The alpha load + scene-
+            // class derivation are decoupled from boundary-mask construction
+            // so GetSceneClass doesn't trigger a wasted mask compute (and a
+            // subsequent dilation-sweep on the same area doesn't re-load
+            // alpha for each sample).
+            _ = EnsureClassified(mapAssetKey);
+            // After EnsureClassified, _sceneClassCache MUST have the key
+            // (every code path through it writes _sceneClassCache).
+            // Defensive default to Outdoor if a future refactor breaks that
+            // invariant.
             return _sceneClassCache.TryGetValue(mapAssetKey, out var classified) ? classified : SceneClass.Outdoor;
         }
     }

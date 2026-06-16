@@ -98,8 +98,8 @@ public sealed class SceneClassClassifierTests
 
         cache.GetSceneClass("Map_Cached").Should().Be(SceneClass.Indoor);
         cache.GetSceneClass("Map_Cached").Should().Be(SceneClass.Indoor);
-        _ = cache.GetOrCompute("Map_Cached");
-        _ = cache.GetOrCompute("Map_Cached");
+        _ = cache.GetOrCompute("Map_Cached", dilationPx: 8);
+        _ = cache.GetOrCompute("Map_Cached", dilationPx: 8);
 
         provider.AlphaCallCount("Map_Cached").Should().Be(1, "alpha should be loaded once for both APIs");
     }
@@ -118,7 +118,7 @@ public sealed class SceneClassClassifierTests
         cache.TryGetOpaqueFraction("Map_AllTransparent").Should().Be(0.0);
         // Boundary mask path returns null on degenerate alpha (no boundary to
         // dilate) — the scene-class label is independent of that.
-        cache.GetOrCompute("Map_AllTransparent").Should().BeNull();
+        cache.GetOrCompute("Map_AllTransparent", dilationPx: 8).Should().BeNull();
     }
 
     private static GrayImage MakeUniformAlpha(int w, int h, byte value)

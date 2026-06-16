@@ -78,6 +78,38 @@ namespace Mithril.MapCalibration.Detection;
 /// deviation, alternative connectivity / watershed split, etc.) lifts the
 /// underlying bridge structure.</para>
 /// </param>
+/// <param name="BoundaryDilationPx">
+/// Per-scene-class override of <see cref="MapCalibrationDetectorOptions.BoundaryDilationPx"/>
+/// — the dilation radius applied to the alpha-derived floor-boundary edge in
+/// <see cref="Mithril.MapCalibration.Detection.Internal.FloorBoundaryMaskCache"/>.
+/// <c>null</c> leaves the global setting in charge (pre-#1174 behaviour);
+/// a non-null value wins over the global at the call site (<see cref="Mithril.MapCalibration.Capture.AutoCalibrationEngine"/>).
+///
+/// <para><b>mithril#1174.</b> The 06-15 Hogan's Keep Basement bundle showed
+/// the third NPC pip ("NPCc") wiped by the floor-boundary mask: the pip
+/// sits within 8 px of an alpha-corridor edge and the production
+/// <c>BoundaryDilationPx = 8</c> band covers its entire 5×5 core. Indoor
+/// scenes have narrow corridors where 8 px is the corridor half-width
+/// itself; shrinking the band per-profile rescues icons within the corridor
+/// without expanding the band Outdoor (where opaqueFraction ≈ 1 makes the
+/// band a no-op anyway). See
+/// <c>indoor-recall-1174-npcc-brainstorm.md</c> Step 2 for the empirical
+/// pixel-level finding and
+/// <c>indoor-recall-1174-boundary-dilation-sweep.md</c> for the
+/// threshold-sweep measurement that justifies the Indoor value.</para>
+///
+/// <para><b>Composition with the global setting.</b> When this property is
+/// non-null, the call site uses it verbatim and ignores
+/// <see cref="MapCalibrationDetectorOptions.BoundaryDilationPx"/>. When this
+/// property is null (Outdoor's default), the global setting wins — preserving
+/// the user-flippable surface for Outdoor scenes that still want the
+/// original 8 px (or a developer's manual override). The
+/// <see cref="Mithril.MapCalibration.Detection.Internal.FloorBoundaryMaskCache"/>
+/// cache is keyed on (mapAssetKey, dilationPx) so the same area can hold
+/// distinct masks if the resolved dilation changes at runtime (e.g., a
+/// settings flip in tests). In production each area has one SceneClass →
+/// one dilation, so the composed key collapses to one entry per area.</para>
+/// </param>
 /// <param name="MinLumaForDeviation">
 /// Pre-deviation raw-luma threshold (mithril#1172, Phase 2.6). Applied
 /// INSIDE <see cref="LocalNccDeviation.DeviationMap"/> BEFORE the integral
@@ -154,7 +186,8 @@ public readonly record struct SceneCalibrationProfile(
     SceneClass SceneClass,
     BlobOptions BlobOptions,
     int MorphOpenRadiusPx = 0,
-    byte MinLumaForDeviation = 0)
+    byte MinLumaForDeviation = 0,
+    int? BoundaryDilationPx = null)
 {
     /// <summary>
     /// Outdoor profile — today's universal constants verbatim. The
@@ -199,7 +232,8 @@ public readonly record struct SceneCalibrationProfile(
         {
             MinPeakLuma = 0.7,
         },
-        MinLumaForDeviation: 200);
+        MinLumaForDeviation: 200,
+        BoundaryDilationPx: 3);
 
     /// <summary>
     /// Returns the canonical profile for <paramref name="sceneClass"/>. The
