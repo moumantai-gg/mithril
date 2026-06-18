@@ -30,6 +30,26 @@ forces a different solution space. Recommendation: **profile-specific
 threshold sweep — but the measurement story for that gate has to land before
 any code does.
 
+> **Update (sweep landed).** The threshold sweep is now committed in
+> [`indoor-recall-1174-boundary-dilation-sweep.md`](indoor-recall-1174-boundary-dilation-sweep.md).
+> Production profile ships at **dilation = 3** — but the load-bearing
+> justification is the **06-13 IconA recovery (RIC 5/6 → 6/6)**, NOT the
+> NPCc-lower lift.
+>
+> **NPCc claim falsified by the code review.** The mithril#1183 code review's
+> finding S6 caught that the original sweep's "NPCc-lower detected at
+> dilation=3" was a bounding-box artifact: the upper pip's blob bbox
+> covers (475, 297) but its foreground pixels don't. When the assertion is
+> rewritten to check actual pixel membership (the load-bearing property —
+> RANSAC consumes foreground pixels, not bboxes), NPCc-lower is NOT
+> detected at any dilation in {2, 3, 4, 5, 6, 8}. The C3 mechanism does
+> rescue some indoor icons (IconA on 06-13), but NPCc's specific failure
+> mode is structurally different and remains open. A separate follow-up
+> (likely revisiting C4 — bright-luma exception inside the boundary band)
+> is owed. The brainstorm's empirical Step 2 — that NPCc's signal is
+> wiped by the alpha-corridor band — IS still correct; the wrong inference
+> was that narrowing the band would lift it.
+
 ## Step 2 — NPCc signal characterisation
 
 Bundle: `Map_HogansKeepBasement-20260615-012510-030-rejected-solve-insufficient-inliers/`

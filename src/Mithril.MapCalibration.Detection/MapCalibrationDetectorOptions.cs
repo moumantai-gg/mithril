@@ -80,9 +80,20 @@ public sealed class MapCalibrationDetectorOptions : INotifyPropertyChanged, IVer
     /// Radius (px) of the dilation kernel applied to the deviation mask before
     /// matching, so detected difference regions absorb sub-pixel boundary
     /// noise from the renderer/screenshot pipeline (spec §D5). Default
-    /// <c>8</c> — the spec's shipping default; the Task 0-deferred measurement
-    /// experiment will publish a revised curve if real captures argue for a
-    /// different value.
+    /// <c>8</c>.
+    ///
+    /// <para><b>mithril#1174 / #1183 review C5:</b> this global is now the
+    /// FALLBACK; the per-scene-class
+    /// <see cref="SceneCalibrationProfile.BoundaryDilationPx"/> override wins
+    /// when non-null. Indoor sets the override to <c>3</c> (sized to corridor
+    /// width — the broader band wipes legitimate corridor icons). Outdoor
+    /// leaves the override null so this global drives the dilation; for
+    /// Outdoor scenes <c>opaqueFraction ≈ 1</c> makes the alpha-boundary band
+    /// degenerate anyway (no edge to dilate), so changes to this global have
+    /// essentially no observable effect in production unless a future scene
+    /// class lands with both an alpha boundary AND a null profile override.
+    /// Setting this global without also updating the relevant profile field
+    /// will NOT affect Indoor scenes.</para>
     /// </summary>
     public int BoundaryDilationPx
     {

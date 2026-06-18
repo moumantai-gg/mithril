@@ -21,11 +21,14 @@ public sealed class FloorBoundaryMaskCacheTests
     {
         var provider = new FakeBaseTextureProvider();
         provider.SetAlpha("Map_A", MakeRectAlpha(10, 10, 2, 2, 6, 6));
-        var opts = new MapCalibrationDetectorOptions { BoundaryDilationPx = 2 };
+        // mithril#1174: dilation flows through GetOrCompute, not the options
+        // field. Options still passes for the SceneClassOpaqueFractionThreshold
+        // the cache reads during classification.
+        var opts = new MapCalibrationDetectorOptions();
         var cache = new FloorBoundaryMaskCache(provider, opts);
 
-        var first = cache.GetOrCompute("Map_A");
-        var second = cache.GetOrCompute("Map_A");
+        var first = cache.GetOrCompute("Map_A", dilationPx: 2);
+        var second = cache.GetOrCompute("Map_A", dilationPx: 2);
 
         first.Should().NotBeNull();
         second.Should().BeSameAs(first);                          // cache hit
@@ -36,16 +39,16 @@ public sealed class FloorBoundaryMaskCacheTests
     public void GetOrCompute_marks_band_around_alpha_edge_at_configured_dilation()
     {
         // 20×20 alpha with 10×10 opaque square at (5,5)-(14,14). Edge runs along
-        // the square's outline. With BoundaryDilationPx=2, the mask should be a
+        // the square's outline. With dilationPx=2, the mask should be a
         // 2-px-thick band straddling the outline (both inside and outside the
         // square).
         var alpha = MakeRectAlpha(20, 20, 5, 5, 14, 14);
         var provider = new FakeBaseTextureProvider();
         provider.SetAlpha("Map_X", alpha);
-        var opts = new MapCalibrationDetectorOptions { BoundaryDilationPx = 2 };
+        var opts = new MapCalibrationDetectorOptions();
         var cache = new FloorBoundaryMaskCache(provider, opts);
 
-        var mask = cache.GetOrCompute("Map_X")!;
+        var mask = cache.GetOrCompute("Map_X", dilationPx: 2)!;
         mask.Should().NotBeNull();
         mask.Width.Should().Be(20);
         mask.Height.Should().Be(20);
@@ -72,7 +75,7 @@ public sealed class FloorBoundaryMaskCacheTests
         var opts = new MapCalibrationDetectorOptions();
         var cache = new FloorBoundaryMaskCache(provider, opts);
 
-        cache.GetOrCompute("Map_Missing").Should().BeNull();
+        cache.GetOrCompute("Map_Missing", dilationPx: 8).Should().BeNull();
     }
 
     [Fact]
@@ -84,7 +87,7 @@ public sealed class FloorBoundaryMaskCacheTests
         var opts = new MapCalibrationDetectorOptions();
         var cache = new FloorBoundaryMaskCache(provider, opts);
 
-        cache.GetOrCompute("Map_AllOpaque").Should().BeNull();
+        cache.GetOrCompute("Map_AllOpaque", dilationPx: 8).Should().BeNull();
     }
 
     [Fact]
@@ -96,7 +99,7 @@ public sealed class FloorBoundaryMaskCacheTests
         var opts = new MapCalibrationDetectorOptions();
         var cache = new FloorBoundaryMaskCache(provider, opts);
 
-        cache.GetOrCompute("Map_AllTransparent").Should().BeNull();
+        cache.GetOrCompute("Map_AllTransparent", dilationPx: 8).Should().BeNull();
     }
 
     private static GrayImage MakeRectAlpha(int w, int h, int x0, int y0, int x1, int y1)
