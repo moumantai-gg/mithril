@@ -89,9 +89,15 @@ public sealed class SceneClassClassifierTests
     [Fact]
     public void Result_is_cached_across_calls()
     {
-        // Hot-path invariant: calling GetSceneClass twice + GetOrCompute twice
-        // should hit the provider once. Same caching shape as the existing
-        // boundary-mask path.
+        // Caching invariant: repeated calls to the SAME public API on the same
+        // key hit the provider exactly once. mithril#1183 review C3 dropped the
+        // cross-API alpha cache (the prior pre-review state held the alpha
+        // buffer ~1.5 MB/area indefinitely as a DI singleton — N areas → N
+        // alpha buffers held forever). The trade is: GetSceneClass + GetOrCompute
+        // on the same key now each pay one provider call. Subsequent calls of
+        // each API short-circuit through the per-API cache (_sceneClassCache,
+        // _cache). Net: 2 provider calls per area first-touch instead of 1, with
+        // no resident alpha memory.
         var provider = new FakeAlphaProvider();
         provider.SetAlpha("Map_Cached", MakeAlphaWithOpaqueFraction(width: 32, height: 32, opaqueFraction: 0.50));
         var cache = new FloorBoundaryMaskCache(provider, new MapCalibrationDetectorOptions());
@@ -101,7 +107,8 @@ public sealed class SceneClassClassifierTests
         _ = cache.GetOrCompute("Map_Cached", dilationPx: 8);
         _ = cache.GetOrCompute("Map_Cached", dilationPx: 8);
 
-        provider.AlphaCallCount("Map_Cached").Should().Be(1, "alpha should be loaded once for both APIs");
+        provider.AlphaCallCount("Map_Cached").Should().Be(2,
+            "GetSceneClass + GetOrCompute each pay one alpha load (cross-API alpha sharing was dropped in #1183 review C3 to avoid the per-area memory growth); repeat calls of each API short-circuit through their per-API caches.");
     }
 
     [Fact]

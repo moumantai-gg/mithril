@@ -9,18 +9,20 @@ become detected without breaking the canonical bundle's RIC=5/6?
 
 ## TL;DR — `BoundaryDilationPx = 3` ships on Indoor (Outdoor unchanged)
 
-Both bundles transition at exactly the same value. Production-picked Indoor
-ships at 3 (locked by both transitions). The dilation also unlocks IconA on
-06-13 — a bonus over the brainstorm's stated lift target.
+Production Indoor ships at **dilation = 3**, justified by the **06-13
+IconA recovery (RIC 5/6 → 6/6)**. The NPCc lift originally reported here
+was **falsified by the mithril#1183 code review** — see the post-mortem
+section at the bottom of this doc. The 06-13 IconA finding is unchanged
+and remains the load-bearing reason to ship Indoor=3.
 
-| Dilation | 06-15 NPCs reaching Icon (of 4) | 06-13 RIC (of 6) | Verdict |
-|---:|---:|---:|---|
-| 2 | 4 | 6 | Same as 3 (no marginal lift; admits no more boundary chrome) |
-| **3** | **4 ✓** | **6 ✓** | **Both transitions caught — load-bearing pick** |
-| 4 | 3 | 6 | IconA lifted, NPCc not — partial |
-| 5 | 3 | 5 | No lift |
-| 6 | 3 | 5 | No lift |
-| 8 (pre-#1174) | 3 | 5 | Baseline |
+| Dilation | 06-13 RIC (pixel-hit, of 6) | 06-15 NPCc-lower (pixel-hit) | Verdict |
+|---:|---:|---|---|
+| 2 | 6 | NO | Same as 3 for RIC; no NPCc lift |
+| **3** | **6 ✓** | **NO** | **IconA recovered → production pick** |
+| 4 | 6 | NO | IconA recovered, no NPCc |
+| 5 | 5 | NO | IconA at threshold; no NPCc |
+| 6 | 5 | NO | No lift |
+| 8 (pre-#1174) | 5 | NO | Baseline |
 
 Outdoor leaves `BoundaryDilationPx = null` on the profile → falls back to
 `MapCalibrationDetectorOptions.BoundaryDilationPx` (global default 8) →
@@ -162,6 +164,49 @@ dotnet test tests/Mithril.MapCalibration.Tests `
 - `AutoCalibrationEngine` reorders: resolve `SceneClass + profile` BEFORE
   the mask block, then pass `profile.BoundaryDilationPx ?? options ?? 8`
   to `GetOrCompute`.
+
+## Post-mortem — review S6 falsified the original NPCc claim
+
+The pre-review version of this doc reported "06-15 NPCs reaching Icon class: 4/4
+at dilation=3" as the load-bearing benefit. The mithril#1183 code review's
+S6 finding caught that the assertion used bounding-box containment —
+`x ∈ [MinX, MinX+W)` — not foreground-pixel membership. When `NpcsInIconBlobs`
+was rewritten to check `b.Pixels.Contains(y * w + x)` (the load-bearing test
+for "this NPC pip's pixels are in an Icon-class blob" — RANSAC consumes
+foreground pixel positions as correspondences), the result was:
+
+- 06-15 NPCa, NPCb, NPCc-upper: **pixel-hit at all dilations** (3/3 always).
+- 06-15 NPCc-lower at (475, 297): **NOT pixel-hit at any dilation in {2, 3, 4, 5, 6, 8}.**
+
+The upper-pip blob at dilation=3 has bbox `(466, 279) + 16×25`, which covers
+(475, 297) at y=297 (within `279..303`). But its foreground pixels are the
+upper pip's connected component, which terminates at y≈289 — the gap-then-
+lower-pip pattern observed in the brainstorm's deviation map inspection
+splits into two separate components in the foreground buffer. The narrower
+boundary band reshapes the upper-pip blob (taller bbox, fewer central
+pixels) without ever connecting it to the lower pip's pixels.
+
+**What this means for #1174.** The IconA recovery on 06-13 IS real (every
+canonical icon pixel-hits at dilation=3). Production Indoor=3 ships on that
+benefit alone. The NPCc-lower failure mode is structurally different from
+what the brainstorm proposed — it's not boundary-mask suppression of the
+icon, it's that the icon's foreground COMPONENT terminates before reaching
+the pixel. Likely candidates for the real NPCc mechanism:
+
+1. **C4 from the brainstorm (bright-luma rescue inside the boundary band).**
+   Direct test: at dilation=8 with a bright-luma override that admits
+   raw-luma ≥180 pixels through the boundary subtract, does the lower-pip
+   connected component reach (475, 297)?
+2. **A smaller `LocalNccDeviation.win` value at the lower pip's altitude.**
+   The brainstorm ruled this out under the original (wrong) mechanism;
+   re-evaluate against the corrected one.
+3. **The pre-deviation luma gate (#1172) interacting unexpectedly with the
+   lower pip's halo.** Worth checking whether `MinLumaForDeviation = 200`
+   over-gates the lower pip's halo specifically.
+
+**Action.** New follow-up issue owed for the real NPCc mechanism. The Indoor
+profile change still ships (justified by IconA), and the live-verification
+plan is unchanged — the 06-13 RIC=6/6 win is the headline.
 
 ## Open follow-ups (not blocking #1174)
 

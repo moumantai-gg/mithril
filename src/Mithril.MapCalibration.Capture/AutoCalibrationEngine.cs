@@ -866,10 +866,14 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // so a Phase 2.7 re-tune is visible in log triage without code-
         // reading. See drift path comment for the LiveMapViewService
         // anti-pattern this prevents.
+        // mithril#1183 review C14: same reasoning for BoundaryDilationPx —
+        // the resolved value is on the span tag (line 859) but a log-only
+        // triager (no perf trace attached) couldn't see it without reading
+        // code. Inline it here for symmetry with MinLumaForDeviation.
         maskSpan?.SetTag("profile.min_luma_for_deviation", profile.MinLumaForDeviation);
         _logger?.LogTrace(
-            "Auto-calibration {Area}: scene class {SceneClass} (opaqueFraction={OpaqueFraction}); BlobOptions = {BlobOptions}; MorphOpenRadiusPx = {MorphOpenRadiusPx}; MinLumaForDeviation = {MinLumaForDeviation}.",
-            area, sceneClass, attempt.SceneClassOpaqueFraction, profile.BlobOptions, profile.MorphOpenRadiusPx, profile.MinLumaForDeviation);
+            "Auto-calibration {Area}: scene class {SceneClass} (opaqueFraction={OpaqueFraction}); BlobOptions = {BlobOptions}; MorphOpenRadiusPx = {MorphOpenRadiusPx}; MinLumaForDeviation = {MinLumaForDeviation}; BoundaryDilationPx = {BoundaryDilationPx}.",
+            area, sceneClass, attempt.SceneClassOpaqueFraction, profile.BlobOptions, profile.MorphOpenRadiusPx, profile.MinLumaForDeviation, boundaryDilationPx);
 
         // mithril#1155 Phase 3 — crop the raw BGRA to the same MapRect the gray
         // crop covers so the peak-luma pre-filter inside DeviationBlobDetector

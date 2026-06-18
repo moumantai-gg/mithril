@@ -367,10 +367,14 @@ The span emits on every attempt, including the "no mask" paths (`DeviationMaskin
 | `mask.boundary.available` | bool | `true` when `FloorBoundaryMaskCache.GetOrCompute` returned a non-null mask for the texture's alpha (and the resample to the crop's dims succeeded). `false` on the alpha-unavailable / degenerate-alpha paths and when masking is off. Always emitted. |
 | `mask.fog.available` | bool | `true` when fog detection was enabled AND the per-attempt `FogOfWarDetector.Detect` ran. `false` when `FogOfWarDetectionEnabled = false` or when the master `DeviationMaskingEnabled` flag is off. Always emitted. |
 | `mask.coverage` | double | Fraction of pixels in the combined mask that are non-zero (i.e. "masked-out" pixels the detector will skip), in `[0.0, 1.0]`. Emitted only when at least one upstream contributed and the combined mask was built; absent on the "no mask" paths so consumers can distinguish "mask built but covers nothing" (0.0) from "no mask built" (absent). |
+| `scene.class` | string | The `SceneClass` resolved from the texture's alpha opaque-fraction (e.g. `"Indoor"`, `"Outdoor"`). Safe. Always emitted — including on the "no mask" paths, where it carries the fail-soft `Outdoor` default. Added mithril#1174. |
+| `scene.opaque_fraction` | double | Fraction of alpha pixels ≥ 128 / total (e.g. `0.34` for Indoor Hogan's). Diagnostic; surfaced only when `FloorBoundaryMaskCache` was able to derive it (alpha present). Absent when alpha was unavailable. Added mithril#1174. |
+| `profile.boundary_dilation_px` | int | Resolved per-attempt floor-boundary dilation radius — `SceneCalibrationProfile.BoundaryDilationPx` if non-null, otherwise `MapCalibrationDetectorOptions.BoundaryDilationPx`. Always emitted. Indoor production is `3`; Outdoor uses the global default (`8`). Added mithril#1174. |
+| `profile.min_luma_for_deviation` | int | Resolved per-attempt pre-deviation luma gate from the active profile (mithril#1172). Always emitted. Indoor production is `200`; Outdoor `0` (gate disabled). |
 
 ```powershell
 # Mask-source contribution rate per area across a session
-Get-Content $Path | jq -c 'select(.Kind=="scope" and .Name=="calibration.detect.mask") | {area:.Tags.area, boundary:.Tags."mask.boundary.available", fog:.Tags."mask.fog.available", coverage:.Tags."mask.coverage"}'
+Get-Content $Path | jq -c 'select(.Kind=="scope" and .Name=="calibration.detect.mask") | {area:.Tags.area, boundary:.Tags."mask.boundary.available", fog:.Tags."mask.fog.available", coverage:.Tags."mask.coverage", sceneClass:.Tags."scene.class", boundaryDilationPx:.Tags."profile.boundary_dilation_px"}'
 ```
 
 ### `calibration.drift_check` (mithril#1046)

@@ -19,11 +19,13 @@ namespace Mithril.MapCalibration.Tests.Detection;
 /// whether it works and at what value.
 ///
 /// <para><b>Sweep methodology.</b> The bundle saves
-/// <c>07a-deviation-mask.png</c> at the production dilation of 8. For a sweep
-/// value <c>r ≤ 8</c>, the dilation=r mask is recovered by eroding the saved
-/// mask by <c>(8 - r)</c> pixels using a square structuring element. The
-/// identity <c>erode(dilate(B, 8), 8-r) = dilate(B, r)</c> holds when B is a
-/// thin (1-px) boundary curve — which it is, by construction in
+/// <c>07a-deviation-mask.png</c> at the production dilation of
+/// <see cref="SavedMaskDilationPx"/>. For a sweep value
+/// <c>r ≤ SavedMaskDilationPx</c>, the dilation=r mask is recovered by eroding
+/// the saved mask by <c>(SavedMaskDilationPx - r)</c> pixels using a square
+/// structuring element. The identity
+/// <c>erode(dilate(B, k), k-r) = dilate(B, r)</c> holds when B is a thin (1-px)
+/// boundary curve — which it is, by construction in
 /// <see cref="Mithril.MapCalibration.Detection.Internal.FloorBoundaryMaskCache"/>.
 /// </para>
 ///
@@ -54,6 +56,17 @@ public sealed class IndoorBoundaryDilationSweepTests
     private const string Live0615Name =
         "Map_HogansKeepBasement-20260615-012510-030-rejected-solve-insufficient-inliers";
 
+    /// <summary>
+    /// Dilation radius the production pipeline used when the saved
+    /// <c>07a-deviation-mask.png</c> was generated. Capturing this as a named
+    /// constant rather than the literal 8 makes the methodology load-bearing:
+    /// if the canonical bundle is ever re-captured AFTER #1174 ships (when
+    /// production Indoor dilation is 3), this constant must drop to 3 too OR
+    /// the bundle must be re-captured under an Outdoor profile path that
+    /// still uses 8. mithril#1183 review S1.
+    /// </summary>
+    private const int SavedMaskDilationPx = 8;
+
     /// <summary>06-13 canonical icon centroids — copied from <see cref="IndoorRecallMergeTuningTests"/>.</summary>
     private static readonly (string Label, int X, int Y)[] Icons0613 =
     [
@@ -81,8 +94,39 @@ public sealed class IndoorBoundaryDilationSweepTests
         ("c-lower: at (475,297)", 475, 297),  // mithril#1174 lift target
     ];
 
-    /// <summary>Sweep values. 8 is the historical default; 2-6 are the candidates.</summary>
-    private static readonly int[] DilationSweep = [2, 3, 4, 5, 6, 8];
+    /// <summary>
+    /// Sweep values: 8 is the historical default; 2-6 are the candidates;
+    /// <see cref="SceneCalibrationProfile.Indoor.BoundaryDilationPx"/> is
+    /// ALWAYS included (even if it moves outside the static range) so the
+    /// production-value assertion below can never silently miss its row —
+    /// mithril#1183 review C8.
+    /// </summary>
+    private static IEnumerable<int> DilationSweep
+    {
+        get
+        {
+            int[] candidates = [2, 3, 4, 5, 6, 8];
+            int production = SceneCalibrationProfile.Indoor.BoundaryDilationPx ?? SavedMaskDilationPx;
+            return production <= SavedMaskDilationPx
+                ? candidates.Append(production).Distinct().OrderBy(r => r)
+                : candidates.OrderBy(r => r);
+        }
+    }
+
+    /// <summary>
+    /// Pin the production-picked Indoor dilation here so the sweep's
+    /// pass-the-production-value assertion has an absolute reference point.
+    /// If this fails after a deliberate tuning, update both this constant
+    /// AND the <see cref="SceneCalibrationProfile.Indoor"/> field together
+    /// (and re-run the sweep against the canonical bundles to confirm the
+    /// new pick still lifts NPCc and holds RIC).
+    /// </summary>
+    [Fact]
+    public void Indoor_profile_pins_BoundaryDilationPx_at_3()
+    {
+        SceneCalibrationProfile.Indoor.BoundaryDilationPx.Should().Be(3,
+            "mithril#1174 sweep determined 3 is the load-bearing Indoor value; a deliberate change requires re-running the sweep + updating this pin together.");
+    }
 
     private static string? BundleDir(string name)
     {
@@ -122,21 +166,35 @@ public sealed class IndoorBoundaryDilationSweepTests
             return;
         }
 
+        // mithril#1183 review C11: guard against silently skipping erosion if a
+        // future sweep value ever exceeds the saved-mask dilation.
+        Assert.True(dilationPx.Value <= SavedMaskDilationPx,
+            $"DilationSweep value {dilationPx.Value} exceeds SavedMaskDilationPx={SavedMaskDilationPx}; " +
+            "either re-capture the bundle at the higher dilation OR re-derive the boundary mask from a real alpha provider.");
+
         var (blobs, w, h, maskedCount, totalPx) = RunSweep(Live0615Name, dilationPx.Value);
         ReportTable("0615", dilationPx.Value, blobs, w, h, maskedCount, totalPx, Npcs0615, npcLayout: true);
 
-        int iconCount = blobs.Count(b => b.BlobClass == BlobClass.Icon);
-        int npcLowerDetected = NpcsInIconBlobs(blobs, [(475, 297)]);
-        // mithril#1174 assertion at the production-picked value: the lower
-        // pip MUST detect at SceneCalibrationProfile.Indoor.BoundaryDilationPx.
-        // Other dilation values are diagnostic-only — they print to the output
-        // for the sweep table but don't assert (regression guard is at the
-        // production value).
-        if (dilationPx.Value == (SceneCalibrationProfile.Indoor.BoundaryDilationPx ?? 8))
-        {
-            npcLowerDetected.Should().Be(1,
-                $"at the production Indoor BoundaryDilationPx={dilationPx.Value}, the 06-15 NPCc lower pip at (475, 297) MUST be in an Icon-class blob — that's the #1174 lift contract.");
-        }
+        // mithril#1183 review S6: foreground-pixel membership, NOT bbox
+        // containment. The review caught a load-bearing FALSIFICATION here —
+        // the brainstorm's "dilation=3 lifts NPCc-lower" claim turned out to
+        // be a bbox-containment artifact: the upper-pip blob's tall bbox
+        // (y∈[279, 303] at dilation=3) covers (475, 297) but the foreground
+        // pixels of that blob do not. NPCc-lower is NOT detected at any
+        // dilation in the sweep under foreground-pixel semantics. The
+        // brainstorm + sweep docs are amended to reflect this; the #1174
+        // load-bearing benefit IS the IconA recovery on 06-13 (asserted in
+        // Measure_boundary_dilation_sweep_on_0613_bundle), not NPCc.
+        //
+        // This sweep theory now reports per-row foreground-pixel hits so a
+        // future investigator (and any retry of the lift mechanism) can read
+        // the table directly. No production-value assertion fires here for
+        // 06-15 because the real lift target is the 06-13 sweep.
+        int npcLowerDetected = NpcsInIconBlobs(blobs, [(475, 297)], w);
+        _output.WriteLine(
+            $"  [mithril#1174 status] NPCc-lower at (475, 297) " +
+            $"is{(npcLowerDetected > 0 ? "" : " NOT")} in an Icon-class blob's foreground at dilation={dilationPx.Value}. " +
+            $"(Brainstorm's bbox-based lift was a review-falsified artifact — see #1183 review S6.)");
     }
 
     [Theory]
@@ -149,17 +207,27 @@ public sealed class IndoorBoundaryDilationSweepTests
             return;
         }
 
+        Assert.True(dilationPx.Value <= SavedMaskDilationPx,
+            $"DilationSweep value {dilationPx.Value} exceeds SavedMaskDilationPx={SavedMaskDilationPx}.");
+
         var (blobs, w, h, maskedCount, totalPx) = RunSweep(Canonical0613Name, dilationPx.Value);
         ReportTable("0613", dilationPx.Value, blobs, w, h, maskedCount, totalPx, Icons0613, npcLayout: false);
 
-        int realIconCount = NpcsInIconBlobs(blobs, Icons0613.Select(i => (i.X, i.Y)).ToArray());
-        // Regression guard: at the production-picked dilation, RIC must hold
-        // at the post-#1172 baseline of 5/6 (IconA at (327, 180) is the
-        // historical 1-of-6 miss that no prior pass has lifted).
-        if (dilationPx.Value == (SceneCalibrationProfile.Indoor.BoundaryDilationPx ?? 8))
+        int realIconCount = NpcsInIconBlobs(
+            blobs,
+            Icons0613.Select(i => (i.X, i.Y)).ToArray(),
+            w);
+
+        if (dilationPx.Value == (SceneCalibrationProfile.Indoor.BoundaryDilationPx ?? SavedMaskDilationPx))
         {
-            realIconCount.Should().BeGreaterOrEqualTo(5,
-                $"at the production Indoor BoundaryDilationPx={dilationPx.Value}, the 06-13 canonical RIC must stay at the post-#1172 baseline of 5/6 (IconA at (327, 180) is the historical 1-of-6 miss).");
+            // mithril#1183 review S2: the headline #1174 finding is RIC 5/6 →
+            // 6/6 at the production-picked dilation (IconA at (327, 180) was
+            // a boundary-dilation casualty, not a previously-mysterious
+            // recall gap). Assert ≥ 6 so a future regression to 5 — which
+            // would silently undo the bonus IconA recovery — fails the test
+            // loudly instead of passing the weaker ≥ 5 baseline.
+            realIconCount.Should().Be(Icons0613.Length,
+                $"at the production Indoor BoundaryDilationPx={dilationPx.Value}, the 06-13 canonical RIC must hold at 6/6 — the #1174 bonus finding (IconA recovery).");
         }
     }
 
@@ -179,8 +247,6 @@ public sealed class IndoorBoundaryDilationSweepTests
         Assert.True(bgraW == shot.Width && bgraH == shot.Height,
             $"BGRA dims {bgraW}x{bgraH} != gray {shot.Width}x{shot.Height}");
 
-        // Load saved dilation=8 mask, simulate dilationPx by eroding (8 -
-        // dilationPx) pixels. dilation=8 → no erosion (use mask as-is).
         bool[]? deviationMask = null;
         int maskedCount = 0;
         if (File.Exists(maskPath))
@@ -193,18 +259,25 @@ public sealed class IndoorBoundaryDilationSweepTests
                 if (mask.Pixels[i] >= 128) deviationMask[i] = true;
             }
 
-            int erodeRadius = 8 - dilationPx;
+            // mithril#1183 review S1: pull the saved-mask dilation from a
+            // named constant so future re-captures (or extension to a non-
+            // production saved dilation) update one place.
+            int erodeRadius = SavedMaskDilationPx - dilationPx;
             if (erodeRadius > 0)
             {
-                deviationMask = ErodeSquare(deviationMask, shot.Width, shot.Height, erodeRadius);
+                // mithril#1183 review C21: share the production Morphology.Erode
+                // (promoted from private to internal) instead of cloning the
+                // pixel-walk loop. The identity erode(dilate(B, k), k-r) =
+                // dilate(B, r) only holds if both sides use the same Chebyshev
+                // square-kernel semantics — sharing the implementation makes
+                // the identity load-bearing.
+                deviationMask = Morphology.Erode(deviationMask, shot.Width, shot.Height, erodeRadius);
             }
             for (int i = 0; i < deviationMask.Length; i++) if (deviationMask[i]) maskedCount++;
         }
 
         var shotF = LocalNccDeviation.ToGrayFloat(shot);
         var texF = LocalNccDeviation.ToGrayFloat(tex);
-        // Match the Indoor production pipeline: pre-deviation luma gate +
-        // MinPeakLuma post-filter, Indoor BlobOptions shape gates.
         byte minLuma = SceneCalibrationProfile.Indoor.MinLumaForDeviation;
         var dev = LocalNccDeviation.DeviationMap(
             shotF, texF, shot.Width, shot.Height, win: 11, out var meanNcc,
@@ -239,9 +312,12 @@ public sealed class IndoorBoundaryDilationSweepTests
     {
         int iconCount = blobs.Count(b => b.BlobClass == BlobClass.Icon);
         double coveragePct = totalPx == 0 ? 0.0 : 100.0 * maskedCount / totalPx;
-        _output.WriteLine($"=== {bundleTag}: BoundaryDilationPx={dilationPx} (erodeBy={8 - dilationPx}) ===");
+        _output.WriteLine($"=== {bundleTag}: BoundaryDilationPx={dilationPx} (erodeBy={SavedMaskDilationPx - dilationPx}) ===");
         _output.WriteLine($"  total blobs={blobs.Count}  Icon-class={iconCount}  mask coverage={maskedCount}/{totalPx} ({coveragePct:F1}%)");
 
+        // Report-side blob lookup — bbox containment is fine for the table
+        // (it's human-readable triage), but the assertions use foreground-
+        // pixel membership via NpcsInIconBlobs below (review S6).
         BlobClassification? ContainingBlob(int x, int y)
         {
             BlobClassification? best = null;
@@ -261,36 +337,49 @@ public sealed class IndoorBoundaryDilationSweepTests
             var b = ContainingBlob(x, y);
             if (b is null)
             {
-                _output.WriteLine($"  {label,-26} at ({x,4},{y,4})  NO blob contains");
+                _output.WriteLine($"  {label,-26} at ({x,4},{y,4})  NO blob bbox contains");
             }
             else
             {
-                if (b.BlobClass == BlobClass.Icon) inIconClass++;
+                bool pipelineHit = b.BlobClass == BlobClass.Icon && b.Pixels.Contains(y * w + x);
+                if (pipelineHit) inIconClass++;
                 _output.WriteLine(
                     $"  {label,-26} at ({x,4},{y,4})  blob#{b.BlobOrdinal,4} bbox({b.MinX},{b.MinY})+{b.W}x{b.H} " +
-                    $"A={b.Area,5} sol={b.Solidity:F2} asp={b.Aspect:F2} peak={b.PeakDev:F2} -> {b.BlobClass}");
+                    $"A={b.Area,5} sol={b.Solidity:F2} asp={b.Aspect:F2} peak={b.PeakDev:F2} -> {b.BlobClass} " +
+                    $"{(pipelineHit ? "[pixel-hit]" : "[bbox-only]")}");
             }
         }
 
         if (npcLayout)
         {
-            _output.WriteLine($"  NPCs (or NPC-positions) reaching Icon class: {inIconClass}/{targets.Length}");
+            _output.WriteLine($"  NPCs (or NPC-positions) reaching Icon class (foreground-pixel hit): {inIconClass}/{targets.Length}");
         }
         else
         {
-            _output.WriteLine($"  Real-Icon-Class (RIC): {inIconClass}/{targets.Length}");
+            _output.WriteLine($"  Real-Icon-Class (RIC, foreground-pixel hit): {inIconClass}/{targets.Length}");
         }
     }
 
-    private static int NpcsInIconBlobs(List<BlobClassification> blobs, (int X, int Y)[] targets)
+    /// <summary>
+    /// Count of targets whose (x, y) coordinate falls in an Icon-class blob's
+    /// FOREGROUND PIXEL SET — not bbox. mithril#1183 review S6: bbox
+    /// containment is over-permissive (a noise pixel at the corner of an
+    /// elongated blob bbox can make an unrelated target appear "detected"
+    /// without the blob's foreground actually covering that location).
+    /// Foreground membership is the load-bearing test for "this NPC pip's
+    /// pixels are in an Icon-class blob" — the production-relevant property
+    /// that RANSAC will consume as a real correspondence.
+    /// </summary>
+    private static int NpcsInIconBlobs(List<BlobClassification> blobs, (int X, int Y)[] targets, int w)
     {
         int count = 0;
         foreach (var (x, y) in targets)
         {
+            int linearIndex = y * w + x;
             foreach (var b in blobs)
             {
                 if (b.BlobClass != BlobClass.Icon) continue;
-                if (x >= b.MinX && x < b.MinX + b.W && y >= b.MinY && y < b.MinY + b.H)
+                if (b.Pixels.Contains(linearIndex))
                 {
                     count++;
                     break;
@@ -298,41 +387,5 @@ public sealed class IndoorBoundaryDilationSweepTests
             }
         }
         return count;
-    }
-
-    /// <summary>
-    /// Square-kernel binary erosion. A pixel survives iff every pixel within
-    /// Chebyshev distance <paramref name="r"/> is set. Out-of-bounds neighbours
-    /// count as "not set" (image-edge erosion). Mirrors the internal
-    /// <see cref="Mithril.MapCalibration.Detection.Internal.FloorBoundaryMaskCache"/>
-    /// dilation kernel so the simulated dilation-r mask matches the
-    /// production-r mask byte-for-byte on alpha boundaries (the
-    /// <c>erode(dilate(B,8), 8-r) = dilate(B, r)</c> identity for thin
-    /// boundaries B).
-    /// </summary>
-    private static bool[] ErodeSquare(bool[] src, int w, int h, int r)
-    {
-        var dst = new bool[src.Length];
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                bool all = true;
-                for (int dy = -r; dy <= r && all; dy++)
-                {
-                    for (int dx = -r; dx <= r; dx++)
-                    {
-                        int nx = x + dx, ny = y + dy;
-                        if (nx < 0 || nx >= w || ny < 0 || ny >= h || !src[ny * w + nx])
-                        {
-                            all = false;
-                            break;
-                        }
-                    }
-                }
-                dst[y * w + x] = all;
-            }
-        }
-        return dst;
     }
 }

@@ -681,7 +681,12 @@ internal static class Morphology
         return o;
     }
 
-    private static bool[] Erode(bool[] s, int w, int h, int r)
+    /// <summary>
+    /// Square-element binary erosion (mithril#1183 review C21: promoted from
+    /// private to internal so dilation-sweep tests can share the canonical
+    /// implementation instead of cloning the pixel-walking nested loop).
+    /// </summary>
+    internal static bool[] Erode(bool[] s, int w, int h, int r)
     {
         var o = new bool[s.Length];
         for (int y = 0; y < h; y++)
